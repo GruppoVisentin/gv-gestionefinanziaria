@@ -237,7 +237,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       const incomeLoans = transactions.filter(t => 
           t.type === TransactionType.INCOME && 
           t.category === '[FINANZA] Finanziamenti Ricevuti' && 
-          t.loanDetails
+          t.loanDetails &&
+          !(t.isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === t.id))
       );
 
       incomeLoans.forEach(t => {
@@ -260,7 +261,9 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
 
       // 2. From Existing Loans (Initial Balance)
       if (initialData?.loans) {
-          initialData.loans.forEach(l => {
+          initialData.loans
+            .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+            .forEach(l => {
               const comps = calculateRepayment(l.originalAmount, l.details, monthIndex);
               total += comps.total;
               interest += comps.interest;
@@ -297,7 +300,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
         return (
           tDate.getMonth() === monthIndex &&
           tDate.getFullYear() === currentYear &&
-          tForecast === isForecast
+          tForecast === isForecast &&
+          (fixedCategories.includes(t.category) || variableCategories.includes(t.category))
         );
       })
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
@@ -380,7 +384,9 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
     let total = expenseTransactions.filter(t => {
       const tDate = new Date(t.date);
       const tForecast = !!t.isForecast;
-      return tDate.getFullYear() === currentYear && tForecast === isForecast;
+      return tDate.getFullYear() === currentYear && 
+             tForecast === isForecast &&
+             (fixedCategories.includes(t.category) || variableCategories.includes(t.category));
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
 
     if (isForecast) {
