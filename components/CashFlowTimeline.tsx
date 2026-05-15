@@ -417,6 +417,11 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     .filter(t => t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear && !transactions.some(act => !act.isForecast && act.linkedForecastId === t.id))
     .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
+  // New Loans Actual
+  const newLoansAmountActual = transactions
+    .filter(t => !t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear)
+    .reduce((sum, t) => sum + getGrossAmount(t), 0);
+
   // Remaining Debt Forecast = Start Debt + Unpaid Forecast Loans + Actual Loans - Principal Repaid
   const forecastRemainingDebt = Math.max(0, totalLoanDebtStart + newLoansAmountForecast + newLoansAmountActual - forecastTotalPrincipalRepaid);
   
@@ -429,11 +434,6 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   for(let i=0; i<12; i++) {
       actualFinalBalance += calculateMonthlyFlow(i, false);
   }
-
-  // New Loans Actual
-  const newLoansAmountActual = transactions
-    .filter(t => !t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear)
-    .reduce((sum, t) => sum + getGrossAmount(t), 0);
   
   // Calcola actualTotalPrincipalRepaid basandosi solo sui finanziamenti reali
   const loanTransactionsActual = transactions.filter(t =>
