@@ -65,8 +65,10 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formType, setFormType] = useState<'FORECAST' | 'ACTUAL'>('FORECAST');
   
+  const [newForecastDate, setNewForecastDate] = useState('');
   const [newForecastAmount, setNewForecastAmount] = useState('');
   const [newForecastVat, setNewForecastVat] = useState('22');
+  const [newForecastClient, setNewForecastClient] = useState('');
   const [newForecastDesc, setNewForecastDesc] = useState('');
 
   // Loan Specific State for Timeline Form
@@ -294,8 +296,10 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
     if (transaction) {
       setFormType(transaction.isForecast ? 'FORECAST' : 'ACTUAL');
+      setNewForecastDate(transaction.date);
       setNewForecastAmount(transaction.amount.toString());
       setNewForecastDesc(transaction.description);
+      setNewForecastClient('');
       setNewForecastVat(transaction.vatRate?.toString() || '22');
       setEditingId(transaction.id);
 
@@ -322,8 +326,10 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
     } else {
       setFormType(type);
+      setNewForecastDate(`${currentYear}-${String(monthIndex + 1).padStart(2, '0')}-15`);
       setNewForecastAmount('');
       setNewForecastDesc('');
+      setNewForecastClient('');
       setNewForecastVat('22');
       setEditingId(null);
       
@@ -357,7 +363,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     e.preventDefault();
     if (!addingForecast || !newForecastAmount) return;
 
-    const dateString = `${currentYear}-${String(addingForecast.monthIndex + 1).padStart(2, '0')}-15`;
+    const dateString = newForecastDate || `${currentYear}-${String(addingForecast.monthIndex + 1).padStart(2, '0')}-15`;
     const isFinancing = addingForecast.key === 'FINANCING';
     const isInvestment = addingForecast.key === 'INVESTMENT';
 
@@ -389,11 +395,16 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         project = '';
     }
 
+    let finalDesc = newForecastDesc || defaultDesc;
+    if (newForecastClient.trim()) {
+        finalDesc = `${newForecastClient.trim()} - ${finalDesc}`;
+    }
+
     const transactionData: any = {
         amount: parseFloat(newForecastAmount),
         vatRate: parseFloat(newForecastVat),
         date: dateString,
-        description: newForecastDesc || defaultDesc,
+        description: finalDesc,
         type: TransactionType.INCOME,
         category: category,
         project: project,
@@ -660,45 +671,79 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                         </button>
                       </div>
                       <form onSubmit={handleSaveNewForecast} className="space-y-3">
-                        {/* Form contents same as before */}
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                              <label className="block text-[10px] font-semibold text-slate-500 mb-1">{addingForecast.key === 'FINANCING' ? 'CAPITALE (€)' : 'IMPONIBILE (€)'}</label>
-                              <input
-                              autoFocus
-                              type="number"
-                              step="0.01"
-                              required
-                              value={newForecastAmount}
-                              onChange={(e) => setNewForecastAmount(e.target.value)}
-                              className="w-full px-2 py-1.5 text-sm rounded border border-slate-300 focus:border-slate-500 focus:ring-1 focus:ring-slate-500 outline-none font-mono"
-                              placeholder="0.00"
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-[10px] font-semibold text-slate-500 mb-1">IVA</label>
-                              <select
-                                  value={newForecastVat}
-                                  onChange={(e) => setNewForecastVat(e.target.value)}
-                                  className="w-full px-2 py-1.5 text-sm rounded border border-slate-300 focus:border-slate-500 focus:ring-1 focus:ring-slate-500 outline-none bg-white"
-                              >
-                                  <option value="0">0%</option>
-                                  <option value="4">4%</option>
-                                  <option value="10">10%</option>
-                                  <option value="22">22%</option>
-                              </select>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-slate-500 mb-1">DESCRIZIONE</label>
-                          <input
-                            type="text"
-                            value={newForecastDesc}
-                            onChange={(e) => setNewForecastDesc(e.target.value)}
-                            className="w-full px-2 py-1.5 text-sm rounded border border-slate-300 focus:border-slate-500 focus:ring-1 focus:ring-slate-500 outline-none"
-                            placeholder="es. Descrizione"
-                          />
-                        </div>
+                        {(() => {
+                          const currentProject = availableProjects.find(p => p.name === addingForecast.key);
+                          const projectIntestatari = currentProject?.intestatari || [];
+                          return (
+                            <>
+                              <div className="flex gap-2">
+                                <div className="w-full relative">
+                                    <Calendar size={12} className="absolute left-2 top-2 text-slate-400" />
+                                    <input 
+                                        type="date" 
+                                        value={newForecastDate} 
+                                        onChange={e => setNewForecastDate(e.target.value)} 
+                                        className="w-full pl-6 pr-1 py-1 text-[10px] border rounded text-slate-900 outline-none focus:border-slate-500" 
+                                    />
+                                </div>
+                              </div>
+                              <div className="relative">
+                                  <User size={12} className="absolute left-2 top-2 text-slate-400" />
+                                  {projectIntestatari.length > 0 ? (
+                                      <select 
+                                          value={newForecastClient} 
+                                          onChange={e => setNewForecastClient(e.target.value)}
+                                          className="w-full pl-6 pr-1 py-1 text-[10px] border rounded text-slate-900 outline-none focus:border-slate-500 bg-white"
+                                      >
+                                          <option value="">-- Seleziona Intestatario --</option>
+                                          {projectIntestatari.map(int => (
+                                              <option key={int.id} value={int.nome}>{int.nome}</option>
+                                          ))}
+                                      </select>
+                                  ) : (
+                                      <input 
+                                          type="text" 
+                                          value={newForecastClient} 
+                                          onChange={e => setNewForecastClient(e.target.value)} 
+                                          className="w-full pl-6 pr-1 py-1 text-[10px] border rounded text-slate-900 outline-none focus:border-slate-500" 
+                                          placeholder="Intestatario Pagamento" 
+                                      />
+                                  )}
+                              </div>
+                              <div>
+                                <input
+                                  type="text"
+                                  value={newForecastDesc}
+                                  onChange={(e) => setNewForecastDesc(e.target.value)}
+                                  className="w-full px-2 py-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none"
+                                  placeholder="Descrizione Opzionale"
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  required
+                                  value={newForecastAmount}
+                                  onChange={(e) => setNewForecastAmount(e.target.value)}
+                                  className="w-2/3 p-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none font-mono"
+                                  placeholder="€ Imponibile"
+                                />
+                                <select
+                                    value={newForecastVat}
+                                    onChange={(e) => setNewForecastVat(e.target.value)}
+                                    className="w-1/3 p-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none bg-white"
+                                >
+                                    <option value="22">22%</option>
+                                    <option value="10">10%</option>
+                                    <option value="4">4%</option>
+                                    <option value="0">0%</option>
+                                </select>
+                              </div>
+                            </>
+                          );
+                        })()}
+
 
                         {/* LOAN FIELDS IF FINANCING ROW */}
                         {addingForecast.key === 'FINANCING' && (
@@ -967,17 +1012,36 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                         />
                                     </div>
                                 </div>
-                                <div className="relative">
-                                    <User size={12} className="absolute left-2 top-2 text-slate-400" />
-                                    <input 
-                                        type="text" 
-                                        value={newActualClient} 
-                                        onChange={e => setNewActualClient(e.target.value)} 
-                                        className="w-full pl-6 pr-1 py-1 text-[10px] border rounded text-slate-900 outline-none focus:border-slate-500" 
-                                        placeholder="Nome Cliente" 
-                                        autoFocus
-                                    />
-                                </div>
+                                {(() => {
+                                  const currentProject = availableProjects.find(p => p.name === key);
+                                  const projectIntestatari = currentProject?.intestatari || [];
+                                  return (
+                                    <div className="relative">
+                                        <User size={12} className="absolute left-2 top-2 text-slate-400" />
+                                        {projectIntestatari.length > 0 ? (
+                                            <select 
+                                                value={newActualClient} 
+                                                onChange={e => setNewActualClient(e.target.value)}
+                                                className="w-full pl-6 pr-1 py-1 text-[10px] border rounded text-slate-900 outline-none focus:border-slate-500 bg-white"
+                                            >
+                                                <option value="">-- Seleziona Intestatario --</option>
+                                                {projectIntestatari.map(int => (
+                                                    <option key={int.id} value={int.nome}>{int.nome}</option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <input 
+                                                type="text" 
+                                                value={newActualClient} 
+                                                onChange={e => setNewActualClient(e.target.value)} 
+                                                className="w-full pl-6 pr-1 py-1 text-[10px] border rounded text-slate-900 outline-none focus:border-slate-500" 
+                                                placeholder="Nome Cliente" 
+                                                autoFocus
+                                            />
+                                        )}
+                                    </div>
+                                  );
+                                })()}
                                 <input 
                                     type="text" 
                                     value={newActualDesc} 
