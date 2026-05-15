@@ -187,7 +187,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       const loanTransactions = transactions.filter(t => 
         t.type === TransactionType.INCOME && 
         t.category === '[FINANZA] Finanziamenti Ricevuti' && 
-        t.loanDetails
+        t.loanDetails &&
+        !(t.isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === t.id))
       );
 
       loanTransactions.forEach(loan => {
@@ -198,11 +199,13 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
       // 2. Existing Loans
       if (initialData && initialData.loans) {
-          initialData.loans.forEach(loan => {
-              const comps = calculateLoanComponents(loan.originalAmount, loan.details, monthIndex);
-              totalPayment += comps.total;
-              totalPrincipal += comps.principal;
-          });
+          initialData.loans
+             .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+             .forEach(loan => {
+                const comps = calculateLoanComponents(loan.originalAmount, loan.details, monthIndex);
+                totalPayment += comps.total;
+                totalPrincipal += comps.principal;
+             });
       }
 
       return { totalPayment, totalPrincipal };
@@ -305,7 +308,9 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const saldoInizialePrevisionale = calcolaSaldoInizialePrevisionale();
 
   const totalInitialBalance = currentYear <= ANNO_BASE ? saldoInizialeCF.saldoManualeConsuntivo : saldoInizialeConsuntivo;
-  const totalLoanDebtStart = (initialData.loans || []).reduce((sum, l) => sum + l.originalAmount, 0) + 
+  const totalLoanDebtStart = (initialData.loans || [])
+                             .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+                             .reduce((sum, l) => sum + l.originalAmount, 0) + 
                              (initialData.previousFinancing || 0) +
                              (initialData.accontiClienti || 0) +
                              (initialData.altriDebitiBT || 0) +
@@ -407,13 +412,13 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       forecastTotalPrincipalRepaid += totalPrincipal;
   }
 
-  // New Loans taken this year (Forecast)
+  // New Loans taken this year (Forecast - only unpaid ones)
   const newLoansAmountForecast = transactions
-    .filter(t => t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear)
+    .filter(t => t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear && !transactions.some(act => !act.isForecast && act.linkedForecastId === t.id))
     .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
-  // Remaining Debt Forecast = Start Debt + New Loans - Principal Repaid
-  const forecastRemainingDebt = Math.max(0, totalLoanDebtStart + newLoansAmountForecast - forecastTotalPrincipalRepaid);
+  // Remaining Debt Forecast = Start Debt + Unpaid Forecast Loans + Actual Loans - Principal Repaid
+  const forecastRemainingDebt = Math.max(0, totalLoanDebtStart + newLoansAmountForecast + newLoansAmountActual - forecastTotalPrincipalRepaid);
   
   // Own Funds = Final Balance - Remaining Debt (Bank Portion)
   const forecastOwnFunds = forecastFinalBalance - forecastRemainingDebt;
@@ -1629,8 +1634,12 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 className="flex justify-between items-center p-3 bg-slate-800/50 rounded-lg border border-slate-800 group relative cursor-help"
                 title={`Dettaglio Debito Residuo:\n${
                   [
-                    ...(transactions.filter(t => t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails).map(t => `• ${t.description}: ${CURRENCY_FORMATTER.format(t.amount)}`)),
-                    ...(initialData.loans || []).map(l => `• ${l.name}: ${CURRENCY_FORMATTER.format(l.originalAmount)}`)
+                    ...(initialData.loans || [])
+                      .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+                      .map(l => `• ${l.name} (Pregresso): ${CURRENCY_FORMATTER.format(l.originalAmount)}`),
+                    ...(transactions
+                      .filter(t => t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails && !(t.isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === t.id)))
+                      .map(t => `• ${t.description} (${t.isForecast ? 'Prev.' : 'Cons.'}): ${CURRENCY_FORMATTER.format(t.amount)}`))
                   ].join('\n')
                 }`}
               >
@@ -1673,8 +1682,12 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 className="flex justify-between items-center p-3 bg-slate-800/50 rounded-lg border border-slate-800 group relative cursor-help"
                 title={`Dettaglio Debito Residuo:\n${
                   [
-                    ...(transactions.filter(t => t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails).map(t => `• ${t.description}: ${CURRENCY_FORMATTER.format(t.amount)}`)),
-                    ...(initialData.loans || []).map(l => `• ${l.name}: ${CURRENCY_FORMATTER.format(l.originalAmount)}`)
+                    ...(initialData.loans || [])
+                      .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+                      .map(l => `• ${l.name} (Pregresso): ${CURRENCY_FORMATTER.format(l.originalAmount)}`),
+                    ...(transactions
+                      .filter(t => !t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails)
+                      .map(t => `• ${t.description} (Cons.): ${CURRENCY_FORMATTER.format(t.amount)}`))
                   ].join('\n')
                 }`}
               >
