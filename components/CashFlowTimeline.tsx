@@ -11,6 +11,7 @@ import { exportCashFlowProjectionPDF } from '../utils/cashFlowPdfExport';
 
 interface CashFlowTimelineProps {
   transactions: Transaction[];
+  projects: Project[];
   initialData: InitialBalanceBreakdown;
   onUpdateInitialData: (data: InitialBalanceBreakdown) => void;
   saldoInizialeCF: SaldoInizialeCashFlow;
@@ -27,6 +28,7 @@ interface CashFlowTimelineProps {
 
 const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({ 
   transactions, 
+  projects,
   initialData, 
   onUpdateInitialData, 
   saldoInizialeCF,
@@ -316,10 +318,37 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                              (initialData.altriDebitiBT || 0) +
                              (initialData.mutuiBT || 0);
 
+  const calculateProjectCostForMonth = (category: string, monthIndex: number) => {
+      let total = 0;
+      projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
+          const start = new Date(p.estimatedStartDate!);
+          const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
+          const targetMonthGlobal = currentYear * 12 + monthIndex;
+          const diff = targetMonthGlobal - startMonthGlobal;
+
+          if (category === '[CONSULENZE] Professionisti Esterni di Cantiere') {
+              if (diff >= -2 && diff < 0) total += (p.estimatedProfessionals || 0) / 2;
+          } else if (category === '[PERSONALE] Subappalti Manodopera') {
+              if (p.laborType === 'EXTERNAL' && diff >= 0 && diff < 6) total += (p.estimatedLabor || 0) / 6;
+          } else if (category === '[FORNITORI] Fornitori Materiali') {
+              if (diff >= 0 && diff < 6) total += (p.estimatedMaterials || 0) / 6;
+          } else if (category === '[FORNITORI] Subappalti su Cantieri') {
+              if (diff >= 6 && diff < 18) total += (p.estimatedSubcontractors || 0) / 12;
+          }
+      });
+      return total;
+  };
+
   const calculateMonthlyFlow = (monthIndex: number, isForecast: boolean) => {
     const monthlyTransactions = transactions.filter(t => {
       const tDate = new Date(t.date);
       const tForecast = !!t.isForecast;
+
+      if (tForecast && isForecast) {
+          const isPaid = transactions.some(act => !act.isForecast && act.linkedForecastId === t.id);
+          if (isPaid) return false;
+      }
+
       return (
         tDate.getMonth() === monthIndex &&
         tDate.getFullYear() === currentYear &&
@@ -339,6 +368,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     if (isForecast) {
         const { totalPayment } = calculateLoanRepaymentForMonth(monthIndex);
         expense += totalPayment;
+
+        ['[CONSULENZE] Professionisti Esterni di Cantiere', '[PERSONALE] Subappalti Manodopera', '[FORNITORI] Fornitori Materiali', '[FORNITORI] Subappalti su Cantieri'].forEach(cat => {
+            expense += calculateProjectCostForMonth(cat, monthIndex);
+        });
     }
 
     return income - expense;
@@ -349,6 +382,12 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       .filter(t => {
         const tDate = new Date(t.date);
         const tForecast = !!t.isForecast;
+
+        if (tForecast && isForecast) {
+             const isPaid = transactions.some(act => !act.isForecast && act.linkedForecastId === t.id);
+             if (isPaid) return false;
+        }
+
         return (
           tDate.getFullYear() === currentYear && 
           tForecast === isForecast
@@ -361,12 +400,16 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
     // Subtract Loan Repayments for Forecast
     if (isForecast) {
-        let annualLoanRepayment = 0;
+        let annualAutoCosts = 0;
         for (let i = 0; i < 12; i++) {
             const { totalPayment } = calculateLoanRepaymentForMonth(i);
-            annualLoanRepayment += totalPayment;
+            annualAutoCosts += totalPayment;
+
+            ['[CONSULENZE] Professionisti Esterni di Cantiere', '[PERSONALE] Subappalti Manodopera', '[FORNITORI] Fornitori Materiali', '[FORNITORI] Subappalti su Cantieri'].forEach(cat => {
+                annualAutoCosts += calculateProjectCostForMonth(cat, i);
+            });
         }
-        totalFlow -= annualLoanRepayment;
+        totalFlow -= annualAutoCosts;
     }
 
     return totalFlow;
@@ -1309,6 +1352,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
               onClick={() => exportCashFlowProjectionPDF({
                 transactions,
                 currentYear,
+                projects,
                 initialData: {
                   accounts: initialData.accounts,
                   loans: initialData.loans,

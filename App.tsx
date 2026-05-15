@@ -976,6 +976,7 @@ const App: React.FC = () => {
              <div className="pt-4">
                 <CashFlowTimeline 
                   transactions={transactions} 
+                  projects={projects}
                   initialData={initialData}
                   onUpdateInitialData={setInitialData}
                   saldoInizialeCF={saldoInizialeCF}

@@ -1,11 +1,12 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan } from '../types';
+import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, Project } from '../types';
 import { CURRENCY_FORMATTER } from '../constants';
 
 interface CashFlowPdfOptions {
   transactions: Transaction[];
   currentYear: number;
+  projects: Project[];
   initialData: {
     accounts: BankAccount[];
     loans?: ExistingLoan[];
@@ -19,6 +20,7 @@ interface CashFlowPdfOptions {
 export const exportCashFlowProjectionPDF = ({
   transactions,
   currentYear,
+  projects,
   initialData
 }: CashFlowPdfOptions) => {
   const pdf = new jsPDF('p', 'mm', 'a4');
@@ -38,7 +40,10 @@ export const exportCashFlowProjectionPDF = ({
     // 1. Previsionali
     const forecastTransactions = transactions.filter(t => {
       const d = new Date(t.date);
-      return d.getMonth() === monthIndex && d.getFullYear() === currentYear && !!t.isForecast;
+      if (d.getMonth() !== monthIndex || d.getFullYear() !== currentYear || !t.isForecast) return false;
+      const isPaid = transactions.some(act => !act.isForecast && act.linkedForecastId === t.id);
+      if (isPaid) return false;
+      return true;
     });
 
     const fIncome = forecastTransactions
@@ -72,6 +77,32 @@ export const exportCashFlowProjectionPDF = ({
     };
 
     fExpense += calculateLoanRepayment(monthIndex);
+
+    // Calcolo costi di cantiere (solo per previsionali)
+    const calculateProjectCostForMonth = (category: string, mIdx: number) => {
+        let total = 0;
+        projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
+            const start = new Date(p.estimatedStartDate!);
+            const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
+            const targetMonthGlobal = currentYear * 12 + mIdx;
+            const diff = targetMonthGlobal - startMonthGlobal;
+
+            if (category === '[CONSULENZE] Professionisti Esterni di Cantiere') {
+                if (diff >= -2 && diff < 0) total += (p.estimatedProfessionals || 0) / 2;
+            } else if (category === '[PERSONALE] Subappalti Manodopera') {
+                if (p.laborType === 'EXTERNAL' && diff >= 0 && diff < 6) total += (p.estimatedLabor || 0) / 6;
+            } else if (category === '[FORNITORI] Fornitori Materiali') {
+                if (diff >= 0 && diff < 6) total += (p.estimatedMaterials || 0) / 6;
+            } else if (category === '[FORNITORI] Subappalti su Cantieri') {
+                if (diff >= 6 && diff < 18) total += (p.estimatedSubcontractors || 0) / 12;
+            }
+        });
+        return total;
+    };
+
+    ['[CONSULENZE] Professionisti Esterni di Cantiere', '[PERSONALE] Subappalti Manodopera', '[FORNITORI] Fornitori Materiali', '[FORNITORI] Subappalti su Cantieri'].forEach(cat => {
+        fExpense += calculateProjectCostForMonth(cat, monthIndex);
+    });
 
     // 2. Consuntivi
     const actualTransactions = transactions.filter(t => {
