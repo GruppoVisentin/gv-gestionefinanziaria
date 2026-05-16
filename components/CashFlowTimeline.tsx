@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow } from '../types';
+import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project } from '../types';
 import { fetchEuriborRates } from '../services/geminiService';
 import { CURRENCY_FORMATTER } from '../constants';
 import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Database, Search, RefreshCw, Pencil, CheckCircle2 } from 'lucide-react';
@@ -185,12 +185,15 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       let totalPayment = 0;
       let totalPrincipal = 0;
 
-      // 1. New Loans
+      // 1. New Loans — escludi forecast se esiste un actual collegato via linkedForecastId O loanSourceId
       const loanTransactions = transactions.filter(t => 
         t.type === TransactionType.INCOME && 
         t.category === '[FINANZA] Finanziamenti Ricevuti' && 
         t.loanDetails &&
-        !(t.isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === t.id))
+        !(t.isForecast && transactions.some(act => 
+          !act.isForecast && 
+          (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId))
+        ))
       );
 
       loanTransactions.forEach(loan => {
@@ -423,8 +426,12 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     let cumulativo = totalInitialBalance;
 
     for (let i = 0; i < 12; i++) {
-      cumulativo += calculateMonthlyFlow(i, true);  // usa previsionale
-      cumulativo += calculateMonthlyFlow(i, false); // aggiungi consuntivo
+      // Mesi passati/corrente: usa consuntivo reale; mesi futuri: usa previsionale
+      if (i <= meseCorrente) {
+        cumulativo += calculateMonthlyFlow(i, false);
+      } else {
+        cumulativo += calculateMonthlyFlow(i, true);
+      }
 
       if (i > meseCorrente) { // solo mesi futuri
         if (cumulativo < 0) {
@@ -455,9 +462,9 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       forecastTotalPrincipalRepaid += totalPrincipal;
   }
 
-  // New Loans taken this year (Forecast - only unpaid ones)
+  // New Loans taken this year (Forecast - only unpaid ones, escludi anche quelli con loanSourceId collegato)
   const newLoansAmountForecast = transactions
-    .filter(t => t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear && !transactions.some(act => !act.isForecast && act.linkedForecastId === t.id))
+    .filter(t => t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear && !transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId))))
     .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
   // New Loans Actual
@@ -492,12 +499,14 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       const comps = calculateLoanComponents(loan.amount, loan.loanDetails!, i);
       actualTotalPrincipalRepaid += comps.principal;
     });
-    // Existing loans (sempre reali, invariato)
+    // Existing loans — escludi quelli che hanno transazioni collegate nell'anno corrente (evita doppio conteggio)
     if (initialData?.loans) {
-      initialData.loans.forEach(loan => {
-        const comps = calculateLoanComponents(loan.originalAmount, loan.details, i);
-        actualTotalPrincipalRepaid += comps.principal;
-      });
+      initialData.loans
+        .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+        .forEach(loan => {
+          const comps = calculateLoanComponents(loan.originalAmount, loan.details, i);
+          actualTotalPrincipalRepaid += comps.principal;
+        });
     }
   }
   
