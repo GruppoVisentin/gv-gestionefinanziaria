@@ -57,21 +57,28 @@ export const exportCashFlowProjectionPDF = ({
     // Calcolo rate prestiti (solo per previsionali)
     const calculateLoanRepayment = (mIdx: number) => {
       let total = 0;
-      // Nuovi prestiti
-      transactions.filter(t => 
-        t.type === TransactionType.INCOME && 
-        t.category === '[FINANZA] Finanziamenti Ricevuti' && 
-        t.loanDetails
-      ).forEach(loan => {
+      // Nuovi prestiti — escludi forecast se esiste un actual collegato
+      transactions.filter(t => {
+        if (t.type !== TransactionType.INCOME) return false;
+        if (t.category !== '[FINANZA] Finanziamenti Ricevuti') return false;
+        if (!t.loanDetails) return false;
+        if (t.isForecast && transactions.some(act => 
+          !act.isForecast && 
+          (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId))
+        )) return false;
+        return true;
+      }).forEach(loan => {
         const comps = calculateLoanComponents(loan.amount, loan.loanDetails, mIdx);
         total += comps.total;
       });
-      // Prestiti esistenti
+      // Prestiti esistenti — escludi quelli con transazioni collegate nell'anno corrente
       if (initialData.loans) {
-        initialData.loans.forEach(loan => {
-          const comps = calculateLoanComponents(loan.originalAmount, loan.details, mIdx);
-          total += comps.total;
-        });
+        initialData.loans
+          .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+          .forEach(loan => {
+            const comps = calculateLoanComponents(loan.originalAmount, loan.details, mIdx);
+            total += comps.total;
+          });
       }
       return total;
     };

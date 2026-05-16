@@ -234,11 +234,15 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       const details: { name: string; amount: number; rate: number; type: string; principal: number; interest: number; total: number }[] = [];
 
       // 1. From New INCOME Transactions (that have loan details)
+      // Escludi forecast se esiste un actual collegato via linkedForecastId O loanSourceId
       const incomeLoans = transactions.filter(t => 
           t.type === TransactionType.INCOME && 
           t.category === '[FINANZA] Finanziamenti Ricevuti' && 
           t.loanDetails &&
-          !(t.isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === t.id))
+          !(t.isForecast && transactions.some(act => 
+            !act.isForecast && 
+            (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId))
+          ))
       );
 
       incomeLoans.forEach(t => {
