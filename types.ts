@@ -129,6 +129,7 @@ export interface CERow {
 export interface CEData {
   anno: number;
   ricaviCore: number[];        // 12 mesi
+  ricaviImmobiliare: number[]; // 12 mesi — vendite immobili/terreni
   ricaviAltro: number[];       // 12 mesi
   costiVariabili: number[];    // 12 mesi
   costiFissi: number[];        // 12 mesi

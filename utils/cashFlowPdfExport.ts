@@ -36,34 +36,59 @@ export const exportCashFlowProjectionPDF = ({
     return amount + vat;
   };
 
+  const meseCorrente = new Date().getMonth();
+  const isAnnoCorrente = currentYear === new Date().getFullYear();
+
   const calculateMonthlyFlow = (monthIndex: number) => {
-    // 1. Previsionali
+    // Determina se il mese ha dati consuntivi
+    const hasActuals = transactions.some(t => {
+      const d = new Date(t.date);
+      return d.getMonth() === monthIndex && d.getFullYear() === currentYear && !t.isForecast;
+    });
+
+    // Usa consuntivi se: mese passato o corrente (con dati reali)
+    const useActuals = hasActuals || (isAnnoCorrente && monthIndex <= meseCorrente);
+
+    if (useActuals) {
+      // --- CONSUNTIVO ---
+      const actualTransactions = transactions.filter(t => {
+        const d = new Date(t.date);
+        return d.getMonth() === monthIndex && d.getFullYear() === currentYear && !t.isForecast;
+      });
+      const aIncome = actualTransactions
+        .filter(t => t.type === TransactionType.INCOME)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+      const aExpense = actualTransactions
+        .filter(t => t.type === TransactionType.EXPENSE)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+      return { income: aIncome, expense: aExpense, net: aIncome - aExpense, hasActuals: true };
+    }
+
+    // --- PREVISIONALE (mesi futuri senza consuntivi) ---
     const forecastTransactions = transactions.filter(t => {
       const d = new Date(t.date);
       if (d.getMonth() !== monthIndex || d.getFullYear() !== currentYear || !t.isForecast) return false;
-      const isPaid = transactions.some(act => !act.isForecast && act.linkedForecastId === t.id);
-      if (isPaid) return false;
-      return true;
+      // Escludi forecast già liquidati
+      return !transactions.some(act => !act.isForecast && act.linkedForecastId === t.id);
     });
 
     const fIncome = forecastTransactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
-    
+
     let fExpense = forecastTransactions
       .filter(t => t.type === TransactionType.EXPENSE)
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
-    // Calcolo rate prestiti (solo per previsionali)
+    // Rate prestiti previsionali
     const calculateLoanRepayment = (mIdx: number) => {
       let total = 0;
-      // Nuovi prestiti — escludi forecast se esiste un actual collegato
       transactions.filter(t => {
         if (t.type !== TransactionType.INCOME) return false;
         if (t.category !== '[FINANZA] Finanziamenti Ricevuti') return false;
         if (!t.loanDetails) return false;
-        if (t.isForecast && transactions.some(act => 
-          !act.isForecast && 
+        if (t.isForecast && transactions.some(act =>
+          !act.isForecast &&
           (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId))
         )) return false;
         return true;
@@ -71,7 +96,6 @@ export const exportCashFlowProjectionPDF = ({
         const comps = calculateLoanComponents(loan.amount, loan.loanDetails, mIdx);
         total += comps.total;
       });
-      // Prestiti esistenti — escludi quelli con transazioni collegate nell'anno corrente
       if (initialData.loans) {
         initialData.loans
           .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
@@ -85,55 +109,32 @@ export const exportCashFlowProjectionPDF = ({
 
     fExpense += calculateLoanRepayment(monthIndex);
 
-    // Calcolo costi di cantiere (solo per previsionali)
+    // Costi cantiere previsionali
     const calculateProjectCostForMonth = (category: string, mIdx: number) => {
-        let total = 0;
-        projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
-            const start = new Date(p.estimatedStartDate!);
-            const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
-            const targetMonthGlobal = currentYear * 12 + mIdx;
-            const diff = targetMonthGlobal - startMonthGlobal;
-
-            if (category === '[CONSULENZE] Professionisti Esterni di Cantiere') {
-                if (diff >= -2 && diff < 0) total += (p.estimatedProfessionals || 0) / 2;
-            } else if (category === '[PERSONALE] Subappalti Manodopera') {
-                if (p.laborType === 'EXTERNAL' && diff >= 0 && diff < 6) total += (p.estimatedLabor || 0) / 6;
-            } else if (category === '[FORNITORI] Fornitori Materiali') {
-                if (diff >= 0 && diff < 6) total += (p.estimatedMaterials || 0) / 6;
-            } else if (category === '[FORNITORI] Subappalti su Cantieri') {
-                if (diff >= 6 && diff < 18) total += (p.estimatedSubcontractors || 0) / 12;
-            }
-        });
-        return total;
+      let total = 0;
+      projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
+        const start = new Date(p.estimatedStartDate!);
+        const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
+        const targetMonthGlobal = currentYear * 12 + mIdx;
+        const diff = targetMonthGlobal - startMonthGlobal;
+        if (category === '[CONSULENZE] Professionisti Esterni di Cantiere') {
+          if (diff >= -2 && diff < 0) total += (p.estimatedProfessionals || 0) / 2;
+        } else if (category === '[PERSONALE] Subappalti Manodopera') {
+          if (p.laborType === 'EXTERNAL' && diff >= 0 && diff < 6) total += (p.estimatedLabor || 0) / 6;
+        } else if (category === '[FORNITORI] Fornitori Materiali') {
+          if (diff >= 0 && diff < 6) total += (p.estimatedMaterials || 0) / 6;
+        } else if (category === '[FORNITORI] Subappalti su Cantieri') {
+          if (diff >= 6 && diff < 18) total += (p.estimatedSubcontractors || 0) / 12;
+        }
+      });
+      return total;
     };
 
     ['[CONSULENZE] Professionisti Esterni di Cantiere', '[PERSONALE] Subappalti Manodopera', '[FORNITORI] Fornitori Materiali', '[FORNITORI] Subappalti su Cantieri'].forEach(cat => {
-        fExpense += calculateProjectCostForMonth(cat, monthIndex);
+      fExpense += calculateProjectCostForMonth(cat, monthIndex);
     });
 
-    // 2. Consuntivi
-    const actualTransactions = transactions.filter(t => {
-      const d = new Date(t.date);
-      return d.getMonth() === monthIndex && d.getFullYear() === currentYear && !t.isForecast;
-    });
-
-    const aIncome = actualTransactions
-      .filter(t => t.type === TransactionType.INCOME)
-      .reduce((sum, t) => sum + getGrossAmount(t), 0);
-    
-    const aExpense = actualTransactions
-      .filter(t => t.type === TransactionType.EXPENSE)
-      .reduce((sum, t) => sum + getGrossAmount(t), 0);
-
-    const totalIncome = fIncome + aIncome;
-    const totalExpense = fExpense + aExpense;
-
-    return { 
-      income: totalIncome, 
-      expense: totalExpense, 
-      net: totalIncome - totalExpense,
-      hasActuals: aIncome > 0 || aExpense > 0
-    };
+    return { income: fIncome, expense: fExpense, net: fIncome - fExpense, hasActuals: false };
   };
 
   // Helper per calcolo componenti prestito (duplicato per indipendenza utility)

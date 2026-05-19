@@ -58,6 +58,7 @@ export const buildCEData = (
   return {
     anno,
     ricaviCore:           agg['ricavo_core'],
+    ricaviImmobiliare:    agg['ricavo_immobiliare'],
     ricaviAltro:          agg['ricavo_altro'],
     costiVariabili:       agg['costo_variabile'].map(v => Math.abs(v)),
     costiFissi:           agg['costo_fisso'].map(v => Math.abs(v)),
@@ -68,7 +69,7 @@ export const buildCEData = (
         : Array(12).fill(0)),
     oneriFin:             agg['onere_finanziario'].map(v => Math.abs(v)),
     proventiFin:          agg['provento_finanziario'].map(v => Math.abs(v)),
-    straordinario:        agg['straordinario'], // Mantiene il segno (positivo = provento, negativo = onere)
+    straordinario:        agg['straordinario'],
     imposte:              manualOverrides?.imposte ?? Array(12).fill(0),
     compensoImprenditore: agg['distribuzione_utile'].map(v => Math.abs(v)),
   };
@@ -81,7 +82,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
   const add12 = (a: number[], b: number[]) => a.map((v, i) => v + b[i]);
   const sub12 = (a: number[], b: number[]) => a.map((v, i) => v - b[i]);
 
-  const totRicavi       = add12(ce.ricaviCore, ce.ricaviAltro);
+  const totRicavi       = add12(add12(ce.ricaviCore, ce.ricaviAltro), ce.ricaviImmobiliare);
   const totCostiVar     = ce.costiVariabili;
   const primoMargine    = sub12(totRicavi, totCostiVar);
   
@@ -147,11 +148,12 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
       }, 0);
   };
 
-  const forecastRicavi = getForecastSum(['ricavo_core', 'ricavo_altro']);
-  const forecastEbitda = getForecastSum(['ricavo_core', 'ricavo_altro', 'costo_variabile', 'costo_fisso', 'costo_studio']);
+  const forecastRicavi = getForecastSum(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare']);
+  const forecastEbitda = getForecastSum(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio']);
   
+  // I-2 fix: aggiunto 'ricavo_immobiliare' per includere vendite immobiliari nelle proiezioni EBT
   const forecastEbt = getForecastSum([
-    'ricavo_core', 'ricavo_altro', 'costo_variabile', 'costo_fisso',
+    'ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso',
     'costo_studio', 'ammortamento', 'onere_finanziario',
     'provento_finanziario', 'straordinario'
   ]);
@@ -354,15 +356,26 @@ export const calcPrevisioneFiscale = (
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
-  // costiFissiTot include ammortamenti (necessari per breakEven) — li sottraiamo qui
+  // I compensi agli amministratori (CDA) NON sono deducibili ai fini IRAP
+  const compensoAmministratoriIRAP = transactions
+    .filter(tx => {
+      const d = new Date(tx.date);
+      return d.getFullYear() === anno &&
+        !tx.isForecast &&
+        tx.category === '[PERSONALE] Compenso Amministratori';
+    })
+    .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+
+  // costiFissiTot include ammortamenti e costi studio (che include compenso amm.)
   const costiFissiSenzaAmmIRAP = ceMetrics.costiFissiTot - ammortamentiAnnoIRAP;
 
   const costiOperativiTotali =
     ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) +
     costiFissiSenzaAmmIRAP;
 
-  // Base IRAP = valore produzione - (costi operativi - personale dipendente)
-  const costiDeducibiliIRAP = costiOperativiTotali - costoPersonaleDipendente;
+  // Base IRAP = valore produzione - (costi operativi - personale dipendente - compensi amministratori)
+  // Il personale dipendente e gli amministratori non sono deducibili dall'IRAP in questo modello base
+  const costiDeducibiliIRAP = costiOperativiTotali - costoPersonaleDipendente - compensoAmministratoriIRAP;
   const baseImponibileIRAP = Math.max(0, valoreProduzione - costiDeducibiliIRAP);
 
   // Calcolo imposte
@@ -475,7 +488,11 @@ export const calcScostamenti = (
     const d = new Date(tx.date);
     if (d.getFullYear() !== anno) return false;
     if (mese !== null && d.getMonth() !== mese) return false;
-    return !!tx.isForecast === isForecast && !!tx.ceType;
+    if (!!tx.isForecast !== isForecast) return false;
+    if (!tx.ceType) return false;
+    // N11 fix: esclude forecast già liquidati (linkedForecastId) per non gonfiare il previsionale
+    if (isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id)) return false;
+    return true;
   };
 
   const sommaPerTipo = (isForecast: boolean, types: string[]) =>
@@ -568,13 +585,15 @@ export const calcPosizIoneIVA = (
     const txMese = txAnno.filter(tx => new Date(tx.date).getMonth() === mese);
 
     // IVA incassata = somma IVA su tutte le entrate con vatRate
+    // Escludi 'solo_cashflow' (finanziamenti, F24) e 'capex' (rate capitale finanziamenti)
     const ivaIncassata = txMese
-      .filter(tx => tx.type === 'INCOME' && (tx.vatRate || 0) > 0)
+      .filter(tx => tx.type === 'INCOME' && (tx.vatRate || 0) > 0 && tx.ceType !== 'solo_cashflow' && tx.ceType !== 'capex')
       .reduce((s, tx) => s + tx.amount * (tx.vatRate! / 100), 0);
 
     // IVA pagata = somma IVA su tutte le uscite con vatRate
+    // Escludi versamenti IVA/F24 stessi e rate capitale finanziamenti (ceType capex)
     const ivaPagata = txMese
-      .filter(tx => tx.type === 'EXPENSE' && (tx.vatRate || 0) > 0)
+      .filter(tx => tx.type === 'EXPENSE' && (tx.vatRate || 0) > 0 && tx.ceType !== 'solo_cashflow' && tx.ceType !== 'capex')
       .reduce((s, tx) => s + tx.amount * (tx.vatRate! / 100), 0);
 
     // Versamenti IVA già registrati (categoria specifica)
@@ -633,9 +652,10 @@ export const calcRollingDSODPO = (
   });
 
   // ── DSO ─────────────────────────────────────────────────────────
+  // N1 fix: aggiunto 'ricavo_immobiliare' per includere vendite immobiliari nel calcolo DSO
   const incassiClienti = txRolling.filter(tx =>
     tx.type === 'INCOME' &&
-    (tx.ceType === 'ricavo_core' || tx.ceType === 'ricavo_altro')
+    (tx.ceType === 'ricavo_core' || tx.ceType === 'ricavo_altro' || tx.ceType === 'ricavo_immobiliare')
   );
 
   const incassiConInvoiceDate = incassiClienti.filter(tx => tx.invoiceDate);

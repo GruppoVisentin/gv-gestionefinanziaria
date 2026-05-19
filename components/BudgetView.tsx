@@ -35,6 +35,7 @@ const formatPercent = (val: number) =>
 
 const DEFAULT_BUDGET_ROWS: BudgetRow[] = [
   { categoria: 'Ricavi Core (SAL/Commesse)', ceType: 'ricavo_core', budgetAnnuo: 0, budgetMensile: Array(12).fill(0) },
+  { categoria: 'Vendite Immobiliari', ceType: 'ricavo_immobiliare', budgetAnnuo: 0, budgetMensile: Array(12).fill(0) },
   { categoria: 'Altri Ricavi', ceType: 'ricavo_altro', budgetAnnuo: 0, budgetMensile: Array(12).fill(0) },
   { categoria: 'Costi Variabili', ceType: 'costo_variabile', budgetAnnuo: 0, budgetMensile: Array(12).fill(0) },
   { categoria: 'Costi Fissi', ceType: 'costo_fisso', budgetAnnuo: 0, budgetMensile: Array(12).fill(0) },

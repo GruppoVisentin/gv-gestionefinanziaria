@@ -125,11 +125,14 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const calculateLoanComponents = (
     principal: number, 
     details: LoanDetails | undefined, 
-    targetMonthIndex: number
+    targetMonthIndex: number,
+    targetYear?: number  // opzionale: default = currentYear (permette calcoli multi-anno)
   ) => {
     if (!details) return { principal: 0, interest: 0, total: 0 };
     
-    const targetDate = new Date(currentYear, targetMonthIndex, 1);
+    const yr = targetYear ?? currentYear;
+    // I-1 fix: usa giorno 15 (coerente con ExpenseTimeline) per corretta gestione preammortamento
+    const targetDate = new Date(yr, targetMonthIndex, 15);
     const intStart = new Date(details.interestStartDate);
     const princStart = new Date(details.principalStartDate);
     const end = details.endDate ? new Date(details.endDate) : new Date(princStart.getFullYear() + 20, princStart.getMonth(), 1);
@@ -141,7 +144,6 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     let currentType = details.rateType;
     
     if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
-      // Ordina per data e prendi l'ultima rinegoziazione valida per targetDate
       const rinegValide = [...details.rinegoziazioni]
         .filter(r => new Date(r.dataInizio) <= targetDate)
         .sort((a, b) => new Date(b.dataInizio).getTime() - new Date(a.dataInizio).getTime());
@@ -153,7 +155,21 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     }
 
     const monthlyRate = (currentRate / 100) / 12;
-    const n = (end.getFullYear() - princStart.getFullYear()) * 12 + (end.getMonth() - princStart.getMonth());
+
+    // I-1 fix: gestione periodo preammortamento (solo interessi tra intStart e princStart)
+    const amortizationStart = !isNaN(princStart.getTime()) ? princStart : intStart;
+    if (targetDate >= intStart && targetDate < amortizationStart) {
+      const onlyInterest = principal * monthlyRate;
+      return {
+        principal: 0,
+        interest: onlyInterest,
+        total: onlyInterest,
+        rateUsed: currentRate,
+        typeUsed: currentType
+      };
+    }
+
+    const n = (end.getFullYear() - amortizationStart.getFullYear()) * 12 + (end.getMonth() - amortizationStart.getMonth());
     
     if (n <= 0) return { principal: 0, interest: 0, total: 0 };
 
@@ -162,7 +178,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       ? principal * (monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
       : principal / n;
 
-    const monthsPassed = (targetDate.getFullYear() - princStart.getFullYear()) * 12 + (targetDate.getMonth() - princStart.getMonth());
+    const monthsPassed = (targetDate.getFullYear() - amortizationStart.getFullYear()) * 12 + (targetDate.getMonth() - amortizationStart.getMonth());
     if (monthsPassed < 0) return { principal: 0, interest: 0, total: 0 };
 
     const residualCapital = monthlyRate > 0
@@ -170,7 +186,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       : Math.max(0, principal - (principal / n * monthsPassed));
 
     const interestPayment = Math.max(0, residualCapital * monthlyRate);
-    const principalPayment = targetDate >= princStart ? Math.min(residualCapital, rataFissa - interestPayment) : 0;
+    const principalPayment = targetDate >= amortizationStart ? Math.min(residualCapital, rataFissa - interestPayment) : 0;
 
     return {
       principal: principalPayment,
@@ -181,11 +197,11 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     };
   };
 
-  const calculateLoanRepaymentForMonth = (monthIndex: number) => {
+  // Calcola le rate di finanziamento per un mese specifico (con anno parametrico per multi-anno)
+  const calculateLoanRepaymentForYear = (targetYear: number, monthIndex: number) => {
       let totalPayment = 0;
       let totalPrincipal = 0;
 
-      // 1. New Loans — escludi forecast se esiste un actual collegato via linkedForecastId O loanSourceId
       const loanTransactions = transactions.filter(t => 
         t.type === TransactionType.INCOME && 
         t.category === '[FINANZA] Finanziamenti Ricevuti' && 
@@ -197,23 +213,26 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       );
 
       loanTransactions.forEach(loan => {
-         const comps = calculateLoanComponents(loan.amount, loan.loanDetails, monthIndex);
+         const comps = calculateLoanComponents(loan.amount, loan.loanDetails, monthIndex, targetYear);
          totalPayment += comps.total;
          totalPrincipal += comps.principal;
       });
 
-      // 2. Existing Loans
       if (initialData && initialData.loans) {
           initialData.loans
              .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
              .forEach(loan => {
-                const comps = calculateLoanComponents(loan.originalAmount, loan.details, monthIndex);
+                const comps = calculateLoanComponents(loan.originalAmount, loan.details, monthIndex, targetYear);
                 totalPayment += comps.total;
                 totalPrincipal += comps.principal;
              });
       }
 
       return { totalPayment, totalPrincipal };
+  };
+
+  const calculateLoanRepaymentForMonth = (monthIndex: number) => {
+      return calculateLoanRepaymentForYear(currentYear, monthIndex);
   };
 
   // --- CALCULATION LOGIC FOR THRESHOLDS ---
@@ -286,6 +305,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     if (annoPartenza === currentYear) return saldoPartenza;
 
     // Altrimenti accumula i flussi previsionali da annoPartenza a currentYear-1
+    // incluse le rate finanziamenti (BUG #2/#3 fix: ora usiamo targetYear parametrico)
     let saldo = saldoPartenza;
     for (let anno = annoPartenza; anno < currentYear; anno++) {
       transactions.forEach(t => {
@@ -297,13 +317,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
           saldo -= getGrossAmount(t);
         }
       });
-      // Aggiungi anche le rate finanziamenti previsionali per quell'anno
+      // Sottrai le rate finanziamenti per quell'anno (ora corretto grazie a targetYear)
       for (let m = 0; m < 12; m++) {
-        // Approssimazione: usiamo calculateLoanRepaymentForMonth ma dovremmo passargli l'anno.
-        // Dato che calculateLoanRepaymentForMonth usa currentYear internamente, 
-        // dobbiamo assicurarci che possa calcolare per anni diversi.
-        // Per ora manteniamo la logica richiesta.
-        // NOTA: calculateLoanRepaymentForMonth usa currentYear.
+        const { totalPayment } = calculateLoanRepaymentForYear(anno, m);
+        saldo -= totalPayment;
       }
     }
     return saldo;
@@ -363,11 +380,11 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
+    // BUG #4: escludi ammortamenti (non monetari) dal cash flow
     let expense = monthlyTransactions
-      .filter(t => t.type === TransactionType.EXPENSE)
+      .filter(t => t.type === TransactionType.EXPENSE && t.ceType !== 'ammortamento')
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
-    // ADD AUTOMATIC LOAN REPAYMENTS TO FORECAST EXPENSES (TOTAL RATA)
     if (isForecast) {
         const { totalPayment } = calculateLoanRepaymentForMonth(monthIndex);
         expense += totalPayment;
@@ -397,11 +414,11 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         );
       })
       .reduce((acc, t) => {
+        if (t.ceType === 'ammortamento') return acc; // BUG #4: ammortamenti non monetari esclusi
         const val = getGrossAmount(t);
         return acc + (t.type === TransactionType.INCOME ? val : -val);
       }, 0);
 
-    // Subtract Loan Repayments for Forecast
     if (isForecast) {
         let annualAutoCosts = 0;
         for (let i = 0; i < 12; i++) {
@@ -423,17 +440,17 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
   const mesiARischio = useMemo(() => {
     const result: { mese: number; saldo: number; tipo: 'negativo' | 'attenzione' }[] = [];
-    let cumulativo = totalInitialBalance;
+    // BUG #5 fix: usa saldoInizialeConsuntivo come base reale di partenza
+    let cumulativo = saldoInizialeConsuntivo;
 
     for (let i = 0; i < 12; i++) {
-      // Mesi passati/corrente: usa consuntivo reale; mesi futuri: usa previsionale
       if (i <= meseCorrente) {
         cumulativo += calculateMonthlyFlow(i, false);
       } else {
         cumulativo += calculateMonthlyFlow(i, true);
       }
 
-      if (i > meseCorrente) { // solo mesi futuri
+      if (i > meseCorrente) {
         if (cumulativo < 0) {
           result.push({ mese: i, saldo: cumulativo, tipo: 'negativo' });
         } else if (cumulativo < safetyThreshold) {
@@ -442,7 +459,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       }
     }
     return result;
-  }, [transactions, totalInitialBalance, safetyThreshold, currentYear]);
+  }, [transactions, saldoInizialeConsuntivo, safetyThreshold, currentYear]);
 
   const getBalanceColor = (balance: number) => {
       if (balance < 1) return 'text-rose-500 font-bold'; 
@@ -556,10 +573,16 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   };
 
   const handleImportHistory = () => {
+      // N8 fix: escludi ammortamenti (non monetari) e distribuzioni utili dal saldo storico
       const previousNetFlow = transactions
         .filter(t => {
           const tYear = new Date(t.date).getFullYear();
-          return !t.isForecast && tYear < currentYear;
+          return (
+            !t.isForecast &&
+            tYear < currentYear &&
+            t.ceType !== 'ammortamento' &&
+            t.ceType !== 'distribuzione_utile'
+          );
         })
         .reduce((acc, t) => {
           const val = getGrossAmount(t);
@@ -665,7 +688,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
            : `${currentYear}-01-15`;
 
        if (existingTxs.length === 0) {
-          // CREA DUE TRANSAZIONI (Forecast & Actual)
+          // BUG #7 fix: crea SOLO la transazione forecast.
+          // La transazione consuntiva viene creata solo quando l'utente registra l'effettiva erogazione.
           onSaveTransaction({
              amount: loan.originalAmount,
              date: erogationDate,
@@ -676,17 +700,6 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
              loanSourceId: loan.id,
              vatRate: 0,
              isForecast: true
-          });
-          onSaveTransaction({
-             amount: loan.originalAmount,
-             date: erogationDate,
-             type: TransactionType.INCOME,
-             category: '[FINANZA] Finanziamenti Ricevuti',
-             description: loan.name,
-             loanDetails: loan.details,
-             loanSourceId: loan.id,
-             vatRate: 0,
-             isForecast: false
           });
           syncCount++;
        } else {

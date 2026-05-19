@@ -59,10 +59,11 @@ export const exportMonthlyReportPDF = async (config: MonthlyReportConfig): Promi
     return d.getFullYear() === year && d.getMonth() === monthIndex;
   });
 
-  const income       = txMese.filter(t => t.type === TransactionType.INCOME && !t.isForecast);
-  const expense      = txMese.filter(t => t.type === TransactionType.EXPENSE && !t.isForecast);
-  const forecIncome  = txMese.filter(t => t.type === TransactionType.INCOME && t.isForecast);
-  const forecExpense = txMese.filter(t => t.type === TransactionType.EXPENSE && t.isForecast);
+  // Escludi ammortamenti (costi non monetari) dal flusso di cassa
+  const income       = txMese.filter(t => t.type === TransactionType.INCOME && !t.isForecast && t.ceType !== 'ammortamento');
+  const expense      = txMese.filter(t => t.type === TransactionType.EXPENSE && !t.isForecast && t.ceType !== 'ammortamento');
+  const forecIncome  = txMese.filter(t => t.type === TransactionType.INCOME && t.isForecast && t.ceType !== 'ammortamento');
+  const forecExpense = txMese.filter(t => t.type === TransactionType.EXPENSE && t.isForecast && t.ceType !== 'ammortamento');
 
   const costiVariabili = expense.filter(t => t.ceType === 'costo_variabile');
   const costiFissi     = expense.filter(t => t.ceType === 'costo_fisso' || t.ceType === 'costo_studio');

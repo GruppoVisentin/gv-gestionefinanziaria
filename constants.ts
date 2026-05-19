@@ -231,7 +231,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
 
   // ONERI FINANZIARI (sotto EBITDA nel CE)
   "[FINANZA] Interessi Passivi Finanziamenti":         'onere_finanziario',
-  "[FINANZA] Commissioni e Bolli Bancari":             'costo_fisso',
+  "[FINANZA] Commissioni e Bolli Bancari":             'onere_finanziario',
   // SOLO CASH FLOW — FISCALE
   "[FISCO] Versamento IVA":                            'solo_cashflow',
   "[FISCO] F24 — IRPEF / IRES / IRAP":                'solo_cashflow',

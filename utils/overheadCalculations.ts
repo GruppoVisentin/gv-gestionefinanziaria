@@ -37,7 +37,7 @@ export const calculateOverheadRates = (
 
   const txAnno = transactions.filter(tx => {
     const d = new Date(tx.date);
-    return d.getFullYear() === anno && tx.ceType;
+    return d.getFullYear() === anno && tx.ceType && !tx.isForecast;
   });
 
   const sumByType = (types: string[]) =>
@@ -50,7 +50,7 @@ export const calculateOverheadRates = (
   const totaleOverheadPuro    = sumByType(['costo_fisso', 'ammortamento']);
   const totaleOneriFin        = sumByType(['onere_finanziario']);
   const totaleOverheadCompleto = totaleCostiStudio + totaleOverheadPuro;
-  const fatturato             = sumByType(['ricavo_core', 'ricavo_altro']);
+  const fatturato             = sumByType(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare']);
 
   // Compenso Soci: costo_studio con categoria che contiene 'Compenso Amministratori' o 'Soci'
   const compensoSoci = txAnno

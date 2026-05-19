@@ -224,12 +224,13 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     });
   };
 
-  // Get Monthly Totals (Gross) - Includes EVERYTHING
+  // Get Monthly Totals (Gross) — esclude forecast già incassati come consuntivo
   const getMonthlyTotal = (monthIndex: number, isForecast: boolean) => {
     return incomeTransactions
       .filter(t => {
         const tDate = new Date(t.date);
         const tForecast = !!t.isForecast;
+        if (tForecast && isForecast && isForecastPaid(t.id)) return false; // escludi se già incassato
         return (
           tDate.getMonth() === monthIndex &&
           tDate.getFullYear() === currentYear &&
@@ -239,7 +240,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
   };
 
-  // Get Annual Totals per Row
+  // Get Annual Totals per Row — esclude forecast già incassati
   const getRowAnnualTotal = (key: string, isForecast: boolean) => {
     let sourceList;
     if (key === 'FINANCING') sourceList = financingTransactions;
@@ -251,6 +252,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       const tProj = t.project?.trim() || 'Generale';
       const tForecast = !!t.isForecast;
       const matchKey = (key === 'FINANCING' || key === 'INVESTMENT') ? true : tProj === key;
+      if (tForecast && isForecast && isForecastPaid(t.id)) return false; // escludi se già incassato
       return (
         matchKey &&
         tDate.getFullYear() === currentYear &&
@@ -259,11 +261,12 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
   };
 
-  // Get Grand Annual Total
+  // Get Grand Annual Total — esclude forecast già incassati
   const getGrandAnnualTotal = (isForecast: boolean) => {
     return incomeTransactions.filter(t => {
       const tDate = new Date(t.date);
       const tForecast = !!t.isForecast;
+      if (tForecast && isForecast && isForecastPaid(t.id)) return false;
       return tDate.getFullYear() === currentYear && tForecast === isForecast;
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
   };

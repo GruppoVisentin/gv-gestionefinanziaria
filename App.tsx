@@ -872,8 +872,9 @@ const App: React.FC = () => {
         for (let i = 0; i < fase.durataMesi; i++) {
           const txDate = new Date(startDate.getFullYear(), startDate.getMonth() + currentMonthOffset, 1);
           
+          const realCeType = CATEGORY_TO_CE_TYPE[voce.categoria] || 'solo_cashflow';
           const newTx: Transaction = {
-            id: Math.random().toString(36).substr(2, 9),
+            id: crypto.randomUUID(), // N2 fix: usa UUID invece di Math.random()
             date: txDate.toISOString().split('T')[0],
             amount: monthlyAmount,
             vatRate: 22,
@@ -882,7 +883,8 @@ const App: React.FC = () => {
             description: `Previsionale ${c.nome} — ${voce.categoria.split('] ')[1] || voce.categoria}`,
             project: c.nome,
             isForecast: true,
-            ceType: voce.ceType as any
+            ceType: realCeType as any, // N2 fix: garantisce che il ceType derivi da constants.ts
+            sourceRef: c.id // N10 fix: cantiereWizardId salvato in sourceRef
           };
           newTransactions.push(newTx);
           currentMonthOffset++;
@@ -895,7 +897,8 @@ const App: React.FC = () => {
   };
 
   const handleDeleteCantiereGenerated = (c: CantierePrev) => {
-    setTransactions(prev => prev.filter(tx => !(tx.isForecast && tx.description.includes(`Previsionale ${c.nome}`))));
+    // N10 fix: match esatto sul sourceRef (cantiereWizardId) invece che sulla descrizione
+    setTransactions(prev => prev.filter(tx => !(tx.isForecast && tx.sourceRef === c.id)));
     setCantieriPrev(prev => prev.map(item => item.id === c.id ? { ...item, previsionaliGenerati: false } : item));
   };
 

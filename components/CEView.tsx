@@ -168,6 +168,7 @@ const CEView: React.FC<CEViewProps> = ({
         percentuale: 1,
         steps: [
           { label: 'Ricavi Core (SAL, saldi, vendite)', valore: s12(ceData.ricaviCore), isPositivo: true },
+          { label: 'Vendite Immobiliari', valore: s12(ceData.ricaviImmobiliare), isPositivo: true, indent: true },
           { label: 'Altri Ricavi', valore: s12(ceData.ricaviAltro), isPositivo: true, indent: true },
           { label: 'Fatturato Totale', valore: fat, isPositivo: true, isRisultato: true, percentualeSu: fat },
         ],
@@ -566,6 +567,7 @@ const CEView: React.FC<CEViewProps> = ({
               {/* RICAVI */}
               <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">① Ricavi di Struttura</td></tr>
               {renderRow('Ricavi Core (SAL/Commesse)', ceData.ricaviCore, 'auto')}
+              {renderRow('Vendite Immobiliari', ceData.ricaviImmobiliare, 'auto')}
               {renderRow('Altri Ricavi (Affitti/Sviluppo)', ceData.ricaviAltro, 'auto')}
               <tr className="bg-slate-100 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALE RICAVI (A)</td>

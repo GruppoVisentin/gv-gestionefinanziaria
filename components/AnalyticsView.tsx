@@ -72,6 +72,7 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
               if (filterType === 'FIN') return t.category === '[FINANZA] Finanziamenti Ricevuti' || t.category === '[FINANZA] Ritorno da Investimenti / Dividendi';
           } 
           if (type === TransactionType.EXPENSE) {
+              if (t.ceType === 'ammortamento') return false; // N5 / Cash Flow alignment: esclude ammortamenti (costi non monetari)
               if (filterType === 'FIXED') return fixedCategories.includes(t.category);
               if (filterType === 'VAR') return !fixedCategories.includes(t.category);
           }
@@ -171,6 +172,7 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
       return transactions.filter(t => 
         !t.isForecast && 
         new Date(t.date).getFullYear() === selectedYear &&
+        t.ceType !== 'ammortamento' && // N5 / Cash Flow alignment: esclude ammortamenti
         (selectedProject === 'all' || (t.project || '') === selectedProject)
       );
   }, [transactions, selectedYear, selectedProject]);
@@ -185,6 +187,7 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
     return transactions.filter(t => 
         t.isForecast &&
         new Date(t.date).getFullYear() === selectedYear &&
+        t.ceType !== 'ammortamento' && // N5 / Cash Flow alignment: esclude ammortamenti
         (selectedMonth === 'all' || new Date(t.date).getMonth() === selectedMonth) &&
         (selectedProject === 'all' || (t.project || '') === selectedProject)
     );

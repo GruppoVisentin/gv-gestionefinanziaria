@@ -26,6 +26,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, 
 
   const actualTransactions = transactions.filter(t =>
     !t.isForecast &&
+    t.ceType !== 'ammortamento' &&
     new Date(t.date).getFullYear() === currentYear
   );
 

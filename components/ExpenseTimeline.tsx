@@ -305,6 +305,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
           tDate.getMonth() === monthIndex &&
           tDate.getFullYear() === currentYear &&
           tForecast === isForecast &&
+          t.ceType !== 'ammortamento' && // N5 fix: ammortamenti non monetari esclusi
           (fixedCategories.includes(t.category) || variableCategories.includes(t.category))
         );
       })
@@ -331,7 +332,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       return (
         t.category === category &&
         tDate.getFullYear() === currentYear &&
-        tForecast === isForecast
+        tForecast === isForecast &&
+        t.ceType !== 'ammortamento' // N5 fix: ammortamenti non monetari esclusi
       );
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
 
@@ -390,6 +392,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       const tForecast = !!t.isForecast;
       return tDate.getFullYear() === currentYear && 
              tForecast === isForecast &&
+             t.ceType !== 'ammortamento' && // N5 fix: ammortamenti non monetari esclusi
              (fixedCategories.includes(t.category) || variableCategories.includes(t.category));
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
 

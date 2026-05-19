@@ -284,7 +284,9 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
 
     const transactions: Transaction[] = daImportare.map(r => {
       const vatRate = r.vatRateConfermato ?? r.vatRateSuggerito ?? 0;
-      const tx = rigaToTransaction(r.riga, r.categoria!, r.ceType!, Number(vatRate), undefined, sessionId);
+      // N6 fix: usa CATEGORY_TO_CE_TYPE per estrarre sempre il ceType corretto, bypassando eventuali disallineamenti nelle regole
+      const finalCeType = CATEGORY_TO_CE_TYPE[r.categoria!] ?? r.ceType ?? 'solo_cashflow';
+      const tx = rigaToTransaction(r.riga, r.categoria!, finalCeType, Number(vatRate), undefined, sessionId);
       // Se c'è un cantiere suggerito e confermato (o matchato), lo impostiamo
       if (r.cantiereSuggerito) {
         tx.project = r.cantiereSuggerito;
