@@ -100,6 +100,7 @@ export const VARIABLE_COST_CATEGORIES: string[] = [
 
   // ─── COSTI DIRETTI DI CANTIERE ────────────────────────────────
   "[CANTIERE] Assicurazione Cantieri",
+  "[CANTIERE] Oneri Comunali",
   "[CANTIERE] Rifiuti e Macerie",
   "[CANTIERE] Pranzi e Trasferte Cantiere",           // era: PRANZI
 
@@ -201,6 +202,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
   "[FORNITORI] Subappalti su Cantieri":                'costo_variabile',
   "[CONSULENZE] Professionisti Esterni di Cantiere":   'costo_variabile',
   "[CANTIERE] Assicurazione Cantieri":                 'costo_variabile',
+  "[CANTIERE] Oneri Comunali":                         'costo_variabile',
   "[CANTIERE] Rifiuti e Macerie":                      'costo_variabile',
   "[CANTIERE] Pranzi e Trasferte Cantiere":            'costo_variabile',
   "[MEZZI] Riparazioni Macchinari Urgenti":            'costo_variabile',
