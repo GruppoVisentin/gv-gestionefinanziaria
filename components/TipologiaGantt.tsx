@@ -32,8 +32,12 @@ interface TipologiaGanttProps {
 // ─── COMPONENTE ──────────────────────────────────────────────────
 
 // ─── HELPERS ───────────────────────────────────────────────────────
-const getOffset = (mese: number) => mese > 0 ? mese - 1 : mese;
-const getDurata = (meseInizio: number, meseFine: number) => getOffset(meseFine) - getOffset(meseInizio) + 1;
+const getOffset = (mese: any) => {
+  const m = parseInt(mese, 10);
+  if (isNaN(m)) return 0; // Fallback per calcoli se l'input è temporaneamente "-" o vuoto
+  return m > 0 ? m - 1 : m;
+};
+const getDurata = (meseInizio: number | string, meseFine: number | string) => getOffset(meseFine) - getOffset(meseInizio) + 1;
 
 const normalizeVoci = (voci: VoceCostoTipologia[]) => {
   return voci.map(v => {
@@ -315,22 +319,32 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
                                 <div className="flex items-center gap-2 flex-1 flex-wrap">
                                   <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-slate-400">Dal:</span>
-                                    <input type="number"
+                                    <input type="text"
                                       value={f.meseInizio}
                                       onChange={e => {
-                                          const val = parseInt(e.target.value) || 1;
-                                          if (val !== 0) updateFase(voce.categoria, f.id, 'meseInizio', val);
+                                          const valStr = e.target.value;
+                                          if (valStr === '' || valStr === '-') {
+                                              updateFase(voce.categoria, f.id, 'meseInizio', valStr as any);
+                                          } else {
+                                              const val = parseInt(valStr, 10);
+                                              if (!isNaN(val) && val !== 0) updateFase(voce.categoria, f.id, 'meseInizio', val);
+                                          }
                                       }}
                                       className="w-12 text-center text-xs font-bold border border-slate-200 rounded-lg py-1 outline-none focus:border-indigo-400"
                                     />
                                   </div>
                                   <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-slate-400">Al:</span>
-                                    <input type="number"
+                                    <input type="text"
                                       value={f.meseFine}
                                       onChange={e => {
-                                          const val = parseInt(e.target.value) || 1;
-                                          if (val !== 0) updateFase(voce.categoria, f.id, 'meseFine', val);
+                                          const valStr = e.target.value;
+                                          if (valStr === '' || valStr === '-') {
+                                              updateFase(voce.categoria, f.id, 'meseFine', valStr as any);
+                                          } else {
+                                              const val = parseInt(valStr, 10);
+                                              if (!isNaN(val) && val !== 0) updateFase(voce.categoria, f.id, 'meseFine', val);
+                                          }
                                       }}
                                       className="w-12 text-center text-xs font-bold border border-slate-200 rounded-lg py-1 outline-none focus:border-indigo-400"
                                     />

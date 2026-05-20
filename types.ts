@@ -208,8 +208,8 @@ export interface BudgetData {
 
 export interface FaseDistribuzione {
     id: string;
-    meseInizio: number;          // es. 1 per inizio cantiere, -1 per il mese prima
-    meseFine: number;            // es. 3 (incluso)
+    meseInizio: number | string;          // es. 1 per inizio cantiere, -1 per il mese prima (stringa per gestire input temporanei come "-")
+    meseFine: number | string;            // es. 3 (incluso)
     durataMesi?: number;         // Deprecato: mantenuto temporaneamente per retrocompatibilità
     percentuale: number;         // % del totale da distribuire in questa fase (0-100)
     // la distribuzione dentro la fase è uniforme sui mesi della fase

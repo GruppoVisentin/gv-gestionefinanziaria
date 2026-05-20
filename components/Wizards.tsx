@@ -565,21 +565,31 @@ const TipologiaForm: React.FC<{ tipologia: TipologiaCantiere, onSave: (t: Tipolo
                               <div className="flex-1 flex items-center gap-2">
                                 <span className="text-[10px] text-amber-400 font-bold">DAL</span>
                                 <input 
-                                  type="number" 
-                                  value={f.meseInizio || ''} 
+                                  type="text" 
+                                  value={f.meseInizio === undefined ? '' : f.meseInizio} 
                                   onChange={e => {
-                                      const val = parseInt(e.target.value) || 1;
-                                      if (val !== 0) updateFase(cat, f.id, 'meseInizio', val);
+                                      const valStr = e.target.value;
+                                      if (valStr === '' || valStr === '-') {
+                                          updateFase(cat, f.id, 'meseInizio', valStr as any);
+                                      } else {
+                                          const val = parseInt(valStr, 10);
+                                          if (!isNaN(val) && val !== 0) updateFase(cat, f.id, 'meseInizio', val);
+                                      }
                                   }}
                                   className="w-12 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-center text-amber-900"
                                 />
                                 <span className="text-[10px] text-amber-400 font-bold">AL</span>
                                 <input 
-                                  type="number" 
-                                  value={f.meseFine || ''} 
+                                  type="text" 
+                                  value={f.meseFine === undefined ? '' : f.meseFine} 
                                   onChange={e => {
-                                      const val = parseInt(e.target.value) || 1;
-                                      if (val !== 0) updateFase(cat, f.id, 'meseFine', val);
+                                      const valStr = e.target.value;
+                                      if (valStr === '' || valStr === '-') {
+                                          updateFase(cat, f.id, 'meseFine', valStr as any);
+                                      } else {
+                                          const val = parseInt(valStr, 10);
+                                          if (!isNaN(val) && val !== 0) updateFase(cat, f.id, 'meseFine', val);
+                                      }
                                   }}
                                   className="w-12 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-center text-amber-900"
                                 />

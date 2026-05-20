@@ -868,10 +868,15 @@ const App: React.FC = () => {
       voce.fasi.forEach(fase => {
         const faseAmount = (totalAmount * fase.percentuale) / 100;
         
-        let meseInizio = fase.meseInizio;
-        let meseFine = fase.meseFine;
+        const getMeseValue = (m: any) => {
+           const parsed = parseInt(m, 10);
+           return isNaN(parsed) ? 1 : parsed;
+        };
         
-        if (meseInizio === undefined || meseFine === undefined) {
+        let meseInizio = getMeseValue(fase.meseInizio);
+        let meseFine = getMeseValue(fase.meseFine);
+        
+        if (fase.meseInizio === undefined || fase.meseFine === undefined) {
            meseInizio = offsetMesiLegacy >= 0 ? offsetMesiLegacy + 1 : offsetMesiLegacy;
            const offsetFine = offsetMesiLegacy + (fase.durataMesi || 1) - 1;
            meseFine = offsetFine >= 0 ? offsetFine + 1 : offsetFine;
