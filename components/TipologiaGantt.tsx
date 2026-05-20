@@ -31,29 +31,59 @@ interface TipologiaGanttProps {
 
 // ─── COMPONENTE ──────────────────────────────────────────────────
 
+// ─── HELPERS ───────────────────────────────────────────────────────
+const getOffset = (mese: number) => mese > 0 ? mese - 1 : mese;
+const getDurata = (meseInizio: number, meseFine: number) => getOffset(meseFine) - getOffset(meseInizio) + 1;
+
+const normalizeVoci = (voci: VoceCostoTipologia[]) => {
+  return voci.map(v => {
+    let offsetMesi = 0;
+    const fasiNormalizzate = v.fasi.map(f => {
+      if (f.meseInizio === undefined || f.meseFine === undefined) {
+        const meseInizio = offsetMesi >= 0 ? offsetMesi + 1 : offsetMesi;
+        const durataMesi = f.durataMesi || 1;
+        const offsetFine = offsetMesi + durataMesi - 1;
+        const meseFine = offsetFine >= 0 ? offsetFine + 1 : offsetFine;
+        offsetMesi += durataMesi;
+        return { ...f, meseInizio, meseFine };
+      }
+      return f;
+    });
+    return { ...v, fasi: fasiNormalizzate };
+  });
+};
+
 const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
   tipologia, durataProgetto, importiStimati, onSave, onClose, variableCategories
 }) => {
-  const [voci, setVoci] = useState<VoceCostoTipologia[]>(tipologia.vociAttive);
+  const [voci, setVoci] = useState<VoceCostoTipologia[]>(normalizeVoci(tipologia.vociAttive));
   const [durata, setDurata] = useState(durataProgetto);
   const [dragging, setDragging] = useState<{ cat: string; faseId: string; type: 'move' | 'resize' } | null>(null);
   const [categoriaAperta, setCategoriaAperta] = useState<string | null>(null);
   const ganttRef = useRef<HTMLDivElement>(null);
 
-  const mesiLabel = Array.from({ length: durata }, (_, i) => {
-    const label = MESI_LABEL[i % 12];
-    const anno = Math.floor(i / 12) + 1;
-    return durata > 12 ? `${label} A${anno}` : label;
+  const allStarts = voci.flatMap(v => v.fasi.map(f => getOffset(f.meseInizio)));
+  const minOffset = Math.min(0, ...(allStarts.length > 0 ? allStarts : [0]));
+  
+  const allEnds = voci.flatMap(v => v.fasi.map(f => getOffset(f.meseFine)));
+  const maxOffset = Math.max(durata - 1, ...(allEnds.length > 0 ? allEnds : [durata - 1]));
+  
+  const totalGridMonths = maxOffset - minOffset + 1;
+
+  const mesiLabel = Array.from({ length: totalGridMonths }, (_, i) => {
+    const offset = minOffset + i;
+    const mese = offset >= 0 ? offset + 1 : offset;
+    return `M${mese}`;
   });
 
   // ── Calcola la posizione di ogni fase sulla timeline ─────────
 
   const getFasiConPosizione = (voce: VoceCostoTipologia) => {
-    let offset = 0;
     return voce.fasi.map(f => {
-      const start = offset;
-      offset += f.durataMesi;
-      return { ...f, start, end: start + f.durataMesi };
+      const start = getOffset(f.meseInizio);
+      const end = getOffset(f.meseFine) + 1; // +1 per css width
+      const durataMesi = end - start;
+      return { ...f, start, end, durataMesi };
     });
   };
 
@@ -68,8 +98,19 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
   };
 
   const addFase = (cat: string) => {
+    const voce = voci.find(v => v.categoria === cat);
+    const ultimaFase = voce?.fasi[voce.fasi.length - 1];
+    
+    let meseInizio = 1;
+    if (ultimaFase) {
+      const startOffset = getOffset(ultimaFase.meseFine) + 1;
+      meseInizio = startOffset >= 0 ? startOffset + 1 : startOffset;
+    }
+    const endOffset = getOffset(meseInizio) + 1;
+    const meseFine = endOffset >= 0 ? endOffset + 1 : endOffset;
+
     const nuovaFase: FaseDistribuzione = {
-      id: uuidv4(), durataMesi: 2, percentuale: 0
+      id: uuidv4(), meseInizio, meseFine, percentuale: 0
     };
     setVoci(prev => prev.map(v =>
       v.categoria === cat ? { ...v, fasi: [...v.fasi, nuovaFase] } : v
@@ -89,7 +130,7 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
       const ceType = variableCategories.includes(cat) ? 'costo_variabile' : 'costo_fisso';
       setVoci(prev => [...prev, {
         categoria: cat, ceType,
-        fasi: [{ id: uuidv4(), durataMesi: Math.ceil(durata / 2), percentuale: 100 }]
+        fasi: [{ id: uuidv4(), meseInizio: 1, meseFine: Math.ceil(durata / 2), percentuale: 100 }]
       }]);
     }
     setCategoriaAperta(cat);
@@ -171,14 +212,18 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
             ) : (
               <div ref={ganttRef} className="overflow-x-auto">
                 {/* Header mesi */}
-                <div className="flex mb-3" style={{ minWidth: `${durata * 60 + 200}px` }}>
+                <div className="flex mb-3" style={{ minWidth: `${totalGridMonths * 60 + 200}px` }}>
                   <div style={{ width: 200 }} className="shrink-0" />
-                  {mesiLabel.map((m, i) => (
-                    <div key={i} style={{ width: 60 }}
-                      className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center border-l border-slate-100 py-1">
-                      {m}
-                    </div>
-                  ))}
+                  {mesiLabel.map((m, i) => {
+                    const offset = minOffset + i;
+                    const isPreCantiere = offset < 0;
+                    return (
+                      <div key={i} style={{ width: 60 }}
+                        className={`text-[9px] font-black uppercase tracking-widest text-center border-l border-slate-100 py-1 ${isPreCantiere ? 'text-amber-500 bg-amber-50/50' : 'text-slate-400'}`}>
+                        {m}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Righe categorie */}
@@ -193,7 +238,7 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
                   return (
                     <div key={voce.categoria} className="mb-2">
                       {/* Riga Gantt */}
-                      <div className="flex items-center" style={{ minWidth: `${durata * 60 + 200}px` }}>
+                      <div className="flex items-center" style={{ minWidth: `${totalGridMonths * 60 + 200}px` }}>
                         {/* Label categoria */}
                         <div style={{ width: 200 }}
                           className="shrink-0 pr-4 flex items-center justify-between">
@@ -217,13 +262,13 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
                           {/* Sfondo griglia mesi */}
                           {mesiLabel.map((_, i) => (
                             <div key={i} className="absolute top-0 bottom-0 border-l border-slate-100"
-                              style={{ left: `${(i / durata) * 100}%` }} />
+                              style={{ left: `${(i / totalGridMonths) * 100}%` }} />
                           ))}
 
                           {/* Barre fasi */}
                           {fasiPos.map((f, fi) => {
-                            const left = (f.start / durata) * 100;
-                            const width = (f.durataMesi / durata) * 100;
+                            const left = ((f.start - minOffset) / totalGridMonths) * 100;
+                            const width = (f.durataMesi / totalGridMonths) * 100;
                             const importoFase = importo * (f.percentuale / 100);
                             return (
                               <div key={f.id}
@@ -234,7 +279,7 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
                                   backgroundColor: colore,
                                   opacity: 0.7 + (fi * 0.1),
                                 }}
-                                title={`Fase ${fi + 1}: ${f.durataMesi} mesi, ${f.percentuale}%${importoFase > 0 ? ` — ${fmt(importoFase)}` : ''}`}
+                                title={`Fase ${fi + 1}: dal mese ${f.meseInizio} al ${f.meseFine} (${f.durataMesi} mesi), ${f.percentuale}%${importoFase > 0 ? ` — ${fmt(importoFase)}` : ''}`}
                               >
                                 <span className="text-[9px] font-black truncate px-1">
                                   {f.percentuale}%
@@ -269,14 +314,28 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
 
                                 <div className="flex items-center gap-2 flex-1 flex-wrap">
                                   <div className="flex items-center gap-1">
-                                    <span className="text-[10px] text-slate-400">Durata:</span>
-                                    <input type="number" min={1} max={durata}
-                                      value={f.durataMesi}
-                                      onChange={e => updateFase(voce.categoria, f.id, 'durataMesi', parseInt(e.target.value) || 1)}
+                                    <span className="text-[10px] text-slate-400">Dal:</span>
+                                    <input type="number"
+                                      value={f.meseInizio}
+                                      onChange={e => {
+                                          const val = parseInt(e.target.value) || 1;
+                                          if (val !== 0) updateFase(voce.categoria, f.id, 'meseInizio', val);
+                                      }}
                                       className="w-12 text-center text-xs font-bold border border-slate-200 rounded-lg py-1 outline-none focus:border-indigo-400"
                                     />
-                                    <span className="text-[10px] text-slate-400">mesi</span>
                                   </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-slate-400">Al:</span>
+                                    <input type="number"
+                                      value={f.meseFine}
+                                      onChange={e => {
+                                          const val = parseInt(e.target.value) || 1;
+                                          if (val !== 0) updateFase(voce.categoria, f.id, 'meseFine', val);
+                                      }}
+                                      className="w-12 text-center text-xs font-bold border border-slate-200 rounded-lg py-1 outline-none focus:border-indigo-400"
+                                    />
+                                  </div>
+                                  <span className="text-[10px] text-slate-400">({f.durataMesi} mesi)</span>
 
                                   <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-slate-400">Quota:</span>
@@ -294,12 +353,7 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
                                     </span>
                                   )}
 
-                                  {/* Inizio relativo */}
-                                  <span className="text-[10px] text-slate-400 ml-auto">
-                                    Inizia al mese {f.start + 1}
-                                    {f.start === 0 && <span className="text-indigo-500 font-bold"> (inizio lavori)</span>}
-                                    {f.start < 0 && <span className="text-amber-500 font-bold"> (pre-cantiere)</span>}
-                                  </span>
+                                    {/* Info inizio relativo rimossa in quanto ridondante con meseInizio/meseFine visibili */}
                                 </div>
 
                                 {fasiPos.length > 1 && (

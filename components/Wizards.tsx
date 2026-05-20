@@ -436,7 +436,7 @@ const TipologiaForm: React.FC<{ tipologia: TipologiaCantiere, onSave: (t: Tipolo
       setVociAttive(prev => [...prev, {
         categoria,
         ceType: 'costo_variabile',
-        fasi: [{ id: generateId(), durataMesi: 1, percentuale: 100 }]
+        fasi: [{ id: generateId(), meseInizio: 1, meseFine: 1, percentuale: 100 }]
       }]);
     }
   };
@@ -456,9 +456,19 @@ const TipologiaForm: React.FC<{ tipologia: TipologiaCantiere, onSave: (t: Tipolo
   const addFase = (cat: string) => {
     setVociAttive(prev => prev.map(v => {
       if (v.categoria === cat) {
+        const ultimaFase = v.fasi[v.fasi.length - 1];
+        let meseInizio = 1;
+        if (ultimaFase && ultimaFase.meseFine !== undefined) {
+          const mF = ultimaFase.meseFine;
+          const startOffset = (mF > 0 ? mF - 1 : mF) + 1;
+          meseInizio = startOffset >= 0 ? startOffset + 1 : startOffset;
+        }
+        const endOffset = (meseInizio > 0 ? meseInizio - 1 : meseInizio) + 1;
+        const meseFine = endOffset >= 0 ? endOffset + 1 : endOffset;
+
         return {
           ...v,
-          fasi: [...v.fasi, { id: generateId(), durataMesi: 1, percentuale: 0 }]
+          fasi: [...v.fasi, { id: generateId(), meseInizio, meseFine, percentuale: 0 }]
         };
       }
       return v;
@@ -553,14 +563,26 @@ const TipologiaForm: React.FC<{ tipologia: TipologiaCantiere, onSave: (t: Tipolo
                             <div key={f.id} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-amber-100 shadow-sm">
                               <div className="text-[10px] font-black text-amber-400 w-12 uppercase">Fase {idx + 1}</div>
                               <div className="flex-1 flex items-center gap-2">
-                                <span className="text-[10px] text-amber-400 font-bold">DURATA</span>
+                                <span className="text-[10px] text-amber-400 font-bold">DAL</span>
                                 <input 
                                   type="number" 
-                                  value={f.durataMesi} 
-                                  onChange={e => updateFase(cat, f.id, 'durataMesi', parseInt(e.target.value) || 1)}
-                                  className="w-16 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-center text-amber-900"
+                                  value={f.meseInizio || ''} 
+                                  onChange={e => {
+                                      const val = parseInt(e.target.value) || 1;
+                                      if (val !== 0) updateFase(cat, f.id, 'meseInizio', val);
+                                  }}
+                                  className="w-12 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-center text-amber-900"
                                 />
-                                <span className="text-[10px] text-amber-400 font-bold">MESI</span>
+                                <span className="text-[10px] text-amber-400 font-bold">AL</span>
+                                <input 
+                                  type="number" 
+                                  value={f.meseFine || ''} 
+                                  onChange={e => {
+                                      const val = parseInt(e.target.value) || 1;
+                                      if (val !== 0) updateFase(cat, f.id, 'meseFine', val);
+                                  }}
+                                  className="w-12 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-center text-amber-900"
+                                />
                               </div>
                               <div className="flex-1 flex items-center gap-2">
                                 <span className="text-[10px] text-amber-400 font-bold">QUOTA</span>

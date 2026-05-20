@@ -206,13 +206,14 @@ export interface BudgetData {
 
 // ─── TIPOLOGIE E CANTIERI PREVISIONALI ──────────────────────────
 
-// Fase di distribuzione costi nel tempo
 export interface FaseDistribuzione {
-  id: string;
-  durataMesi: number;          // quanti mesi dura questa fase
-  percentuale: number;         // % del totale da distribuire in questa fase (0-100)
-  // la distribuzione dentro la fase è uniforme sui mesi della fase
-}
+    id: string;
+    meseInizio: number;          // es. 1 per inizio cantiere, -1 per il mese prima
+    meseFine: number;            // es. 3 (incluso)
+    durataMesi?: number;         // Deprecato: mantenuto temporaneamente per retrocompatibilità
+    percentuale: number;         // % del totale da distribuire in questa fase (0-100)
+    // la distribuzione dentro la fase è uniforme sui mesi della fase
+  }
 
 // Voce di costo attiva per una tipologia di cantiere
 export interface VoceCostoTipologia {

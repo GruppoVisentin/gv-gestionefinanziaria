@@ -864,13 +864,29 @@ const App: React.FC = () => {
       const totalAmount = c.costiStimati[voce.categoria] || 0;
       if (totalAmount <= 0) return;
 
-      let currentMonthOffset = 0;
+      let offsetMesiLegacy = 0;
       voce.fasi.forEach(fase => {
         const faseAmount = (totalAmount * fase.percentuale) / 100;
-        const monthlyAmount = faseAmount / fase.durataMesi;
+        
+        let meseInizio = fase.meseInizio;
+        let meseFine = fase.meseFine;
+        
+        if (meseInizio === undefined || meseFine === undefined) {
+           meseInizio = offsetMesiLegacy >= 0 ? offsetMesiLegacy + 1 : offsetMesiLegacy;
+           const offsetFine = offsetMesiLegacy + (fase.durataMesi || 1) - 1;
+           meseFine = offsetFine >= 0 ? offsetFine + 1 : offsetFine;
+           offsetMesiLegacy += (fase.durataMesi || 1);
+        }
+        
+        const offsetInizio = meseInizio > 0 ? meseInizio - 1 : meseInizio;
+        const offsetFine = meseFine > 0 ? meseFine - 1 : meseFine;
+        const durataMesi = Math.max(1, offsetFine - offsetInizio + 1);
 
-        for (let i = 0; i < fase.durataMesi; i++) {
-          const txDate = new Date(startDate.getFullYear(), startDate.getMonth() + currentMonthOffset, 1);
+        const monthlyAmount = faseAmount / durataMesi;
+
+        for (let i = 0; i < durataMesi; i++) {
+          const absoluteMonthOffset = offsetInizio + i;
+          const txDate = new Date(startDate.getFullYear(), startDate.getMonth() + absoluteMonthOffset, 1);
           
           const realCeType = CATEGORY_TO_CE_TYPE[voce.categoria] || 'solo_cashflow';
           const newTx: Transaction = {
@@ -887,7 +903,6 @@ const App: React.FC = () => {
             sourceRef: c.id // N10 fix: cantiereWizardId salvato in sourceRef
           };
           newTransactions.push(newTx);
-          currentMonthOffset++;
         }
       });
     });
