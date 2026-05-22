@@ -435,7 +435,7 @@ const TipologiaForm: React.FC<{ tipologia: TipologiaCantiere, onSave: (t: Tipolo
     } else {
       setVociAttive(prev => [...prev, {
         categoria,
-        ceType: 'costo_variabile',
+        ceType: CATEGORY_TO_CE_TYPE[categoria] || 'costo_variabile',
         fasi: [{ id: generateId(), meseInizio: 1, meseFine: 1, percentuale: 100 }]
       }]);
     }
@@ -533,7 +533,17 @@ const TipologiaForm: React.FC<{ tipologia: TipologiaCantiere, onSave: (t: Tipolo
           <div className="space-y-4">
             <h3 className="text-sm font-black text-amber-900 uppercase tracking-wider">Voci di Costo e Regole di Distribuzione</h3>
             <div className="space-y-3">
-              {variableCategories.map(cat => {
+              {[
+                "[PERSONALE] Subappalti Manodopera",
+                "[FORNITORI] Fornitori Materiali",
+                "[FORNITORI] Subappalti su Cantieri",
+                "[CONSULENZE] Professionisti Esterni di Cantiere",
+                "[CANTIERE] Assicurazione Cantieri",
+                "[INVESTIMENTI] Acquisto Terreni per Sviluppo",
+                "[INVESTIMENTI] Investimento in Nuova Società",
+                "[CANTIERE] Mediazione Agenzia",
+                "[FINANZA] Interessi su Mutuo Cantiere"
+              ].map(cat => {
                 const activeVoce = vociAttive.find(v => v.categoria === cat);
                 const sumPct = activeVoce?.fasi.reduce((s, f) => s + f.percentuale, 0) || 0;
                 

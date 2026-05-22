@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { TipologiaCantiere, VoceCostoTipologia, FaseDistribuzione } from '../types';
 import { GripVertical, Plus, Trash2, Save, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 // ─── COSTANTI ────────────────────────────────────────────────────
 
@@ -131,7 +132,7 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
     if (voci.find(v => v.categoria === cat)) {
       setVoci(prev => prev.filter(v => v.categoria !== cat));
     } else {
-      const ceType = variableCategories.includes(cat) ? 'costo_variabile' : 'costo_fisso';
+      const ceType = CATEGORY_TO_CE_TYPE[cat] || 'costo_variabile';
       setVoci(prev => [...prev, {
         categoria: cat, ceType,
         fasi: [{ id: uuidv4(), meseInizio: 1, meseFine: Math.ceil(durata / 2), percentuale: 100 }]
@@ -189,7 +190,17 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
               Categorie di costo attive in questa tipologia
             </p>
             <div className="flex flex-wrap gap-2">
-              {variableCategories.slice(0, 16).map(cat => {
+              {[
+                "[PERSONALE] Subappalti Manodopera",
+                "[FORNITORI] Fornitori Materiali",
+                "[FORNITORI] Subappalti su Cantieri",
+                "[CONSULENZE] Professionisti Esterni di Cantiere",
+                "[CANTIERE] Assicurazione Cantieri",
+                "[INVESTIMENTI] Acquisto Terreni per Sviluppo",
+                "[INVESTIMENTI] Investimento in Nuova Società",
+                "[CANTIERE] Mediazione Agenzia",
+                "[FINANZA] Interessi su Mutuo Cantiere"
+              ].map(cat => {
                 const isActive = voci.some(v => v.categoria === cat);
                 const label = cat.replace(/\[.*?\]\s*/, '');
                 return (

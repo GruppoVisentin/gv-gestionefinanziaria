@@ -124,6 +124,8 @@ export const VARIABLE_COST_CATEGORIES: string[] = [
   "[INVESTIMENTI] Acquisto Immobili per Sviluppo",
   "[INVESTIMENTI] Investimento in Nuova Società",       // era: NUOVA SOCIETA'
   "[FINANZA] Quota Capitale Rate Finanziamenti",        // era parte di: RATE E INTERESSI
+  "[CANTIERE] Mediazione Agenzia",
+  "[FINANZA] Interessi su Mutuo Cantiere",
 ];
 
 export const EXPENSE_CATEGORIES = [...FIXED_COST_CATEGORIES, ...VARIABLE_COST_CATEGORIES];
@@ -206,6 +208,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
   "[CANTIERE] Rifiuti e Macerie":                      'costo_variabile',
   "[CANTIERE] Pranzi e Trasferte Cantiere":            'costo_variabile',
   "[MEZZI] Riparazioni Macchinari Urgenti":            'costo_variabile',
+  "[CANTIERE] Mediazione Agenzia":                     'costo_variabile',
 
   // COSTI FISSI (Studio e Struttura)
   "[PERSONALE] Stipendi Dipendenti Ufficio":           'costo_studio',
@@ -234,6 +237,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
   // ONERI FINANZIARI (sotto EBITDA nel CE)
   "[FINANZA] Interessi Passivi Finanziamenti":         'onere_finanziario',
   "[FINANZA] Commissioni e Bolli Bancari":             'onere_finanziario',
+  "[FINANZA] Interessi su Mutuo Cantiere":             'onere_finanziario',
   // SOLO CASH FLOW — FISCALE
   "[FISCO] Versamento IVA":                            'solo_cashflow',
   "[FISCO] F24 — IRPEF / IRES / IRAP":                'solo_cashflow',
