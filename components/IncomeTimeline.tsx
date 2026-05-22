@@ -570,11 +570,11 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         icon = <TrendingUp size={16} className="text-amber-600" />;
         subLabel = 'Dividendi, Cedole, Gain';
     } else {
-        rowBgClass = `border-b border-emerald-50 hover:bg-emerald-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-emerald-50'}`;
+        rowBgClass = 'border-b border-emerald-100 hover:bg-emerald-100 transition-colors bg-emerald-50';
         stickyBgClass = 'bg-inherit shadow-[4px_0_4px_-2px_rgba(0,0,0,0.05)]';
         textClass = 'text-emerald-900';
         forecastBg = 'bg-transparent';
-        actualBg = 'bg-emerald-50';
+        actualBg = 'bg-white';
         forecastItemClass = 'bg-emerald-50 text-emerald-600 border-emerald-50';
         actualItemClass = 'text-emerald-700';
     }
