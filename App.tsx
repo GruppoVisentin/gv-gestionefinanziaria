@@ -831,6 +831,73 @@ const App: React.FC = () => {
       if (exists) return prev.map(item => item.id === t.id ? t : item);
       return [...prev, t];
     });
+
+    const cantieriDaRigenerare = cantieriPrev.filter(c => c.tipologiaId === t.id && c.previsionaliGenerati);
+    
+    if (cantieriDaRigenerare.length > 0) {
+      const cantieriIds = cantieriDaRigenerare.map(c => c.id);
+      const allNewTransactions: Transaction[] = [];
+
+      cantieriDaRigenerare.forEach(c => {
+        const startDate = new Date(c.dataInizio);
+        t.vociAttive.forEach(voce => {
+          const totalAmount = c.costiStimati[voce.categoria] || 0;
+          if (totalAmount <= 0) return;
+
+          let offsetMesiLegacy = 0;
+          voce.fasi.forEach(fase => {
+            const faseAmount = (totalAmount * fase.percentuale) / 100;
+            
+            const getMeseValue = (m: any) => {
+               const parsed = parseInt(m, 10);
+               return isNaN(parsed) ? 1 : parsed;
+            };
+            
+            let meseInizio = getMeseValue(fase.meseInizio);
+            let meseFine = getMeseValue(fase.meseFine);
+            
+            if (fase.meseInizio === undefined || fase.meseFine === undefined) {
+               meseInizio = offsetMesiLegacy >= 0 ? offsetMesiLegacy + 1 : offsetMesiLegacy;
+               const offsetFine = offsetMesiLegacy + (fase.durataMesi || 1) - 1;
+               meseFine = offsetFine >= 0 ? offsetFine + 1 : offsetFine;
+               offsetMesiLegacy += (fase.durataMesi || 1);
+            }
+            
+            const offsetInizio = meseInizio > 0 ? meseInizio - 1 : meseInizio;
+            const offsetFine = meseFine > 0 ? meseFine - 1 : meseFine;
+            const durataMesi = Math.max(1, offsetFine - offsetInizio + 1);
+
+            const monthlyAmount = faseAmount / durataMesi;
+
+            for (let i = 0; i < durataMesi; i++) {
+              const absoluteMonthOffset = offsetInizio + i;
+              const txDate = new Date(startDate.getFullYear(), startDate.getMonth() + absoluteMonthOffset, 1);
+              
+              const realCeType = CATEGORY_TO_CE_TYPE[voce.categoria] || 'solo_cashflow';
+              const newTx: Transaction = {
+                id: crypto.randomUUID(),
+                date: txDate.toISOString().split('T')[0],
+                amount: monthlyAmount,
+                vatRate: 22,
+                type: TransactionType.EXPENSE,
+                category: voce.categoria,
+                description: `Previsionale ${c.nome} — ${voce.categoria.split('] ')[1] || voce.categoria}`,
+                project: c.nome,
+                isForecast: true,
+                ceType: realCeType as any,
+                sourceRef: c.id
+              };
+              allNewTransactions.push(newTx);
+            }
+          });
+        });
+      });
+
+      setTransactions(prev => [
+        ...prev.filter(tx => !(tx.isForecast && tx.sourceRef && cantieriIds.includes(tx.sourceRef))),
+        ...allNewTransactions
+      ]);
+    }
   };
 
   const handleDeleteTipologia = (id: string) => {
