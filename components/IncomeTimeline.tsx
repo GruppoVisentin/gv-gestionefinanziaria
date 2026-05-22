@@ -1201,7 +1201,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         </div>
       </div>
       
-      <div ref={scrollContainerRef} className="overflow-x-auto w-full max-h-[calc(100vh-250px)] relative">
+      <div ref={scrollContainerRef} className="overflow-x-auto w-full max-h-[calc(100vh-320px)] relative">
         <table className="w-full text-sm text-left border-collapse min-w-max">
           <thead className="text-xs uppercase bg-slate-50 text-slate-500 sticky top-0 z-30">
             {/* Headers remain same */}
