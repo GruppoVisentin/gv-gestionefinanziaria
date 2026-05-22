@@ -2,6 +2,7 @@
 export const CURRENCY_FORMATTER = new Intl.NumberFormat('it-IT', {
   style: 'currency',
   currency: 'EUR',
+  useGrouping: 'always',
 });
 
 export const DATE_FORMATTER = new Intl.DateTimeFormat('it-IT', {
