@@ -817,6 +817,11 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                     <tr key={t.id} className="group/item hover:bg-slate-50 transition-colors">
                                         <td className="py-3 font-medium text-slate-700 text-xs">
                                             {t.description}
+                                            {t.sourceRef ? (
+                                                <span className="ml-2 text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded-full uppercase font-black tracking-tighter" title="Costo calcolato in automatico dal cantiere previsionale">Da Cantiere Prev.</span>
+                                            ) : (
+                                                <span className="ml-2 text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-full uppercase font-black tracking-tighter" title="Costo inserito manualmente o dal wizard inizio anno">Manuale / Wizard</span>
+                                            )}
                                             {isForecastPaid(t.id) && <span className="ml-2 text-[9px] px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded-full uppercase font-black tracking-tighter">Saldato</span>}
                                         </td>
                                         <td className="py-3 text-right font-mono font-bold text-xs text-slate-700">{CURRENCY_FORMATTER.format(getGrossAmount(t))}</td>

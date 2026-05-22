@@ -459,7 +459,8 @@ const TipologiaForm: React.FC<{ tipologia: TipologiaCantiere, onSave: (t: Tipolo
         const ultimaFase = v.fasi[v.fasi.length - 1];
         let meseInizio = 1;
         if (ultimaFase && ultimaFase.meseFine !== undefined) {
-          const mF = ultimaFase.meseFine;
+          const mFStr = ultimaFase.meseFine;
+          const mF = typeof mFStr === 'string' ? parseInt(mFStr, 10) : mFStr;
           const startOffset = (mF > 0 ? mF - 1 : mF) + 1;
           meseInizio = startOffset >= 0 ? startOffset + 1 : startOffset;
         }

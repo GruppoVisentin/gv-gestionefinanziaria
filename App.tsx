@@ -848,8 +848,9 @@ const App: React.FC = () => {
   };
 
   const handleDeleteCantierePrev = (id: string) => {
-    if (window.confirm('Eliminare questo cantiere previsionale?')) {
+    if (window.confirm('Eliminare questo cantiere previsionale e rimuovere automaticamente tutte le voci generate nel cash flow?')) {
       setCantieriPrev(prev => prev.filter(c => c.id !== id));
+      setTransactions(prev => prev.filter(tx => !(tx.isForecast && tx.sourceRef === id)));
     }
   };
 
