@@ -1131,7 +1131,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
           <tbody>
             {/* FIXED COSTS */}
             {renderSectionHeader('COSTI FISSI', fixedCategories)}
-            {fixedCategories.map((category, idx) => {
+            {[...fixedCategories].sort().map((category, idx) => {
                 const annualForecast = getCategoryAnnualTotal(category, true);
                 const annualActual = getCategoryAnnualTotal(category, false);
                 const isEven = idx % 2 === 0;
@@ -1331,7 +1331,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
 
             {/* VARIABLE COSTS */}
             {renderSectionHeader('COSTI VARIABILI', variableCategories, 'violet')}
-            {variableCategories.map((category, idx) => {
+            {[...variableCategories].sort().map((category, idx) => {
                 const annualForecast = getCategoryAnnualTotal(category, true);
                 const annualActual = getCategoryAnnualTotal(category, false);
                 const isEven = idx % 2 === 0;
