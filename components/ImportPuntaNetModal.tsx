@@ -282,6 +282,14 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       onSalvaRegole([...regoleSalvate, ...nuoveRegole]);
     }
 
+    // Riconciliazione automatica per entrate
+    const linkedForecastIds = new Set<string>();
+    transazioniEsistenti.forEach(t => {
+      if (!t.isForecast && t.linkedForecastId) {
+        linkedForecastIds.add(t.linkedForecastId);
+      }
+    });
+
     const transactions: Transaction[] = daImportare.map(r => {
       const vatRate = r.vatRateConfermato ?? r.vatRateSuggerito ?? 0;
       // N6 fix: usa CATEGORY_TO_CE_TYPE per estrarre sempre il ceType corretto, bypassando eventuali disallineamenti nelle regole
@@ -291,6 +299,36 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       if (r.cantiereSuggerito) {
         tx.project = r.cantiereSuggerito;
       }
+
+      // Reconciliation for INCOME only
+      if (tx.type === 'INCOME') {
+        const txDate = new Date(tx.date);
+        const txMonth = txDate.getMonth();
+        const txYear = txDate.getFullYear();
+        const txProj = tx.project?.trim() || 'Generale';
+        const txCat = tx.category;
+
+        const matchingForecast = transazioniEsistenti.find(f => {
+          if (!f.isForecast || f.type !== 'INCOME') return false;
+          if (linkedForecastIds.has(f.id)) return false;
+
+          const fDate = new Date(f.date);
+          if (fDate.getMonth() !== txMonth || fDate.getFullYear() !== txYear) return false;
+
+          const fProj = f.project?.trim() || 'Generale';
+          if (fProj !== txProj) return false;
+
+          if (f.category !== txCat) return false;
+
+          return true;
+        });
+
+        if (matchingForecast) {
+          tx.linkedForecastId = matchingForecast.id;
+          linkedForecastIds.add(matchingForecast.id);
+        }
+      }
+
       return tx;
     });
 
