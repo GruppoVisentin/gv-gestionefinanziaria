@@ -481,8 +481,21 @@ const App: React.FC = () => {
   const loadFromData = useCallback((data: BackupData) => {
     if (data.transactions) setTransactions(data.transactions);
     if (data.projects) setProjects(data.projects);
-    if (data.fixedCategories) setFixedCategories(data.fixedCategories);
-    if (data.variableCategories) setVariableCategories(data.variableCategories);
+    
+    let loadedFixed = data.fixedCategories || [...FIXED_COST_CATEGORIES];
+    let loadedVar = data.variableCategories || [...VARIABLE_COST_CATEGORIES];
+    
+    const quotaCapitaleCat = "[FINANZA] Quota Capitale Rate Finanziamenti";
+    if (loadedVar.includes(quotaCapitaleCat)) {
+      loadedVar = loadedVar.filter(c => c !== quotaCapitaleCat);
+    }
+    if (!loadedFixed.includes(quotaCapitaleCat)) {
+      // Find the financial category index or append it
+      loadedFixed = [...loadedFixed, quotaCapitaleCat];
+    }
+    
+    setFixedCategories(loadedFixed);
+    setVariableCategories(loadedVar);
     if (data.incomeCategories) setIncomeCategories(data.incomeCategories);
     if (data.supplierPresets) setSupplierPresets(data.supplierPresets);
     if (data.initialData) setInitialData(data.initialData);
