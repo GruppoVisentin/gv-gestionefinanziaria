@@ -331,7 +331,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
   const totalInitialBalance = currentYear <= ANNO_BASE ? saldoInizialeCF.saldoManualeConsuntivo : saldoInizialeConsuntivo;
   const totalLoanDebtStart = (initialData.loans || [])
-                             .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+                             .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && new Date(t.date).getFullYear() === currentYear))
                              .reduce((sum, l) => sum + l.originalAmount, 0) + 
                              (initialData.previousFinancing || 0) +
                              (initialData.accontiClienti || 0) +
@@ -479,9 +479,9 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       forecastTotalPrincipalRepaid += totalPrincipal;
   }
 
-  // New Loans taken this year (Forecast - only unpaid ones, escludi anche quelli con loanSourceId collegato)
+  // New Loans taken this year (Forecast - only unpaid ones, escludi anche quelli con loanSourceId collegato o descrizione uguale)
   const newLoansAmountForecast = transactions
-    .filter(t => t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear && !transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId))))
+    .filter(t => t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear && !transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId) || act.description.toLowerCase().trim() === t.description.toLowerCase().trim())))
     .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
   // New Loans Actual
@@ -1701,10 +1701,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 title={`Dettaglio Debito Residuo:\n${
                   [
                     ...(initialData.loans || [])
-                      .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+                      .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && new Date(t.date).getFullYear() === currentYear))
                       .map(l => `• ${l.name} (Pregresso): ${CURRENCY_FORMATTER.format(l.originalAmount)}`),
                     ...(transactions
-                      .filter(t => t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails && !(t.isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === t.id)))
+                      .filter(t => t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails && new Date(t.date).getFullYear() === currentYear && !(t.isForecast && transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || act.loanSourceId === t.loanSourceId || act.description.toLowerCase().trim() === t.description.toLowerCase().trim()))))
                       .map(t => `• ${t.description} (${t.isForecast ? 'Prev.' : 'Cons.'}): ${CURRENCY_FORMATTER.format(t.amount)}`))
                   ].join('\n')
                 }`}
@@ -1749,10 +1749,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 title={`Dettaglio Debito Residuo:\n${
                   [
                     ...(initialData.loans || [])
-                      .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+                      .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && new Date(t.date).getFullYear() === currentYear))
                       .map(l => `• ${l.name} (Pregresso): ${CURRENCY_FORMATTER.format(l.originalAmount)}`),
                     ...(transactions
-                      .filter(t => !t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails)
+                      .filter(t => !t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails && new Date(t.date).getFullYear() === currentYear)
                       .map(t => `• ${t.description} (Cons.): ${CURRENCY_FORMATTER.format(t.amount)}`))
                   ].join('\n')
                 }`}
