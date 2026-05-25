@@ -708,163 +708,284 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
         )}
 
         {activeTab === 'sacri' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-in slide-in-from-bottom-4 duration-500">
-            {[
-              { 
-                id: 1, 
-                label: 'Fatturato YTD', 
-                termId: 'fatturato',
-                value: formatEuro(metrics.fatturato), 
-                desc: 'Ricavi core realizzati',
-                status: 'blue', 
-                icon: BarChart2,
-                proj: formatEuro(metrics.fatturato * (12 / rates.mesiTrascorsi))
-              },
-              { 
-                id: 2, 
-                label: 'Primo Margine %', 
-                termId: 'primo_margine',
-                value: formatPercent(metrics.primoMarginePercent), 
-                desc: 'Margine dopo costi diretti',
-                status: 'emerald', 
-                icon: Target,
-                proj: formatPercent(metrics.primoMarginePercent),
-                soglie: {
-                  valore: metrics.primoMarginePercent,
-                  tipo: 'piu_alto_meglio',
-                  fasce: [
-                    { min: 0.15, label: 'Ottimo', colore: 'ottimo' },
-                    { min: 0.10, max: 0.15, label: 'Buono', colore: 'buono' },
-                    { min: 0.05, max: 0.10, label: 'Attenzione', colore: 'attenzione' },
-                    { max: 0.05, label: 'Critico', colore: 'critico' },
-                  ]
-                }
-              },
-              { 
-                id: 3, 
-                label: 'EBITDA %', 
-                termId: 'ebitda',
-                value: formatPercent(metrics.ebitdaPercent), 
-                desc: 'Margine operativo lordo',
-                status: 'indigo', 
-                icon: TrendingUp,
-                proj: formatPercent(metrics.ebitdaPercent),
-                soglie: {
-                  valore: metrics.ebitdaPercent,
-                  tipo: 'piu_alto_meglio',
-                  fasce: [
-                    { min: 0.10, label: 'Ottimo', colore: 'ottimo' },
-                    { min: 0.07, max: 0.10, label: 'Buono', colore: 'buono' },
-                    { min: 0.04, max: 0.07, label: 'Attenzione', colore: 'attenzione' },
-                    { max: 0.04, label: 'Critico', colore: 'critico' },
-                  ]
-                }
-              },
-              { 
-                id: 4, 
-                label: 'Utile Netto %', 
-                termId: 'utile_netto',
-                value: formatPercent(metrics.utileNettoPercent), 
-                desc: 'Utile dopo tasse e ammortamenti',
-                status: 'violet', 
-                icon: Zap,
-                proj: formatPercent(metrics.utileNettoPercent),
-                soglie: {
-                  valore: metrics.utileNettoPercent,
-                  tipo: 'piu_alto_meglio',
-                  fasce: [
-                    { min: 0.06, label: 'Ottimo', colore: 'ottimo' },
-                    { min: 0.04, max: 0.06, label: 'Buono', colore: 'buono' },
-                    { min: 0.02, max: 0.04, label: 'Attenzione', colore: 'attenzione' },
-                    { max: 0.02, label: 'Critico', colore: 'critico' },
-                  ]
-                }
-              },
-              { 
-                id: 5, 
-                label: 'Punto di Pareggio', 
-                termId: 'break_even',
-                value: formatEuro(metrics.breakEven), 
-                desc: 'Fatturato minimo per pareggio',
-                status: 'rose', 
-                icon: AlertCircle,
-                proj: formatEuro(metrics.breakEven),
-                extra: formatEuro(metrics.breakEvenCassa),
-                extraLabel: 'Di cassa',
-                soglie: {
-                  valore: metrics.fatturato,
-                  tipo: 'piu_alto_meglio',
-                  customLabel: metrics.fatturato >= metrics.breakEven ? 'Raggiunto' : 'Mancano ' + formatEuro(metrics.breakEven - metrics.fatturato),
-                  fasce: [
-                    { min: metrics.breakEven, label: 'Raggiunto', colore: 'ottimo' },
-                    { min: metrics.breakEven * 0.8, max: metrics.breakEven, label: 'Quasi', colore: 'attenzione' },
-                    { max: metrics.breakEven * 0.8, label: 'Lontano', colore: 'critico' },
-                  ]
-                }
-              },
-              { 
-                id: 6, 
-                label: 'Incidenza Studio %', 
-                termId: 'incidenza_studio_fatturato',
-                value: formatPercent(rates.incidenzaStudioFatturato), 
-                desc: 'Costo tecnici su fatturato',
-                status: 'sky', 
-                icon: Calculator,
-                proj: formatPercent(rates.incidenzaStudioFatturato),
-                soglie: {
-                  valore: rates.incidenzaStudioFatturato,
-                  tipo: 'piu_basso_meglio',
-                  fasce: [
-                    { max: 0.15, label: 'Ottimo', colore: 'ottimo' },
-                    { min: 0.15, max: 0.20, label: 'Buono', colore: 'buono' },
-                    { min: 0.20, max: 0.25, label: 'Attenzione', colore: 'attenzione' },
-                    { min: 0.25, label: 'Critico', colore: 'critico' },
-                  ]
-                }
-              },
-              { 
-                id: 7, 
-                label: 'Incidenza Fissi %', 
-                termId: 'incidenza_fissi_fatturato',
-                value: formatPercent(rates.incidenzaFissiFatturato), 
-                desc: 'Costi struttura su fatturato',
-                status: 'amber', 
-                icon: BarChart2,
-                proj: formatPercent(rates.incidenzaFissiFatturato),
-                soglie: {
-                  valore: rates.incidenzaFissiFatturato,
-                  tipo: 'piu_basso_meglio',
-                  fasce: [
-                    { max: 0.08, label: 'Ottimo', colore: 'ottimo' },
-                    { min: 0.08, max: 0.12, label: 'Buono', colore: 'buono' },
-                    { min: 0.12, max: 0.15, label: 'Attenzione', colore: 'attenzione' },
-                    { min: 0.15, label: 'Critico', colore: 'critico' },
-                  ]
-                }
-              },
-              { 
-                id: 8, 
-                label: 'Compenso Soci', 
-                termId: undefined,
-                value: formatEuro(rates.compensoSoci), 
-                desc: 'Remunerazione proprietà',
-                status: 'orange', 
-                icon: Sparkles,
-                proj: formatEuro(rates.compensoSoci * (12 / rates.mesiTrascorsi)),
-                soglie: {
-                  valore: metrics.utileNettoTot > 0 ? rates.compensoSoci / metrics.utileNettoTot : 1,
-                  tipo: 'piu_basso_meglio',
-                  fasce: [
-                    { max: 0.30, label: 'Ottimo', colore: 'ottimo' },
-                    { min: 0.30, max: 0.50, label: 'Buono', colore: 'buono' },
-                    { min: 0.50, max: 0.80, label: 'Attenzione', colore: 'attenzione' },
-                    { min: 0.80, label: 'Critico', colore: 'critico' },
-                  ]
-                }
-              },
-            ].map((num) => (
-              <SacredCard key={num.id} num={num} />
-            ))}
+          <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[
+                { 
+                  id: 1, 
+                  label: 'Fatturato YTD', 
+                  termId: 'fatturato',
+                  value: formatEuro(metrics.fatturato), 
+                  desc: 'Ricavi core realizzati',
+                  status: 'blue', 
+                  icon: BarChart2,
+                  proj: formatEuro(metrics.fatturato * (12 / rates.mesiTrascorsi))
+                },
+                { 
+                  id: 2, 
+                  label: 'Primo Margine %', 
+                  termId: 'primo_margine',
+                  value: formatPercent(metrics.primoMarginePercent), 
+                  desc: 'Margine dopo costi diretti',
+                  status: 'emerald', 
+                  icon: Target,
+                  proj: formatPercent(metrics.primoMarginePercent),
+                  soglie: {
+                    valore: metrics.primoMarginePercent,
+                    tipo: 'piu_alto_meglio',
+                    fasce: [
+                      { min: 0.15, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.10, max: 0.15, label: 'Buono', colore: 'buono' },
+                      { min: 0.05, max: 0.10, label: 'Attenzione', colore: 'attenzione' },
+                      { max: 0.05, label: 'Critico', colore: 'critico' },
+                    ]
+                  }
+                },
+                { 
+                  id: 3, 
+                  label: 'EBITDA %', 
+                  termId: 'ebitda',
+                  value: formatPercent(metrics.ebitdaPercent), 
+                  desc: 'Margine operativo lordo',
+                  status: 'indigo', 
+                  icon: TrendingUp,
+                  proj: formatPercent(metrics.ebitdaPercent),
+                  soglie: {
+                    valore: metrics.ebitdaPercent,
+                    tipo: 'piu_alto_meglio',
+                    fasce: [
+                      { min: 0.10, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.07, max: 0.10, label: 'Buono', colore: 'buono' },
+                      { min: 0.04, max: 0.07, label: 'Attenzione', colore: 'attenzione' },
+                      { max: 0.04, label: 'Critico', colore: 'critico' },
+                    ]
+                  }
+                },
+                { 
+                  id: 4, 
+                  label: 'Utile Netto %', 
+                  termId: 'utile_netto',
+                  value: formatPercent(metrics.utileNettoPercent), 
+                  desc: 'Utile dopo tasse e ammortamenti',
+                  status: 'violet', 
+                  icon: Zap,
+                  proj: formatPercent(metrics.utileNettoPercent),
+                  soglie: {
+                    valore: metrics.utileNettoPercent,
+                    tipo: 'piu_alto_meglio',
+                    fasce: [
+                      { min: 0.06, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.04, max: 0.06, label: 'Buono', colore: 'buono' },
+                      { min: 0.02, max: 0.04, label: 'Attenzione', colore: 'attenzione' },
+                      { max: 0.02, label: 'Critico', colore: 'critico' },
+                    ]
+                  }
+                },
+                { 
+                  id: 5, 
+                  label: 'Punto di Pareggio', 
+                  termId: 'break_even',
+                  value: formatEuro(metrics.breakEven), 
+                  desc: 'Fatturato minimo per pareggio',
+                  status: 'rose', 
+                  icon: AlertCircle,
+                  proj: formatEuro(metrics.breakEven),
+                  extra: formatEuro(metrics.breakEvenCassa),
+                  extraLabel: 'Di cassa',
+                  soglie: {
+                    valore: metrics.fatturato,
+                    tipo: 'piu_alto_meglio',
+                    customLabel: metrics.fatturato >= metrics.breakEven ? 'Raggiunto' : 'Mancano ' + formatEuro(metrics.breakEven - metrics.fatturato),
+                    fasce: [
+                      { min: metrics.breakEven, label: 'Raggiunto', colore: 'ottimo' },
+                      { min: metrics.breakEven * 0.8, max: metrics.breakEven, label: 'Quasi', colore: 'attenzione' },
+                      { max: metrics.breakEven * 0.8, label: 'Lontano', colore: 'critico' },
+                    ]
+                  }
+                },
+                { 
+                  id: 6, 
+                  label: 'Incidenza Studio %', 
+                  termId: 'incidenza_studio_fatturato',
+                  value: formatPercent(rates.incidenzaStudioFatturato), 
+                  desc: 'Costo tecnici su fatturato',
+                  status: 'sky', 
+                  icon: Calculator,
+                  proj: formatPercent(rates.incidenzaStudioFatturato),
+                  soglie: {
+                    valore: rates.incidenzaStudioFatturato,
+                    tipo: 'piu_basso_meglio',
+                    fasce: [
+                      { max: 0.15, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.15, max: 0.20, label: 'Buono', colore: 'buono' },
+                      { min: 0.20, max: 0.25, label: 'Attenzione', colore: 'attenzione' },
+                      { min: 0.25, label: 'Critico', colore: 'critico' },
+                    ]
+                  }
+                },
+                { 
+                  id: 7, 
+                  label: 'Incidenza Fissi %', 
+                  termId: 'incidenza_fissi_fatturato',
+                  value: formatPercent(rates.incidenzaFissiFatturato), 
+                  desc: 'Costi struttura su fatturato',
+                  status: 'amber', 
+                  icon: BarChart2,
+                  proj: formatPercent(rates.incidenzaFissiFatturato),
+                  soglie: {
+                    valore: rates.incidenzaFissiFatturato,
+                    tipo: 'piu_basso_meglio',
+                    fasce: [
+                      { max: 0.08, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.08, max: 0.12, label: 'Buono', colore: 'buono' },
+                      { min: 0.12, max: 0.15, label: 'Attenzione', colore: 'attenzione' },
+                      { min: 0.15, label: 'Critico', colore: 'critico' },
+                    ]
+                  }
+                },
+                { 
+                  id: 8, 
+                  label: 'Compenso Soci', 
+                  termId: undefined,
+                  value: formatEuro(rates.compensoSoci), 
+                  desc: 'Remunerazione proprietà',
+                  status: 'orange', 
+                  icon: Sparkles,
+                  proj: formatEuro(rates.compensoSoci * (12 / rates.mesiTrascorsi)),
+                  soglie: {
+                    valore: metrics.utileNettoTot > 0 ? rates.compensoSoci / metrics.utileNettoTot : 1,
+                    tipo: 'piu_basso_meglio',
+                    fasce: [
+                      { max: 0.30, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.30, max: 0.50, label: 'Buono', colore: 'buono' },
+                      { min: 0.50, max: 0.80, label: 'Attenzione', colore: 'attenzione' },
+                      { min: 0.80, label: 'Critico', colore: 'critico' },
+                    ]
+                  }
+                },
+              ].map((num) => (
+                <SacredCard key={num.id} num={num} />
+              ))}
+            </div>
+
+            {/* LEGENDA VALUTAZIONI */}
+            <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm p-6 space-y-6">
+              <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+                <div className="w-9 h-9 bg-slate-50 rounded-xl flex items-center justify-center text-slate-600">
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-xs uppercase tracking-wider">Legenda Valutazioni e Colori</h3>
+                  <p className="text-[9px] text-slate-400">Guida alla lettura delle fasce di allerta per i 7+1 Numeri Sacri</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Significato dei Colori */}
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Significato dei Colori</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-1" />
+                      <div>
+                        <p className="text-[10px] font-black text-emerald-800 uppercase">Ottimo</p>
+                        <p className="text-[9px] text-emerald-600 font-bold leading-relaxed mt-0.5">Valore ideale raggiunto. Prestazione eccellente.</p>
+                      </div>
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-2xl border border-blue-100 flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-1" />
+                      <div>
+                        <p className="text-[10px] font-black text-blue-800 uppercase">Buono</p>
+                        <p className="text-[9px] text-blue-600 font-bold leading-relaxed mt-0.5">Target standard soddisfatto. Situazione stabile.</p>
+                      </div>
+                    </div>
+                    <div className="p-3 bg-amber-50 rounded-2xl border border-amber-100 flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 mt-1" />
+                      <div>
+                        <p className="text-[10px] font-black text-amber-800 uppercase">Attenzione</p>
+                        <p className="text-[9px] text-amber-600 font-bold leading-relaxed mt-0.5">Deviazione dai target. Monitoraggio consigliato.</p>
+                      </div>
+                    </div>
+                    <div className="p-3 bg-rose-50 rounded-2xl border border-rose-100 flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0 mt-1" />
+                      <div>
+                        <p className="text-[10px] font-black text-rose-800 uppercase">Critico</p>
+                        <p className="text-[9px] text-rose-600 font-bold leading-relaxed mt-0.5">Soglia di sicurezza superata. Azione richiesta.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tabella delle Soglie */}
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Soglie di Valutazione degli Indici</h4>
+                  <div className="overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="w-full text-left text-[10px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100 font-black text-slate-400 uppercase tracking-widest">
+                          <th className="px-3 py-2">Numero Sacro</th>
+                          <th className="px-2 py-2 text-emerald-600">Ottimo</th>
+                          <th className="px-2 py-2 text-blue-600">Buono</th>
+                          <th className="px-2 py-2 text-amber-600">Attenzione</th>
+                          <th className="px-2 py-2 text-rose-600">Critico</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 font-bold text-slate-600">
+                        <tr>
+                          <td className="px-3 py-1.5 font-black text-slate-800">2. Primo Margine %</td>
+                          <td className="px-2 py-1.5 font-mono">&ge; 15%</td>
+                          <td className="px-2 py-1.5 font-mono">10% - 15%</td>
+                          <td className="px-2 py-1.5 font-mono">5% - 10%</td>
+                          <td className="px-2 py-1.5 font-mono">&lt; 5%</td>
+                        </tr>
+                        <tr>
+                          <td className="px-3 py-1.5 font-black text-slate-800">3. EBITDA %</td>
+                          <td className="px-2 py-1.5 font-mono">&ge; 10%</td>
+                          <td className="px-2 py-1.5 font-mono">7% - 10%</td>
+                          <td className="px-2 py-1.5 font-mono">4% - 7%</td>
+                          <td className="px-2 py-1.5 font-mono">&lt; 4%</td>
+                        </tr>
+                        <tr>
+                          <td className="px-3 py-1.5 font-black text-slate-800">4. Utile Netto %</td>
+                          <td className="px-2 py-1.5 font-mono">&ge; 6%</td>
+                          <td className="px-2 py-1.5 font-mono">4% - 6%</td>
+                          <td className="px-2 py-1.5 font-mono">2% - 4%</td>
+                          <td className="px-2 py-1.5 font-mono">&lt; 2%</td>
+                        </tr>
+                        <tr>
+                          <td className="px-3 py-1.5 font-black text-slate-800">5. Punto Pareggio</td>
+                          <td className="px-2 py-1.5 font-mono">Fatturato &ge; BEP</td>
+                          <td className="px-2 py-1.5 font-mono">—</td>
+                          <td className="px-2 py-1.5 font-mono">80% - 100% BEP</td>
+                          <td className="px-2 py-1.5 font-mono">&lt; 80% BEP</td>
+                        </tr>
+                        <tr>
+                          <td className="px-3 py-1.5 font-black text-slate-800">6. Incidenza Studio</td>
+                          <td className="px-2 py-1.5 font-mono">&le; 15%</td>
+                          <td className="px-2 py-1.5 font-mono">15% - 20%</td>
+                          <td className="px-2 py-1.5 font-mono">20% - 25%</td>
+                          <td className="px-2 py-1.5 font-mono">&gt; 25%</td>
+                        </tr>
+                        <tr>
+                          <td className="px-3 py-1.5 font-black text-slate-800">7. Incidenza Fissi</td>
+                          <td className="px-2 py-1.5 font-mono">&le; 8%</td>
+                          <td className="px-2 py-1.5 font-mono">8% - 12%</td>
+                          <td className="px-2 py-1.5 font-mono">12% - 15%</td>
+                          <td className="px-2 py-1.5 font-mono">&gt; 15%</td>
+                        </tr>
+                        <tr>
+                          <td className="px-3 py-1.5 font-black text-slate-800">8. Compenso Soci</td>
+                          <td className="px-2 py-1.5 font-mono">&le; 30% Utile</td>
+                          <td className="px-2 py-1.5 font-mono">30% - 50%</td>
+                          <td className="px-2 py-1.5 font-mono">50% - 80%</td>
+                          <td className="px-2 py-1.5 font-mono">&gt; 80%</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
