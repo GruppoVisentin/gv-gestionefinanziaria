@@ -642,6 +642,20 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <button 
+                onClick={() => {
+                  if (window.confirm("Sei sicuro di voler annullare questa importazione in sospeso? Tutti i dati analizzati verranno persi.")) {
+                    onAggiornaBozza([]);
+                    setFileBanca(null);
+                    handleSetFileFEP(null);
+                    handleSetFileFEA(null);
+                    setStep('upload');
+                  }
+                }} 
+                className="px-4 py-2 text-xs font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-xl transition-all"
+              >
+                Annulla Import
+              </button>
               <button onClick={() => setRighe(righe.map(r => ({ ...r, confermata: r.categoria !== null && !r.isDuplicato })))} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-900">Conferma tutte</button>
               <button
                 onClick={importa}
