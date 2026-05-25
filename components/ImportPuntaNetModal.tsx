@@ -380,7 +380,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
               <div className="space-y-4">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">File Movimenti Banca (Obbligatorio)</p>
                 <label className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center gap-3 transition-all cursor-pointer ${fileBanca ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 hover:border-emerald-400 hover:bg-slate-50'}`}>
-                  <input type="file" accept=".xlsx" className="hidden" onChange={e => setFileBanca(e.target.files?.[0] ?? null)} />
+                  <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => setFileBanca(e.target.files?.[0] ?? null)} />
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${fileBanca ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
                     {fileBanca ? <CheckCircle2 size={24} /> : <Upload size={24} />}
                   </div>
@@ -395,7 +395,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">File di Dettaglio (Opzionali)</p>
                 <div className="grid grid-cols-2 gap-4">
                   <label className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center gap-2 transition-all cursor-pointer ${fileFEP ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50'}`}>
-                    <input type="file" accept=".xlsx" className="hidden" onChange={e => handleSetFileFEP(e.target.files?.[0] ?? null)} />
+                    <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => handleSetFileFEP(e.target.files?.[0] ?? null)} />
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${fileFEP ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
                       <FileText size={20} />
                     </div>
@@ -403,7 +403,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                   </label>
 
                   <label className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center gap-2 transition-all cursor-pointer ${fileFEA ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50'}`}>
-                    <input type="file" accept=".xlsx" className="hidden" onChange={e => handleSetFileFEA(e.target.files?.[0] ?? null)} />
+                    <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => handleSetFileFEA(e.target.files?.[0] ?? null)} />
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${fileFEA ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
                       <FileText size={20} />
                     </div>

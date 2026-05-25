@@ -158,7 +158,15 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
 
     let data: Date;
     try {
-      data = r[0] instanceof Date ? r[0] : new Date(String(r[0]));
+      const val = r[0];
+      if (val instanceof Date) {
+        data = val;
+      } else if (typeof val === 'number') {
+        data = new Date((val - 25569) * 86400 * 1000);
+      } else {
+        data = new Date(String(val));
+      }
+      if (isNaN(data.getTime())) continue;
     } catch {
       continue;
     }
@@ -174,13 +182,13 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
     };
 
     // Classificazione tipo movimento
-    if (descrizione.toUpperCase().includes('PAGAMENTO FEP')) {
+    if (descrizione.toUpperCase().includes('PAGAMENTO FEP') || descrizione.toUpperCase().includes('RILEVATA FEP')) {
       riga.tipoMovimento = 'FEP';
-      const m = descrizione.match(/[Pp]agamento\s+FEP\s+n\.\s*([\w\/\-\.]+)/);
+      const m = descrizione.match(/(?:[Pp]agamento|[Rr]ilevata)\s+FEP\s+n\.\s*([\w\/\-\.]+)/i);
       if (m) riga.numeroFattura = m[1].trim();
     } else if (descrizione.toUpperCase().includes('INCASSO FEA')) {
       riga.tipoMovimento = 'FEA';
-      const m = descrizione.match(/[Ii]ncasso\s+FEA\s+n\.\s*(\d+)\s+(\d{4})/);
+      const m = descrizione.match(/[Ii]ncasso\s+FEA\s+n\.\s*(\d+)\s+(\d{4})/i);
       if (m) riga.numeroFattura = `${m[1]}/${m[2]}`;
     } else if (descrizione.toUpperCase().includes('NEP')) {
       riga.tipoMovimento = 'NEP';
