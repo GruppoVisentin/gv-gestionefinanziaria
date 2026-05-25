@@ -56,13 +56,13 @@ export const FIXED_COST_CATEGORIES: string[] = [
   // Nel Cash Flow non impatta il saldo bancario.
   "[STRUTTURA] Ammortamenti",             // VOCE NUOVA — era completamente assente
 
-  // ─── ONERI FINANZIARI ─────────────────────────────────────────
+  // ─── ONERI FINANZIARI E RIMBORSO DEBITO ──────────────────────
   // Sono uscite reali di cassa — restano nel cash flow.
   // Il ceType 'onere_finanziario' le escluderà dal calcolo EBITDA nel CE futuro.
+  // La quota capitale è un impegno contrattuale fisso (rimborso rata), non variabile.
   "[FINANZA] Interessi Passivi Finanziamenti",  // era parte di: RATE E INTERESSI
+  "[FINANZA] Quota Capitale Rate Finanziamenti", // rimborso debito — impegno contrattuale fisso
   "[FINANZA] Commissioni e Bolli Bancari",
-  // NOTA: la quota CAPITALE delle rate finanziamento non è un costo —
-  // è rimborso di debito. Registrarla in [INVESTIMENTI] qui sotto.
 
   // ─── MOVIMENTI FISCALI ────────────────────────────────────────
   // Non sono costi aziendali — sono trasferimenti di cassa verso il fisco.
@@ -124,7 +124,7 @@ export const VARIABLE_COST_CATEGORIES: string[] = [
   "[INVESTIMENTI] Acquisto Terreni per Sviluppo",       // era: ACQUISIZIONE TERRENI o IMMOBILI
   "[INVESTIMENTI] Acquisto Immobili per Sviluppo",
   "[INVESTIMENTI] Investimento in Nuova Società",       // era: NUOVA SOCIETA'
-  "[FINANZA] Quota Capitale Rate Finanziamenti",        // era parte di: RATE E INTERESSI
+  // [FINANZA] Quota Capitale Rate Finanziamenti → spostata in FIXED_COST_CATEGORIES
   "[CANTIERE] Mediazione Agenzia",
   "[FINANZA] Interessi su Mutuo Cantiere",
 ];
