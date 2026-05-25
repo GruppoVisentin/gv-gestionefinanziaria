@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Transaction, TransactionType, Project, LoanDetails, AppView, RinegoziazioneMutuo, InitialBalanceBreakdown, ExistingLoan } from '../types';
 import { fetchEuriborRates } from '../services/geminiService';
-import { CURRENCY_FORMATTER, DATE_FORMATTER } from '../constants';
+import { CURRENCY_FORMATTER, DATE_FORMATTER, CATEGORY_TO_CE_TYPE } from '../constants';
 import { Plus, X, ArrowRight, Save, Landmark, TrendingUp, Pencil, Trash2, Calendar, FileText, User, Shield, Search, RefreshCw } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -412,7 +412,8 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         category: category,
         project: project,
         isForecast: formType === 'FORECAST',
-        loanDetails
+        loanDetails,
+        ceType: CATEGORY_TO_CE_TYPE[category] || 'solo_cashflow'
     };
 
     // SYNC DIRECTION 2 (Timeline -> Gestisci) Create/Update
@@ -503,7 +504,8 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
           type: TransactionType.INCOME,
           category: category,
           project: project,
-          isForecast: false
+          isForecast: false,
+          ceType: CATEGORY_TO_CE_TYPE[category] || 'solo_cashflow'
       };
 
       if (isFinancing && initialData && onUpdateInitialData) {
@@ -514,7 +516,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
               name: transactionData.description,
               originalAmount: transactionData.amount,
               details: {
-                  interestRate: 0,
+                  interestRate: 3.5, // INC-04 Fix: default to a reasonable rate (e.g. 3.5%) rather than 0%
                   rateType: 'FIXED',
                   interestStartDate: newActualDate,
                   principalStartDate: newActualDate

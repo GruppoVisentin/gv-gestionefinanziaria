@@ -82,6 +82,18 @@ export const exportCashFlowProjectionPDF = ({
 
     // Rate prestiti previsionali
     const calculateLoanRepayment = (mIdx: number) => {
+      // BUG-01 Fix: If we already have manual transactions for interests or quota capitale in the month, skip prediction.
+      const hasLoanTransactions = transactions.some(t => {
+        const tDate = new Date(t.date);
+        return (
+          t.type === TransactionType.EXPENSE &&
+          tDate.getMonth() === mIdx &&
+          tDate.getFullYear() === currentYear &&
+          (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
+        );
+      });
+      if (hasLoanTransactions) return 0;
+
       let total = 0;
       transactions.filter(t => {
         if (t.type !== TransactionType.INCOME) return false;
@@ -137,30 +149,70 @@ export const exportCashFlowProjectionPDF = ({
     return { income: fIncome, expense: fExpense, net: fIncome - fExpense, hasActuals: false };
   };
 
-  // Helper per calcolo componenti prestito (duplicato per indipendenza utility)
+  // Helper per calcolo componenti prestito (allineato a ExpenseTimeline.tsx con supporto rinegoziazioni)
   function calculateLoanComponents(principal: number, details: any, targetMonthIndex: number) {
-    if (!details) return { total: 0 };
-    const { interestRate, interestStartDate, principalStartDate, endDate } = details;
-    const targetDate = new Date(currentYear, targetMonthIndex, 1);
-    const intStart = new Date(interestStartDate);
-    const princStart = new Date(principalStartDate);
-    if (isNaN(intStart.getTime()) || isNaN(princStart.getTime())) return { total: 0 };
-    const end = endDate ? new Date(endDate) : new Date(princStart.getFullYear() + 20, princStart.getMonth(), 1);
-    if (targetDate < intStart || targetDate > end) return { total: 0 };
-    const monthlyRate = (interestRate / 100) / 12;
-    const n = (end.getFullYear() - princStart.getFullYear()) * 12 + (end.getMonth() - princStart.getMonth());
-    if (n <= 0) return { total: 0 };
-    const rataFissa = monthlyRate > 0
-      ? principal * (monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
+    if (!details || !details.interestStartDate) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
+
+    const targetDate = new Date(currentYear, targetMonthIndex, 15);
+    const intStart = new Date(details.interestStartDate);
+    const princStart = details.principalStartDate ? new Date(details.principalStartDate) : intStart;
+    const end = details.endDate ? new Date(details.endDate) : new Date(intStart.getFullYear() + 20, intStart.getMonth(), intStart.getDate());
+
+    if (targetDate < intStart || targetDate > end) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
+
+    // Determina il tasso applicabile per questa specifica data (considerando rinegoziazioni)
+    let currentRate = details.interestRate;
+    let currentType = details.rateType;
+    
+    if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
+      // Ordina per data e prendi l'ultima rinegoziazione valida per targetDate
+      const rinegValide = [...details.rinegoziazioni]
+        .filter((r: any) => new Date(r.dataInizio) <= targetDate)
+        .sort((a: any, b: any) => new Date(b.dataInizio).getTime() - new Date(a.dataInizio).getTime());
+      
+      if (rinegValide.length > 0) {
+        currentRate = rinegValide[0].nuovoTasso;
+        currentType = rinegValide[0].nuovoTipoTasso;
+      }
+    }
+
+    const i = (currentRate / 100) / 12;
+    const amortizationStart = !isNaN(princStart.getTime()) ? princStart : intStart;
+    
+    if (targetDate >= intStart && targetDate < amortizationStart) {
+        return { 
+          total: principal * i, 
+          principal: 0, 
+          interest: principal * i,
+          rateUsed: currentRate,
+          typeUsed: currentType
+        };
+    }
+
+    const n = (end.getFullYear() - amortizationStart.getFullYear()) * 12 + (end.getMonth() - amortizationStart.getMonth());
+    if (n <= 0) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
+
+    const rataFissa = i > 0
+      ? principal * (i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1)
       : principal / n;
-    const monthsPassed = (targetDate.getFullYear() - princStart.getFullYear()) * 12 + (targetDate.getMonth() - princStart.getMonth());
-    if (monthsPassed < 0) return { total: 0 };
-    const residualCapital = monthlyRate > 0
-      ? principal * (Math.pow(1 + monthlyRate, n) - Math.pow(1 + monthlyRate, monthsPassed)) / (Math.pow(1 + monthlyRate, n) - 1)
+
+    const monthsPassed = (targetDate.getFullYear() - amortizationStart.getFullYear()) * 12 + (targetDate.getMonth() - amortizationStart.getMonth());
+    if (monthsPassed < 0) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
+
+    const residualCapital = i > 0
+      ? principal * (Math.pow(1 + i, n) - Math.pow(1 + i, monthsPassed)) / (Math.pow(1 + i, n) - 1)
       : Math.max(0, principal - (principal / n * monthsPassed));
-    const interestPayment = Math.max(0, residualCapital * monthlyRate);
-    const principalPayment = targetDate >= princStart ? Math.min(residualCapital, rataFissa - interestPayment) : 0;
-    return { total: principalPayment + interestPayment };
+
+    const interestPayment = Math.max(0, residualCapital * i);
+    const principalPayment = targetDate >= amortizationStart ? Math.min(residualCapital, rataFissa - interestPayment) : 0;
+
+    return {
+      total: Math.round((principalPayment + interestPayment) * 100) / 100,
+      principal: Math.round(principalPayment * 100) / 100,
+      interest: Math.round(interestPayment * 100) / 100,
+      rateUsed: currentRate,
+      typeUsed: currentType
+    };
   }
 
   const months = [

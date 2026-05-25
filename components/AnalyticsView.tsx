@@ -299,8 +299,15 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
   }, [actualsForYear, expenseBreakdown, selectedYear]);
 
   // KPIs
-  const totalIncome = actualsForPeriod.filter(t => t.type === TransactionType.INCOME).reduce((acc, t) => acc + (t.amount * (1 + (t.vatRate || 0)/100)), 0);
-  const totalExpense = actualsForPeriod.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, t) => acc + (t.amount * (1 + (t.vatRate || 0)/100)), 0);
+  // INC-06 Fix: Exclude financing/capital/non-operative flows (ceType: solo_cashflow, capex, distribuzione_utile) from the main cash flow KPIs to show operational net flow.
+  const totalIncome = actualsForPeriod
+    .filter(t => t.type === TransactionType.INCOME && !['solo_cashflow', 'capex', 'distribuzione_utile'].includes(t.ceType ?? ''))
+    .reduce((acc, t) => acc + (t.amount * (1 + (t.vatRate || 0)/100)), 0);
+
+  const totalExpense = actualsForPeriod
+    .filter(t => t.type === TransactionType.EXPENSE && !['solo_cashflow', 'capex', 'distribuzione_utile'].includes(t.ceType ?? ''))
+    .reduce((acc, t) => acc + (t.amount * (1 + (t.vatRate || 0)/100)), 0);
+
   const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
 
   const renderDetailedTable = (

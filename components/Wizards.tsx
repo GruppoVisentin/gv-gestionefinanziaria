@@ -69,7 +69,7 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
 
   const handleStart = () => {
     const prevYear = targetYear - 1;
-    const esclusi: CEType[] = ['onere_finanziario', 'ammortamento'];
+    const esclusi: CEType[] = ['onere_finanziario', 'ammortamento', 'solo_cashflow', 'capex', 'distribuzione_utile'];
     
     const historical = transactions.filter(tx => {
       const d = new Date(tx.date);

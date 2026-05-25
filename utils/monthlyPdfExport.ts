@@ -79,35 +79,73 @@ export const exportMonthlyReportPDF = async (config: MonthlyReportConfig): Promi
   pdf.text('1. RIEPILOGO ESECUTIVO', 10, currentY);
   currentY += 8;
 
-  const totConsEntrate = sumGross(income);
-  const totConsUscite  = sumGross(expense);
-  const totPrevEntrate = sumGross(forecIncome);
-  const totPrevUscite  = sumGross(forecExpense);
+  // Calcolo Flusso Operativo / Netto da CE (escludendo capex, solo_cashflow, ed escludendo finanziamenti/prelievi soci)
+  // Per entrate: ricavo_core, ricavo_immobiliare, ricavo_altro, provento_finanziario, straordinario
+  const entrateOperative = income.filter(t => ['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+  // Per uscite: costo_variabile, costo_fisso, costo_studio, onere_finanziario, straordinario
+  const usciteOperative = expense.filter(t => ['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+
+  // Calcoli previsionali
+  const prevEntrateOperative = forecIncome.filter(t => ['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+  const prevUsciteOperative = forecExpense.filter(t => ['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+
+  const totConsEntrate = sumGross(entrateOperative);
+  const totConsUscite  = sumGross(usciteOperative);
+  const totPrevEntrate = sumGross(prevEntrateOperative);
+  const totPrevUscite  = sumGross(prevUsciteOperative);
   const flussoNetto    = totConsEntrate - totConsUscite;
+
+  // Flusso finanziario/patrimoniale non operativo (CAPEX, Mutui, Prelievi, Versamenti F24/IVA ecc.)
+  const entrateNonOp = income.filter(t => !['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+  const usciteNonOp = expense.filter(t => !['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+  const prevEntrateNonOp = forecIncome.filter(t => !['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+  const prevUsciteNonOp = forecExpense.filter(t => !['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+
+  const totConsEntrateNonOp = sumGross(entrateNonOp);
+  const totConsUsciteNonOp  = sumGross(usciteNonOp);
+  const totPrevEntrateNonOp = sumGross(prevEntrateNonOp);
+  const totPrevUsciteNonOp  = sumGross(prevUsciteNonOp);
+  
+  const saldoCassaCons = sumGross(income) - sumGross(expense);
+  const saldoCassaPrev = sumGross(forecIncome) - sumGross(forecExpense);
 
   autoTable(pdf, {
     startY: currentY,
     head: [['Voce', 'Consuntivo', 'Previsionale', 'Scostamento', '% Scost.']],
     body: [
       [
-        'Entrate Totali (lordo)',
+        'Entrate Operative (lordo)',
         CURRENCY_FORMATTER.format(totConsEntrate),
         CURRENCY_FORMATTER.format(totPrevEntrate),
         CURRENCY_FORMATTER.format(totConsEntrate - totPrevEntrate),
         totPrevEntrate > 0 ? `${(((totConsEntrate - totPrevEntrate) / totPrevEntrate) * 100).toFixed(1)}%` : '—',
       ],
       [
-        'Uscite Totali (lordo)',
+        'Uscite Operative (lordo)',
         CURRENCY_FORMATTER.format(totConsUscite),
         CURRENCY_FORMATTER.format(totPrevUscite),
         CURRENCY_FORMATTER.format(totConsUscite - totPrevUscite),
         totPrevUscite > 0 ? `${(((totConsUscite - totPrevUscite) / totPrevUscite) * 100).toFixed(1)}%` : '—',
       ],
       [
-        'Flusso Netto di Cassa',
+        'Flusso Operativo Netto (CE)',
         CURRENCY_FORMATTER.format(flussoNetto),
         CURRENCY_FORMATTER.format(totPrevEntrate - totPrevUscite),
         CURRENCY_FORMATTER.format(flussoNetto - (totPrevEntrate - totPrevUscite)),
+        '—',
+      ],
+      [
+        'Flussi Non Operativi (Finanza/Capex/Fisco)',
+        CURRENCY_FORMATTER.format(totConsEntrateNonOp - totConsUsciteNonOp),
+        CURRENCY_FORMATTER.format(totPrevEntrateNonOp - totPrevUsciteNonOp),
+        CURRENCY_FORMATTER.format((totConsEntrateNonOp - totConsUsciteNonOp) - (totPrevEntrateNonOp - totPrevUsciteNonOp)),
+        '—',
+      ],
+      [
+        'Variazione Cassa Mensile Totale',
+        CURRENCY_FORMATTER.format(saldoCassaCons),
+        CURRENCY_FORMATTER.format(saldoCassaPrev),
+        CURRENCY_FORMATTER.format(saldoCassaCons - saldoCassaPrev),
         '—',
       ],
     ],

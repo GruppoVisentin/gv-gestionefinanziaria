@@ -24,6 +24,8 @@ interface CategoryManagerProps {
   onAnnullaSessione?: (id: string) => void;
   onImportStorico?: () => void;
   storicoImportato?: boolean;
+  transactions?: any[];
+  onRenameCategory?: (oldName: string, newName: string) => void;
 }
 
 const CategoryManager: React.FC<CategoryManagerProps> = ({ 
@@ -43,7 +45,9 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   importSessions = [],
   onAnnullaSessione,
   onImportStorico,
-  storicoImportato
+  storicoImportato,
+  transactions = [],
+  onRenameCategory
 }) => {
   const [activeTab, setActiveTab] = useState<'fixed' | 'variable' | 'income' | 'tipologie' | 'data'>('fixed');
   const [newCategory, setNewCategory] = useState('');
@@ -90,9 +94,19 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   const saveEdit = () => {
     if (editingIndex === null || !editValue.trim()) return;
+    const oldName = currentList[editingIndex];
+    const newName = editValue.trim();
+    if (oldName === newName) {
+      setEditingIndex(null);
+      setEditValue('');
+      return;
+    }
     const newList = [...currentList];
-    newList[editingIndex] = editValue.trim();
+    newList[editingIndex] = newName;
     updateList(newList);
+    if (onRenameCategory) {
+      onRenameCategory(oldName, newName);
+    }
     setEditingIndex(null);
     setEditValue('');
   };

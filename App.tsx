@@ -1176,6 +1176,10 @@ const App: React.FC = () => {
                     onAnnullaSessione={handleAnnullaSessioneImport}
                     onImportStorico={() => setShowImportStorico(true)}
                     storicoImportato={storicoImportato}
+                    transactions={transactions}
+                    onRenameCategory={(oldName, newName) => {
+                      setTransactions(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
+                    }}
                 />
             </div>
         );
@@ -1554,6 +1558,13 @@ const App: React.FC = () => {
               setImportSessions(prev => [session, ...prev])
             }
             onClose={() => setShowImportStorico(false)}
+          />
+        )}
+
+        {activeTermId && (
+          <TermModal 
+            termId={activeTermId}
+            onClose={closeTerm}
           />
         )}
 

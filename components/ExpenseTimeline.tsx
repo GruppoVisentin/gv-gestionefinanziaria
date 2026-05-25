@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Transaction, TransactionType, Project, InitialBalanceBreakdown, LoanDetails, AppView } from '../types';
-import { CURRENCY_FORMATTER, DATE_FORMATTER } from '../constants';
+import { CURRENCY_FORMATTER, DATE_FORMATTER, CATEGORY_TO_CE_TYPE } from '../constants';
 import { Plus, X, Save, ListFilter, Pencil, Trash2, ChevronDown, Calendar, CalendarClock, Landmark, Printer, Briefcase, Shield, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -314,12 +314,31 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
     // If Forecast, add calculated estimates
     if (isForecast) {
         // Add Project Estimates
+        // INC-01 Fix: use correct categories consistent with constants.ts
         ['[CONSULENZE] Professionisti Esterni di Cantiere', '[PERSONALE] Subappalti Manodopera', '[FORNITORI] Fornitori Materiali', '[FORNITORI] Subappalti su Cantieri'].forEach(cat => {
+            // Se la categoria usata nei costruttori cantieri è corretta in constants.ts
+            // come '[PERSONALE] Subappalti Manodopera' (oppure '[CANTIERE] Subappalti Manodopera')
+            // controlliamo se è nei variableCategories. In constants.ts:
+            // "[PERSONALE] Subappalti Manodopera" è nei variable_cost_categories.
             transactionTotal += calculateProjectCostForMonth(cat, monthIndex);
         });
         
         // Add Loan Repayments (Global for the month)
-        transactionTotal += calculateLoanRepaymentForMonth(monthIndex).total;
+        // BUG-01 Fix: Check if we already have transactions for loan categories in this month/year.
+        // If there are manual/imported actuals or manual forecasts for '[FINANZA] Interessi Passivi Finanziamenti' or '[FINANZA] Quota Capitale Rate Finanziamenti',
+        // we shouldn't add the calculated repayments to avoid double counting.
+        const hasLoanTransactions = expenseTransactions.some(t => {
+          const tDate = new Date(t.date);
+          return (
+            tDate.getMonth() === monthIndex &&
+            tDate.getFullYear() === currentYear &&
+            (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
+          );
+        });
+
+        if (!hasLoanTransactions) {
+            transactionTotal += calculateLoanRepaymentForMonth(monthIndex).total;
+        }
     }
 
     return transactionTotal;
@@ -342,13 +361,27 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             total += calculateProjectCostForMonth(category, m);
         }
         if (isInterestCategory(category)) {
-            for (let m = 0; m < 12; m++) {
-                total += calculateLoanRepaymentForMonth(m).interest;
+            // BUG-01 Fix: Only add calculations if there are no manual transactions for interests in the whole year
+            const hasInterests = expenseTransactions.some(t => {
+              const tDate = new Date(t.date);
+              return tDate.getFullYear() === currentYear && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
+            });
+            if (!hasInterests) {
+                for (let m = 0; m < 12; m++) {
+                    total += calculateLoanRepaymentForMonth(m).interest;
+                }
             }
         }
         if (isPrincipalCategory(category)) {
-            for (let m = 0; m < 12; m++) {
-                total += calculateLoanRepaymentForMonth(m).principal;
+            // BUG-01 Fix: Only add calculations if there are no manual transactions for principal in the whole year
+            const hasPrincipal = expenseTransactions.some(t => {
+              const tDate = new Date(t.date);
+              return tDate.getFullYear() === currentYear && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
+            });
+            if (!hasPrincipal) {
+                for (let m = 0; m < 12; m++) {
+                    total += calculateLoanRepaymentForMonth(m).principal;
+                }
             }
         }
     }
@@ -372,13 +405,25 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                 total += calculateProjectCostForMonth(cat, m);
             }
             if (isInterestCategory(cat)) {
-                for (let m = 0; m < 12; m++) {
-                    total += calculateLoanRepaymentForMonth(m).interest;
+                const hasInterests = expenseTransactions.some(t => {
+                  const tDate = new Date(t.date);
+                  return tDate.getFullYear() === currentYear && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
+                });
+                if (!hasInterests) {
+                    for (let m = 0; m < 12; m++) {
+                        total += calculateLoanRepaymentForMonth(m).interest;
+                    }
                 }
             }
             if (isPrincipalCategory(cat)) {
-                for (let m = 0; m < 12; m++) {
-                    total += calculateLoanRepaymentForMonth(m).principal;
+                const hasPrincipal = expenseTransactions.some(t => {
+                  const tDate = new Date(t.date);
+                  return tDate.getFullYear() === currentYear && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
+                });
+                if (!hasPrincipal) {
+                    for (let m = 0; m < 12; m++) {
+                        total += calculateLoanRepaymentForMonth(m).principal;
+                    }
                 }
             }
         });
@@ -404,8 +449,18 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             }
         });
         // Loans
-        for (let m = 0; m < 12; m++) {
-            total += calculateLoanRepaymentForMonth(m).total;
+        // BUG-01 Fix: Check if loans have transactions
+        const hasLoanTransactions = expenseTransactions.some(t => {
+          const tDate = new Date(t.date);
+          return (
+            tDate.getFullYear() === currentYear &&
+            (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
+          );
+        });
+        if (!hasLoanTransactions) {
+            for (let m = 0; m < 12; m++) {
+                total += calculateLoanRepaymentForMonth(m).total;
+            }
         }
     }
     return total;
@@ -474,7 +529,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
         type: TransactionType.EXPENSE,
         category: activeCell.category,
         project: newActualProject,
-        isForecast: false
+        isForecast: false,
+        ceType: CATEGORY_TO_CE_TYPE[activeCell.category] || 'solo_cashflow'
     };
 
     if (editingActualId && onUpdateTransaction) {
@@ -539,13 +595,15 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             const dateString = `${currentYear}-${String(i + 1).padStart(2, '0')}-${day}`;
             onSaveTransaction({
                 amount: finalAmount, vatRate: vatVal, date: dateString, description: descriptionVal,
-                type: TransactionType.EXPENSE, category: addingForecast.category, isForecast: true
+                type: TransactionType.EXPENSE, category: addingForecast.category, isForecast: true,
+                ceType: CATEGORY_TO_CE_TYPE[addingForecast.category] || 'solo_cashflow'
             });
         }
     } else {
         const transactionData = {
             amount: finalAmount, vatRate: vatVal, date: dateCassaVal, description: descriptionVal,
-            type: TransactionType.EXPENSE, category: addingForecast.category, isForecast: formType === 'FORECAST'
+            type: TransactionType.EXPENSE, category: addingForecast.category, isForecast: formType === 'FORECAST',
+            ceType: CATEGORY_TO_CE_TYPE[addingForecast.category] || 'solo_cashflow'
         };
         if (editingForecastId && onUpdateTransaction) {
             const original = transactions.find(t => t.id === editingForecastId);
