@@ -62,16 +62,24 @@ export const generateFinancialInsights = async (transactions: Transaction[]): Pr
     ).join('\n');
 
     const prompt = `
-      Sei un consulente finanziario esperto. Analizza i seguenti dati sulle transazioni (formato: Data, Tipo, Categoria, Importo, Descrizione):
+      Sei un consulente finanziario esperto. Analizza i seguenti dati sulle transazioni (formato: Data, Tipo, Categoria, Importo, Descrizione) di un'impresa edile (Gruppo Visentin SRL):
       
       ${csvData}
 
-      Fornisci un'analisi breve e utile in formato Markdown. Includi:
-      1. Una panoramica generale della salute finanziaria.
-      2. Le principali aree di spesa.
-      3. 2-3 consigli pratici e azionabili per risparmiare o ottimizzare il budget basati su questi dati specifici.
+      Il software calcola le performance basandosi sulle seguenti logiche:
+      - Fatturato: Ricavi Core + Altro + Immobiliare.
+      - Primo Margine %: (Fatturato - Costi Variabili) / Fatturato. (Target >15%).
+      - EBITDA %: (Primo Margine - Costi Fissi Operativi) / Fatturato.
+      - Utile Netto %: Utile dopo tasse e ammortamenti su Fatturato.
+      - BEP Cassa: Punto di pareggio di cassa considerando i costi fissi operativi e le rate capitale finanziamenti (capex).
+      - Incidenze e impatti delle rimanenze (WIP).
+
+      Fornisci un'analisi breve e strategica in formato Markdown. Includi:
+      1. Una panoramica generale della salute economica e di cassa.
+      2. Le aree di costo critiche (variabili e fisse).
+      3. 2-3 raccomandazioni concrete per allinearsi ai target ottimali di margine e sostenibilità della cassa.
       
-      Usa un tono professionale ma amichevole. Parla in Italiano.
+      Usa un tono professionale, conciso e concreto. Parla in Italiano.
     `;
 
     const response = await ai.models.generateContent({
@@ -99,13 +107,30 @@ export const chatWithCoach = async (
     ).join('\n');
 
     const systemInstruction = `
-      Sei un consulente finanziario esperto (AI Coach) per l'app Gruppo Visentin.
+      Sei un consulente finanziario esperto (AI Coach) per l'app Gruppo Visentin (gestione cash flow ed economico di un'impresa edile).
       Hai accesso ai dati delle transazioni dell'utente:
       ${csvData}
       
-      Rispondi alle domande dell'utente basandoti su questi dati e sulla tua esperienza finanziaria.
-      Sii conciso, pratico e professionale. Parla in Italiano.
-      Usa Markdown per formattare le risposte.
+      LOGICHE E FORMULE SPECIFICHE DEL SOFTWARE (Usa queste esatte definizioni nelle risposte):
+      1. Fatturato: Ricavi Core + Ricavi Altro + Ricavi Immobiliare.
+      2. Primo Margine %: (Fatturato - Costi Variabili) / Fatturato. (Ottimo >=15%, Buono 10-15%, Attenzione 5-10%, Critico <5%).
+      3. EBITDA % (Margine Operativo Lordo): (Primo Margine - Costi Fissi Operativi) / Fatturato. I Costi Fissi Operativi includono struttura e studio/personale ufficio, esclusi gli ammortamenti. (Ottimo >=10%, Buono 7-10%, Attenzione 4-7%, Critico <4%).
+      4. Utile Netto %: (EBITDA - Ammortamenti - Oneri Finanziari + Proventi Finanziari + Straordinari - Imposte) / Fatturato. (Ottimo >=6%, Buono 4-6%, Attenzione 2-4%, Critico <2%).
+      5. Punto di Pareggio (BEP Contabile): Costi Fissi Totali (con ammortamenti) / (1 - Costi Variabili / Fatturato).
+      6. Punto di Pareggio di Cassa (BEP Cassa): Costi Fissi di Cassa / (1 - Costi Variabili / Fatturato). Dove Costi Fissi di Cassa = Costi Fissi Operativi (senza ammortamenti) + Quota Capitale Rate Finanziamenti (capex).
+      7. Incidenza Studio %: Costi Tecnici e Personale Studio / Fatturato. (Ottimo <=15%, Buono 15-20%, Attenzione 20-25%, Critico >25%).
+      8. Incidenza Fissi %: Costi Struttura e Sede / Fatturato. (Ottimo <=8%, Buono 8-12%, Attenzione 12-15%, Critico >15%).
+      9. Compenso Soci (Incidenza su Utile): Compenso Soci / Utile Netto Totale. (Ottimo <=30%, Buono 30-50%, Attenzione 50-80%, Critico >80%).
+      10. DSO (Days Sales Outstanding): Lag medio tra data fattura (invoiceDate) e incasso effettivo (se ci sono almeno 3 fatture); altrimenti stima fissa di 45 giorni.
+      11. DPO (Days Payable Outstanding): Lag medio tra data fattura e pagamento effettivo a fornitori (se ci sono almeno 3 fatture); altrimenti stima fissa di 60 giorni.
+
+      REGOLE EDILIZIA E DETTAGLI APPLICAZIONE:
+      - La quota capitale dei prestiti/mutui è considerata capex (non costo CE) ma incide nel Cash Flow e nel calcolo del BEP Cassa.
+      - La variazione delle rimanenze WIP e dei materiali a magazzino incide sull'utile di competenza e sulle basi imponibili IRES (24%) e IRAP (3,9% in Veneto).
+
+      Rispondi alle domande dell'utente basandoti su questi dati, su queste formule del software e sulla tua esperienza.
+      Se ti chiedono informazioni sulle formule o sul calcolo di un indice, rispondi spiegando esattamente le regole descritte sopra.
+      Sii conciso, pratico e professionale. Parla in Italiano. Usa Markdown per formattare le risposte.
     `;
 
     // Convert history to Gemini format
