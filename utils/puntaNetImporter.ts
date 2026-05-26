@@ -5,6 +5,13 @@ import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 // ─── TIPI ────────────────────────────────────────────────────────
 
+export interface ExistingTransactionIndexes {
+  fepMap?: Map<string, Transaction[]>;
+  feaMap?: Map<string, Transaction[]>;
+  dateAmountDescMap?: Map<string, Transaction[]>;
+  dateAmountTypeMap?: Map<string, Transaction[]>;
+}
+
 export interface PuntaNetRiga {
   data: Date;
   descrizione: string;
@@ -26,6 +33,7 @@ export interface DettFEP {
   cantiere: string;
   tipologia: string;
   categoria: string;
+  aliquoteMiste: boolean;
 }
 
 export interface DettFEA {
@@ -63,11 +71,13 @@ export interface RigaClassificata {
   vatRateNota: string | null;
   vatRateConfermato: AliquotaIVA | null;
   isDuplicato: boolean;
-  livelloDuplicato: 1 | 2 | null;
+  livelloDuplicato: 1 | 2 | 3 | null;
   arricchitoDaFattura: boolean;
+  aliquoteMiste?: boolean;
   cantiereSuggerito: string | null;
   cantiereScore: number;
   cantierePuntaNet: string;
+  cantiereMatchFonte: 'cliente_fea' | 'fornitore_fep' | 'nome_cantiere' | 'testo_banca' | null;
   tipoEntrata: 'sal' | 'acconto' | 'saldo' | 'immobile' | 'altro' | null;
 }
 
@@ -81,10 +91,9 @@ export const codIvaToNumber = (cod: string): AliquotaIVA => {
 };
 
 export const inferisciTipoEntrata = (desc: string): 'sal' | 'acconto' | 'saldo' | null => {
-  const d = desc.toUpperCase();
-  if (d.includes('S.A.L.')) return 'sal';
-  if (d.includes('ACCONTO')) return 'acconto';
-  if (d.includes('SALDO')) return 'saldo';
+  if (/S\.A\.L\.|^SAL$|\bSAL\b|STATO AVANZAMENTO/i.test(desc)) return 'sal';
+  if (/\bACCONTO\b|ANTICIPO|PRIMO PAGAMENTO/i.test(desc)) return 'acconto';
+  if (/\bSALDO\b|SALDO FINALE|ULTIMO PAGAMENTO|LIQUIDAZIONE/i.test(desc)) return 'saldo';
   return null;
 };
 
@@ -136,7 +145,15 @@ export const fuzzyMatchCantiere = (
     }
   }
 
-  return bestMatch && bestMatch.score >= 40 ? bestMatch : null;
+  return bestMatch && bestMatch.score >= 55 ? bestMatch : null;
+};
+
+// Verifica se tutte le parole significative (≥3 char) di 'a' compaiono in 'b' (qualsiasi ordine).
+// Richiede almeno 2 parole significative per evitare falsi positivi con cognomi singoli comuni (es. "Rossi").
+const tutteLeParolePresenti = (a: string, b: string): boolean => {
+  const paroleA = a.split(' ').filter(p => p.length >= 3);
+  if (paroleA.length < 2) return false;
+  return paroleA.every(p => b.includes(p));
 };
 
 export const abbinaCantiereDaProgetto = (
@@ -169,9 +186,12 @@ export const abbinaCantiereDaProgetto = (
     }
 
     // 2. Prova corrispondenza con il nome del cliente principale
+    //    Usa word-set matching per gestire inversione nome/cognome
     if (clienteCantiere.length > 2) {
-      if (raw.includes(clienteCantiere) || clienteCantiere.includes(raw)) {
-        const score = 85;
+      const matchDiretto = raw.includes(clienteCantiere) || clienteCantiere.includes(raw);
+      const matchParole = tutteLeParolePresenti(clienteCantiere, raw) || tutteLeParolePresenti(raw, clienteCantiere);
+      if (matchDiretto || matchParole) {
+        const score = matchDiretto ? 85 : 80;
         if (score > (bestMatch?.score ?? 0)) {
           bestMatch = { cantiere: p.name, score };
         }
@@ -179,50 +199,172 @@ export const abbinaCantiereDaProgetto = (
     }
 
     // 3. Prova corrispondenza con gli intestatari delle fatture
+    //    Usa word-set matching per gestire inversione nome/cognome
     for (const nomeIntestatario of intestatariCantiere) {
       if (nomeIntestatario.length > 2) {
-        if (raw.includes(nomeIntestatario) || nomeIntestatario.includes(raw)) {
-          const score = 80;
+        const matchDiretto = raw.includes(nomeIntestatario) || nomeIntestatario.includes(raw);
+        const matchParole = tutteLeParolePresenti(nomeIntestatario, raw) || tutteLeParolePresenti(raw, nomeIntestatario);
+        if (matchDiretto || matchParole) {
+          const score = matchDiretto ? 80 : 75;
           if (score > (bestMatch?.score ?? 0)) {
             bestMatch = { cantiere: p.name, score };
           }
         }
       }
     }
+
+    // 4. Prova corrispondenza con la location (Gap G)
+    if (p.location && p.location.trim().length > 2) {
+      const locNorm = normalizza(p.location);
+      const matchDiretto = raw.includes(locNorm) || locNorm.includes(raw);
+      const matchParole = tutteLeParolePresenti(locNorm, raw) || tutteLeParolePresenti(raw, locNorm);
+      if (matchDiretto || matchParole) {
+        const score = 65;
+        if (score > (bestMatch?.score ?? 0)) {
+          bestMatch = { cantiere: p.name, score };
+        }
+      }
+    }
   }
 
-  return bestMatch && bestMatch.score >= 40 ? bestMatch : null;
+  return bestMatch && bestMatch.score >= 55 ? bestMatch : null;
 };
 
 // ─── PARSER FILE BANCA (Cartel1.xlsx) ────────────────────────────
+
+export const findHeaderIndex = (headers: string[], keywords: string[], fallback: number): number => {
+  for (let i = 0; i < headers.length; i++) {
+    const h = String(headers[i] ?? '').toUpperCase();
+    if (keywords.some(kw => h.includes(kw))) {
+      return i;
+    }
+  }
+  return fallback;
+};
+
+export const estraiNumeroFattura = (descrizione: string, tipoMovimento: 'FEP' | 'FEA'): string | undefined => {
+  const descUpper = descrizione.toUpperCase();
+  if (tipoMovimento === 'FEP') {
+    const m = descrizione.match(/(?:[Pp]agamento|[Rr]ilevata)\s+FEP\s+n\.\s*([\w\/\-\.]+)/i);
+    if (m) return m[1].trim();
+  } else if (tipoMovimento === 'FEA') {
+    let m = descrizione.match(/[Ii]ncasso\s+FEA\s+n\.\s*(\d+)\s+(\d{4})/i);
+    if (m) {
+      return `${m[1]}/${m[2]}`;
+    }
+    m = descrizione.match(/FEA\s+n\.\s*(\d+)\/(\d{4})/i);
+    if (m) {
+      return `${m[1]}/${m[2]}`;
+    }
+    m = descrizione.match(/(\d{1,4})\/(\d{4})/);
+    if (m) {
+      return `${m[1]}/${m[2]}`;
+    }
+  }
+  return undefined;
+};
+
+export const validaFileBanca = (workbook: XLSX.WorkBook): void => {
+  const ws = workbook.Sheets[workbook.SheetNames[0]];
+  if (!ws) throw new Error("Il file Banca selezionato è vuoto o non valido.");
+  
+  const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (rows.length === 0) throw new Error("Il file Banca selezionato non contiene righe.");
+
+  const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
+  const hasData = headers.some(h => h.includes('DATA'));
+  const hasDesc = headers.some(h => h.includes('DESCRIZIONE') || h.includes('CAUSALE'));
+  const hasFlag = headers.some(h => h.includes('CONTO') || h.includes('B/I') || h.includes('B O I') || h.includes('FLAG'));
+
+  if (!hasData || !hasDesc) {
+    throw new Error("Il file Banca selezionato non contiene le colonne necessarie (es. Data, Descrizione/Causale).");
+  }
+  if (!hasFlag) {
+    throw new Error("Il file Banca selezionato non contiene la colonna di flag del conto (B/I).");
+  }
+};
+
+export const validaFileFEP = (workbook: XLSX.WorkBook): void => {
+  const ws = workbook.Sheets[workbook.SheetNames[0]];
+  if (!ws) throw new Error("Il file Uscite (FEP) selezionato è vuoto o non valido.");
+
+  const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (rows.length === 0) throw new Error("Il file Uscite (FEP) selezionato non contiene righe.");
+
+  const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
+  const indexDesc = headers.findIndex(h => h.includes('DESCRIZIONE') || h.includes('DETTAGLIO') || h.includes('CAUSALE') || h.includes('FATTURA'));
+  const targetColIdx = indexDesc !== -1 ? indexDesc : 1;
+
+  const hasFEP = rows.some(row => {
+    if (!row) return false;
+    const desc = String(row[targetColIdx] ?? '').trim();
+    return desc.toUpperCase().startsWith('FEP');
+  });
+
+  if (!hasFEP) {
+    throw new Error("Il file Uscite (FEP) selezionato non contiene fatture FEP valide.");
+  }
+};
+
+export const validaFileFEA = (workbook: XLSX.WorkBook, label: string = "Entrate (FEA)"): void => {
+  const ws = workbook.Sheets[workbook.SheetNames[0]];
+  if (!ws) throw new Error(`Il file ${label} selezionato è vuoto o non valido.`);
+
+  const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (rows.length === 0) throw new Error(`Il file ${label} selezionato non contiene righe.`);
+
+  const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
+  const indexDesc = headers.findIndex(h => h.includes('DESCRIZIONE') || h.includes('DETTAGLIO') || h.includes('CAUSALE') || h.includes('FATTURA'));
+  const targetColIdx = indexDesc !== -1 ? indexDesc : 1;
+
+  const hasFEA = rows.some(row => {
+    if (!row) return false;
+    const desc = String(row[targetColIdx] ?? '').trim();
+    return /^FEA\s+\d+/i.test(desc);
+  });
+
+  if (!hasFEA) {
+    throw new Error(`Il file ${label} selezionato non contiene fatture FEA valide.`);
+  }
+};
 
 export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
   const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
 
   const risultati: PuntaNetRiga[] = [];
+  if (rows.length === 0) return risultati;
+
+  const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
+  const indexData = findHeaderIndex(headers, ['DATA'], 0);
+  const indexDesc = findHeaderIndex(headers, ['DESCRIZIONE', 'CAUSALE'], 2);
+  const indexEntrate = findHeaderIndex(headers, ['ENTRAT', 'AVERE', 'IMPORTI ENTRATE'], 6);
+  const indexUscite = findHeaderIndex(headers, ['USCIT', 'DARE', 'IMPORTI USCITE'], 7);
+  const indexFlag = findHeaderIndex(headers, ['CONTO', 'B/I', 'B O I', 'FLAG'], 8);
+
+  const maxIndexRequired = Math.max(indexData, indexDesc, indexEntrate, indexUscite, indexFlag);
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || r.length < 9) continue;
+    if (!r || r.length <= maxIndexRequired) continue;
 
-    const flag = String(r[8] ?? '').trim().toUpperCase();
+    const flag = String(r[indexFlag] ?? '').trim().toUpperCase();
     if (flag !== 'B' && flag !== 'I') continue;
 
-    const eBanca = parseFloat(String(r[6] ?? '').replace(',', '.'));
-    const uBanca = parseFloat(String(r[7] ?? '').replace(',', '.'));
+    const eBanca = parseFloat(String(r[indexEntrate] ?? '').replace(',', '.'));
+    const uBanca = parseFloat(String(r[indexUscite] ?? '').replace(',', '.'));
 
     const isEntrata = !isNaN(eBanca) && eBanca > 0;
     const isUscita = !isNaN(uBanca) && uBanca > 0;
 
     if (!isEntrata && !isUscita) continue;
 
-    const descrizione = String(r[2] ?? '').trim();
+    const descrizione = String(r[indexDesc] ?? '').trim();
     if (!descrizione) continue;
 
     let data: Date;
     try {
-      const val = r[0];
+      const val = r[indexData];
       if (val instanceof Date) {
         data = val;
       } else if (typeof val === 'number') {
@@ -246,16 +388,20 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
     };
 
     // Classificazione tipo movimento
-    if (descrizione.toUpperCase().includes('PAGAMENTO FEP') || descrizione.toUpperCase().includes('RILEVATA FEP')) {
+    const descUpper = descrizione.toUpperCase();
+    if (descUpper.includes('PAGAMENTO FEP') || descUpper.includes('RILEVATA FEP')) {
       riga.tipoMovimento = 'FEP';
-      const m = descrizione.match(/(?:[Pp]agamento|[Rr]ilevata)\s+FEP\s+n\.\s*([\w\/\-\.]+)/i);
-      if (m) riga.numeroFattura = m[1].trim();
-    } else if (descrizione.toUpperCase().includes('INCASSO FEA')) {
+      riga.numeroFattura = estraiNumeroFattura(descrizione, 'FEP');
+    } else if (descUpper.includes('INCASSO FEA') || descUpper.includes('FEA') || descUpper.includes('FATTURA ATTIVA')) {
       riga.tipoMovimento = 'FEA';
-      const m = descrizione.match(/[Ii]ncasso\s+FEA\s+n\.\s*(\d+)\s+(\d{4})/i);
-      if (m) riga.numeroFattura = `${m[1]}/${m[2]}`;
-    } else if (descrizione.toUpperCase().includes('NEP')) {
+      riga.numeroFattura = estraiNumeroFattura(descrizione, 'FEA');
+    } else if (descUpper.includes('NEP')) {
       riga.tipoMovimento = 'NEP';
+      // Estrae eventuale riferimento FEP per Gap C
+      const m = descrizione.match(/FEP\s+n\.\s*([\w\/\-\.]+)/i) || descrizione.match(/FEP\s+([\w\/\-\.]+)/i);
+      if (m) {
+        riga.numeroFattura = m[1].trim();
+      }
     }
 
     risultati.push(riga);
@@ -271,14 +417,84 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
   const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
   const map = new Map<string, DettFEP>();
 
-  let current: DettFEP | null = null;
+  interface TempFEP extends DettFEP {
+    cantieriSomme: Record<string, number>;
+    tipologieSomme: Record<string, number>;
+    categorieSomme: Record<string, number>;
+    aliquoteSet: Set<string>;
+  }
+
+  let current: TempFEP | null = null;
+
+  const salvaCorrente = () => {
+    if (current) {
+      // Trova il cantiere dominante
+      let cantiereDominante = '';
+      let maxCantiereImp = -Infinity;
+      for (const [c, imp] of Object.entries(current.cantieriSomme)) {
+        if (imp > maxCantiereImp) {
+          maxCantiereImp = imp;
+          cantiereDominante = c;
+        }
+      }
+      current.cantiere = cantiereDominante;
+
+      // Trova la tipologia dominante
+      let tipologiaDominante = '';
+      let maxTipologiaImp = -Infinity;
+      for (const [t, imp] of Object.entries(current.tipologieSomme)) {
+        if (imp > maxTipologiaImp) {
+          maxTipologiaImp = imp;
+          tipologiaDominante = t;
+        }
+      }
+      current.tipologia = tipologiaDominante;
+
+      // Trova la categoria dominante
+      let categoriaDominante = '';
+      let maxCategoriaImp = -Infinity;
+      for (const [cat, imp] of Object.entries(current.categorieSomme)) {
+        if (imp > maxCategoriaImp) {
+          maxCategoriaImp = imp;
+          categoriaDominante = cat;
+        }
+      }
+      current.categoria = categoriaDominante;
+
+      // Verifica aliquote miste
+      const aliquoteSignificative = Array.from(current.aliquoteSet).filter(a => a && a !== 'X99');
+      current.aliquoteMiste = aliquoteSignificative.length > 1;
+
+      // Assegna codIva dominante o prima non vuota
+      if (aliquoteSignificative.length > 0) {
+        current.codIva = aliquoteSignificative[0];
+      }
+
+      // Estrai le proprietà di DettFEP da salvare
+      const { cantieriSomme, tipologieSomme, categorieSomme, aliquoteSet, ...dett } = current;
+      map.set(dett.numero, dett);
+    }
+  };
+
+  if (rows.length === 0) return map;
+
+  const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
+  const indexDesc = findHeaderIndex(headers, ['DESCRIZIONE', 'DETTAGLIO', 'CAUSALE', 'FATTURA'], 1);
+  const indexImp = findHeaderIndex(headers, ['IMPONIBILE', 'VALORE'], 6);
+  const indexTax = findHeaderIndex(headers, ['IMPOSTE', 'IVA IMPORTO', 'IMPOSTA'], 7);
+  const indexTot = findHeaderIndex(headers, ['TOTALE', 'LORDO'], 8);
+  const indexCodIva = findHeaderIndex(headers, ['COD. IVA', 'COD IVA', 'IVA COD', 'ALIQUOTA'], 5);
+  const indexCantiere = findHeaderIndex(headers, ['CANTIERE', 'PROGETTO'], 11);
+  const indexTipologia = findHeaderIndex(headers, ['TIPOLOGIA', 'TIPO SPESA'], 10);
+  const indexCategoria = findHeaderIndex(headers, ['CATEGORIA', 'VOCE'], 9);
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    const desc = String(row[1] ?? '').trim();
+    if (!row || row.length === 0) continue;
+    const desc = String(row[indexDesc] ?? '').trim();
 
     if (desc.startsWith('FEP')) {
-      if (current) map.set(current.numero, current);
+      salvaCorrente();
 
       const numMatch = desc.match(/^FEP\s+([\S]+)\s+del/i);
       const forMatch = desc.match(/del\s+\d{2}\/\d{2}\/\d{4}\s+(.+?)\s+-\s+\(Prot/i);
@@ -293,7 +509,12 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
           codIva: '',
           cantiere: '',
           tipologia: '',
-          categoria: ''
+          categoria: '',
+          aliquoteMiste: false,
+          cantieriSomme: {},
+          tipologieSomme: {},
+          categorieSomme: {},
+          aliquoteSet: new Set<string>()
         };
       } else {
         current = null;
@@ -303,60 +524,118 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
 
     if (!current) continue;
 
-    const imp = typeof row[6] === 'number' ? row[6] : 0;
-    const tax = typeof row[7] === 'number' ? row[7] : 0;
-    const tot = typeof row[8] === 'number' ? row[8] : 0;
-    const codIva = String(row[5] ?? '').trim();
+    const imp = typeof row[indexImp] === 'number' ? row[indexImp] : 0;
+    const tax = typeof row[indexTax] === 'number' ? row[indexTax] : 0;
+    const tot = typeof row[indexTot] === 'number' ? row[indexTot] : 0;
+    const codIva = String(row[indexCodIva] ?? '').trim();
+    const cantiere = String(row[indexCantiere] ?? '').trim();
+    const tipologia = String(row[indexTipologia] ?? '').trim();
+    const categoria = String(row[indexCategoria] ?? '').trim();
 
     current.imponibile += imp;
     current.imposte += tax;
     current.totale += tot;
 
-    if (!current.codIva && codIva && codIva !== 'X99') current.codIva = codIva;
-    if (!current.categoria) current.categoria = String(row[9] ?? '').trim();
-    if (!current.tipologia) current.tipologia = String(row[10] ?? '').trim();
-    if (!current.cantiere) current.cantiere = String(row[11] ?? '').trim();
+    if (codIva && codIva !== 'X99') {
+      current.aliquoteSet.add(codIva);
+    }
+
+    if (cantiere) {
+      current.cantieriSomme[cantiere] = (current.cantieriSomme[cantiere] ?? 0) + imp;
+    }
+    if (tipologia) {
+      current.tipologieSomme[tipologia] = (current.tipologieSomme[tipologia] ?? 0) + imp;
+    }
+    if (categoria) {
+      current.categorieSomme[categoria] = (current.categorieSomme[categoria] ?? 0) + imp;
+    }
   }
 
-  if (current) map.set(current.numero, current);
+  salvaCorrente();
   return map;
 };
 
 // ─── PARSER DETTAGLIO FEA (entrate_Cartel1.xlsx) ─────────────────
+// Versione multi-riga: aggrega TUTTE le righe di dettaglio per fattura
+// (in precedenza leggeva solo la prima riga successiva all'intestazione).
 
 export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA> => {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
   const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
   const map = new Map<string, DettFEA>();
 
+  // Usiamo una macchina a stati: quando troviamo un'intestazione FEA creiamo
+  // un record corrente e accumuliamo tutte le righe di dettaglio successive
+  // finché non troviamo la prossima intestazione FEA o la fine del file.
+  let current: (DettFEA & { _key: string }) | null = null;
+
+  const salvaCorrente = () => {
+    if (current) {
+      const { _key, ...dett } = current;
+      map.set(_key, dett);
+    }
+  };
+
+  if (rows.length === 0) return map;
+
+  const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
+  const indexDesc = findHeaderIndex(headers, ['DESCRIZIONE', 'DETTAGLIO', 'CAUSALE', 'FATTURA'], 1);
+  const indexImp = findHeaderIndex(headers, ['IMPONIBILE', 'VALORE'], 6);
+  const indexTot = findHeaderIndex(headers, ['TOTALE', 'LORDO'], 8);
+  const indexCodIva = findHeaderIndex(headers, ['COD. IVA', 'COD IVA', 'IVA COD', 'ALIQUOTA'], 5);
+  const indexCantiere = findHeaderIndex(headers, ['CANTIERE', 'PROGETTO'], 11);
+
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    const desc = String(row[1] ?? '').trim();
+    if (!row || row.length === 0) continue;
+    const desc = String(row[indexDesc] ?? '').trim();
 
-    if (desc.startsWith('FEA')) {
+    // Riga intestazione FEA: "FEA 12/2025 del DD/MM/YYYY NomeCliente"
+    if (desc.match(/^FEA\s+\d+\/\d{4}\s+del/i)) {
+      salvaCorrente();
+
       const match = desc.match(/^FEA\s+(\d+)\/(\d{4})\s+del/i);
       const cliMatch = desc.match(/del\s+\d{2}\/\d{2}\/\d{4}\s+(.+)$/i);
 
       if (match) {
-        const numero = match[1];
-        const anno = match[2];
-        const nextRow = rows[i + 1];
-
-        const dett: DettFEA = {
-          numero,
-          anno,
+        current = {
+          _key: `${match[1]}/${match[2]}`,
+          numero: match[1],
+          anno: match[2],
           cliente: cliMatch ? cliMatch[1].trim() : '',
-          imponibile: typeof nextRow?.[6] === 'number' ? nextRow[6] : 0,
-          codIva: String(nextRow?.[5] ?? '').trim(),
-          totale: typeof nextRow?.[8] === 'number' ? nextRow[8] : 0,
-          cantiere: String(nextRow?.[11] ?? '').trim(),
-          descrizioneDettaglio: String(nextRow?.[1] ?? '').trim()
+          imponibile: 0,
+          codIva: '',
+          totale: 0,
+          cantiere: '',
+          descrizioneDettaglio: ''
         };
-        map.set(`${numero}/${anno}`, dett);
+      } else {
+        current = null;
+      }
+    } else if (current) {
+      // Riga di dettaglio: accumula valori
+      const imp = typeof row[indexImp] === 'number' ? row[indexImp] : 0;
+      const tot = typeof row[indexTot] === 'number' ? row[indexTot] : 0;
+      const codIva = String(row[indexCodIva] ?? '').trim();
+      const cantiere = String(row[indexCantiere] ?? '').trim();
+      const dettaglio = String(row[indexDesc] ?? '').trim();
+
+      current.imponibile += imp;
+      current.totale += tot;
+      // Prima aliquota IVA non vuota e non placeholder
+      if (!current.codIva && codIva && codIva !== 'X99') current.codIva = codIva;
+      // Primo cantiere non vuoto
+      if (!current.cantiere && cantiere) current.cantiere = cantiere;
+      // Accumula descrizione dettaglio (per keyword SAL/ACCONTO/SALDO)
+      if (dettaglio) {
+        current.descrizioneDettaglio = current.descrizioneDettaglio
+          ? `${current.descrizioneDettaglio} | ${dettaglio}`
+          : dettaglio;
       }
     }
   }
 
+  salvaCorrente();
   return map;
 };
 
@@ -364,39 +643,90 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
 
 export const isDuplicato = (
   riga: PuntaNetRiga,
-  esistenti: Transaction[]
-): { duplicato: boolean; livello: 1 | 2 | null; transazioneEsistente?: Transaction } => {
+  esistenti: Transaction[],
+  indexes?: ExistingTransactionIndexes
+): { duplicato: boolean; livello: 1 | 2 | 3 | null; transazioneEsistente?: Transaction } => {
   if (esistenti.length === 0) return { duplicato: false, livello: null };
+
+  const dataStr = riga.data.toISOString().split('T')[0];
+  const importoCent = Math.round(riga.importo * 100);
 
   // Livello 1: Numero fattura
   if (riga.tipoMovimento === 'FEP' && riga.numeroFattura) {
-    const trovata = esistenti.find(tx =>
-      tx.type === 'EXPENSE' &&
-      tx.description.toUpperCase().includes(riga.numeroFattura!.toUpperCase()) &&
-      Math.abs(tx.amount - riga.importo) < 0.05
-    );
-    if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
+    const fepNumUpper = riga.numeroFattura.toUpperCase();
+    if (indexes?.fepMap) {
+      const list = indexes.fepMap.get(fepNumUpper) || [];
+      const trovata = list.find(tx =>
+        tx.type === 'EXPENSE' &&
+        tx.description.toUpperCase().includes(fepNumUpper) &&
+        Math.abs(tx.amount - riga.importo) < 0.05
+      );
+      if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
+    } else {
+      const trovata = esistenti.find(tx =>
+        tx.type === 'EXPENSE' &&
+        tx.description.toUpperCase().includes(fepNumUpper) &&
+        Math.abs(tx.amount - riga.importo) < 0.05
+      );
+      if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
+    }
   } else if (riga.tipoMovimento === 'FEA' && riga.numeroFattura) {
-    const trovata = esistenti.find(tx =>
-      tx.type === 'INCOME' &&
-      tx.description.toUpperCase().includes('FEA') &&
-      tx.description.toUpperCase().includes(riga.numeroFattura!.toUpperCase())
-    );
-    if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
+    const feaNumUpper = riga.numeroFattura.toUpperCase();
+    if (indexes?.feaMap) {
+      const list = indexes.feaMap.get(feaNumUpper) || [];
+      const trovata = list.find(tx =>
+        tx.type === 'INCOME' &&
+        tx.description.toUpperCase().includes('FEA') &&
+        tx.description.toUpperCase().includes(feaNumUpper) &&
+        Math.abs(tx.amount - riga.importo) < 0.05
+      );
+      if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
+    } else {
+      const trovata = esistenti.find(tx =>
+        tx.type === 'INCOME' &&
+        tx.description.toUpperCase().includes('FEA') &&
+        tx.description.toUpperCase().includes(feaNumUpper) &&
+        Math.abs(tx.amount - riga.importo) < 0.05
+      );
+      if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
+    }
   }
 
   // Livello 2: Tripla chiave
-  const dataStr = riga.data.toISOString().split('T')[0];
-  const importoCent = Math.round(riga.importo * 100);
   const descPrefix = riga.descrizione.toUpperCase().slice(0, 15);
+  if (indexes?.dateAmountDescMap) {
+    const key = `${dataStr}|${importoCent}|${descPrefix}`;
+    const list = indexes.dateAmountDescMap.get(key) || [];
+    if (list.length > 0) {
+      return { duplicato: true, livello: 2, transazioneEsistente: list[0] };
+    }
+  } else {
+    const trovata = esistenti.find(tx =>
+      tx.date === dataStr &&
+      Math.round(tx.amount * 100) === importoCent &&
+      tx.description.toUpperCase().slice(0, 15) === descPrefix
+    );
+    if (trovata) return { duplicato: true, livello: 2, transazioneEsistente: trovata };
+  }
 
-  const trovata = esistenti.find(tx =>
-    tx.date === dataStr &&
-    Math.round(tx.amount * 100) === importoCent &&
-    tx.description.toUpperCase().slice(0, 15) === descPrefix
-  );
-
-  if (trovata) return { duplicato: true, livello: 2, transazioneEsistente: trovata };
+  // Livello 3: Solo importo + data, per transazioni ALTRO, solo se esiste già una transazione Punta Net in quel giorno (Gap J)
+  if (riga.tipoMovimento === 'ALTRO') {
+    const type = riga.tipo === 'INCOME' ? 'INCOME' : 'EXPENSE';
+    if (indexes?.dateAmountTypeMap) {
+      const key = `${dataStr}|${importoCent}|${type}`;
+      const list = indexes.dateAmountTypeMap.get(key) || [];
+      const trovataL3 = list.find(tx => tx.sourceRef?.startsWith('Punta Net'));
+      if (trovataL3) return { duplicato: true, livello: 3, transazioneEsistente: trovataL3 };
+    } else {
+      const trovataL3 = esistenti.find(tx =>
+        tx.date === dataStr &&
+        Math.round(tx.amount * 100) === importoCent &&
+        tx.type === type &&
+        tx.sourceRef?.startsWith('Punta Net')
+      );
+      if (trovataL3) return { duplicato: true, livello: 3, transazioneEsistente: trovataL3 };
+    }
+  }
 
   return { duplicato: false, livello: null };
 };
@@ -440,6 +770,19 @@ export const mappaTipologiaACategoriaApp = (
 };
 
 // ─── CLASSIFICAZIONE AUTOMATICA (Fallback) ───────────────────────
+
+const matchesPattern = (text: string, pattern: string): boolean => {
+  const t = text.toUpperCase();
+  const p = pattern.toUpperCase();
+  if (!t.includes(p)) return false;
+  // Per pattern molto corti (es. < 5 caratteri), richiediamo che sia una parola intera
+  if (p.length < 5) {
+    const escaped = p.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp('\\b' + escaped + '\\b', 'i');
+    return regex.test(text);
+  }
+  return true;
+};
 
 export const classificaRiga = (
   riga: PuntaNetRiga,
@@ -508,8 +851,11 @@ export const classificaRiga = (
     };
   }
 
-  for (const r of REGOLE_BUILTIN) {
-    if (riga.entity.toUpperCase().includes(r.pattern.toUpperCase())) {
+  // Ordina le regole BUILTIN per lunghezza del pattern decrescente per far vincere i pattern più specifici
+  const regoleOrdinate = [...REGOLE_BUILTIN].sort((a, b) => b.pattern.length - a.pattern.length);
+
+  for (const r of regoleOrdinate) {
+    if (matchesPattern(riga.entity, r.pattern)) {
       const sugIVA = suggerisciAliquotaIVA(riga);
       const vatRateSuggerito = sugIVA?.aliquota ?? suggerisciAliquotaIVADaCategoria(r.categoria);
       const vatRateNota = sugIVA?.nota ?? (vatRateSuggerito !== null ? `Aliquota standard per categoria` : null);
@@ -704,7 +1050,7 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "ARTIGOMME", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "MENEGON VITTORIO", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "DAL BON STUDIO", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
-  { pattern: "MECHANICAL LINE SOLUTIO NS", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "MECHANICAL LINE SOLUTIONS", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "GLASSPOINT SERVICE", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "SERNAGIOTTO SRL", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "PERIN VITTORINO GOMMISTA", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
@@ -816,7 +1162,6 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "NORMATEMPO", categoria: "[CANTIERE] Assicurazione Cantieri", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "FIDEJUSSIONE SU APP.TO CECCHETTO", categoria: "[CANTIERE] Assicurazione Cantieri", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "FIDEJUSSIONE DE ROSSI - HOP", categoria: "[CANTIERE] Assicurazione Cantieri", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "SPDAVECCHIA & PARTNERS", categoria: "[CANTIERE] Assicurazione Cantieri", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "AGENZIA ASOLO GENERALI FIDEJUSSIONE LAZZARI", categoria: "[CANTIERE] Assicurazione Cantieri", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "POLIZZA FIDEJUSSORIA + CAR + POSTUMA COND. HOP", categoria: "[CANTIERE] Assicurazione Cantieri", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "DECENNALE POSTUMA SERNAGIOTTO", categoria: "[CANTIERE] Assicurazione Cantieri", ceType: "costo_variabile", confidenza: "alta" },
@@ -850,7 +1195,6 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "DAL ZOTTO", categoria: "[CANTIERE] Rifiuti e Macerie", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "TRENTIN GHIAIA", categoria: "[CANTIERE] Rifiuti e Macerie", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "MARIFER", categoria: "[CANTIERE] Rifiuti e Macerie", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "VELLO", categoria: "[CANTIERE] Rifiuti e Macerie", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "MARCON", categoria: "[CANTIERE] Rifiuti e Macerie", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "CSERVENSCHI CRISTIAN", categoria: "[PERSONALE] Stipendi Dipendenti Operativi", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "FERRO EMILIO", categoria: "[PERSONALE] Stipendi Dipendenti Operativi", ceType: "costo_variabile", confidenza: "alta" },
@@ -904,7 +1248,6 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "IMMOBILIARE MASSIMO", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "SIRIO 7 DI PIA SIMONE", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "SFEDIL", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "DUFERCO", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "COSSIO ATTILIO", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "FERROBETON", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "BIN SISTEMI", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
@@ -913,14 +1256,12 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "TORRESAN", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "ZILIO NICO", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "BONGIORNO ANTIFORNTUNISTICA", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "GEOCONSULT", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "GEOCONSULT", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "COFILOC", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "J & D FAVRETTO", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "DAMETTO WANDA", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "KILOTUU ITALIA", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "F.LLI BISOL", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "VUDAFIERI F.LLI", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "TVM SERVICE", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "SOLSIDER", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "BRUNATO", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "RGM PROVE", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
@@ -928,7 +1269,6 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "A.A.A.M.P. ESTINTORI", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "FORNACI GRIGOLIN", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "MAVIS", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "DPS SRL FERRAMENTA", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "NOVALINEA ARREDO", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "ISOLEX", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "STANGHELLINI", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
@@ -943,23 +1283,19 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "SD GROUP", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "ROTHO BLASS", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "PANALEX", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "BONGIORNO ANTIFORNTUNISTICA", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "MANGH", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "NUOVA COSTRUZIONE SAS", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "GAZZOLA SRLS", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "NEWGIPS", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "FAI DA TE DI ZOLLO LUCA", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "DUFERCO", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "AMR SRL", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "RR GROUP", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "ISSEPON", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "ARREDIL", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "CONSORIZIO PIAVE", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "ZANUTTA SPA", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "CONSORZIO BONIFICA PIAVE", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "CEMENTART", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "E-DISTRIBUZIONE", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "ENEL ENERGIA", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "MUNARETTO", categoria: "[FORNITORI] Subappalti su Cantieri", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "SOLAR SYSTEM", categoria: "[FORNITORI] Subappalti su Cantieri", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "LATTONERIA ROSSANESE", categoria: "[FORNITORI] Subappalti su Cantieri", ceType: "costo_variabile", confidenza: "alta" },
@@ -1074,15 +1410,14 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "PASETTO ALFRINO", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "LIBRALATO MICHELE", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "COMUNE DI CASTELFRANCO PER ZOGAJ", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "PUNTANET", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "PREVEDI PER NICOLA", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "ADECCO ITALIA", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "AMMINISTRATORE LOTTIZZ. CONTEA", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "RETE GROUP", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "ACQUISIZIONE TERRENI O IMMOBILI", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "TERRENO …....VIA OSPEDALE MB", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "TERRENO …....VIALE VITTORIO V. TV", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "TERRENO …....", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "O VERSAMENTO CAPITALE SOCIALE", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "LIQUIDITA' IN CONTO CORRENTE", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "ACQUISIZIONE TERRENI O IMMOBILI", categoria: "[INVESTIMENTI] Acquisto Terreni per Sviluppo", ceType: "capex", confidenza: "alta" },
+  { pattern: "TERRENO …....VIA OSPEDALE MB", categoria: "[INVESTIMENTI] Acquisto Terreni per Sviluppo", ceType: "capex", confidenza: "alta" },
+  { pattern: "TERRENO …....VIALE VITTORIO V. TV", categoria: "[INVESTIMENTI] Acquisto Terreni per Sviluppo", ceType: "capex", confidenza: "alta" },
+  { pattern: "TERRENO …....", categoria: "[INVESTIMENTI] Acquisto Terreni per Sviluppo", ceType: "capex", confidenza: "alta" },
+  { pattern: "O VERSAMENTO CAPITALE SOCIALE", categoria: "[INVESTIMENTI] Investimento in Nuova Società", ceType: "capex", confidenza: "alta" },
+  { pattern: "LIQUIDITA' IN CONTO CORRENTE", categoria: "[FINANZA] Commissioni e Bolli Bancari", ceType: "onere_finanziario", confidenza: "alta" },
 ];

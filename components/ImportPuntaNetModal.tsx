@@ -21,7 +21,13 @@ import {
   abbinaCantiereDaProgetto,
   inferisciTipoEntrata,
   mappaTipologiaACategoriaApp,
-  AliquotaIVA
+  suggerisciAliquotaIVADaCategoria,
+  AliquotaIVA,
+  ExistingTransactionIndexes,
+  estraiNumeroFattura,
+  validaFileBanca,
+  validaFileFEP,
+  validaFileFEA
 } from '../utils/puntaNetImporter';
 import { Transaction, BankAccount, ImportSession, Project } from '../types';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, CATEGORY_TO_CE_TYPE } from '../constants';
@@ -134,6 +140,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
 
       // PASSO 1: Parse Banca
       const wbBanca = await readFile(fileBanca);
+      validaFileBanca(wbBanca);
       const movimentiBanca = parseBancaExcel(wbBanca);
 
       // PASSO 2 & 3: Parse Dettagli (FEP/FEA)
@@ -141,23 +148,70 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       let mapFEA = new Map();
       if (fileFEP) {
         const wbFEP = await readFile(fileFEP);
+        validaFileFEP(wbFEP);
         mapFEP = parseDettaglioFEP(wbFEP);
       }
       if (fileFEA) {
         const wbFEA = await readFile(fileFEA);
+        validaFileFEA(wbFEA, "Entrate (FEA 1)");
         mapFEA = parseDettaglioFEA(wbFEA);
       }
       if (fileFEA2) {
         const wbFEA2 = await readFile(fileFEA2);
+        validaFileFEA(wbFEA2, "Entrate (FEA 2)");
         const mapFEA2 = parseDettaglioFEA(wbFEA2);
         for (const [key, value] of mapFEA2.entries()) {
           mapFEA.set(key, value);
         }
       }
 
+      // Costruzione indici per ricerca duplicati O(1)
+      const fepMap = new Map<string, Transaction[]>();
+      const feaMap = new Map<string, Transaction[]>();
+      const dateAmountDescMap = new Map<string, Transaction[]>();
+      const dateAmountTypeMap = new Map<string, Transaction[]>();
+
+      for (const tx of transazioniEsistenti) {
+        if (tx.type === 'EXPENSE') {
+          const fepNum = estraiNumeroFattura(tx.description, 'FEP');
+          if (fepNum) {
+            const numUpper = fepNum.toUpperCase();
+            const list = fepMap.get(numUpper) || [];
+            list.push(tx);
+            fepMap.set(numUpper, list);
+          }
+        } else if (tx.type === 'INCOME') {
+          const feaNum = estraiNumeroFattura(tx.description, 'FEA');
+          if (feaNum) {
+            const numUpper = feaNum.toUpperCase();
+            const list = feaMap.get(numUpper) || [];
+            list.push(tx);
+            feaMap.set(numUpper, list);
+          }
+        }
+
+        const dateStr = tx.date;
+        const amountCent = Math.round(tx.amount * 100);
+        const descPrefix = tx.description.toUpperCase().slice(0, 15);
+        
+        // Indice Livello 2
+        const keyL2 = `${dateStr}|${amountCent}|${descPrefix}`;
+        const listL2 = dateAmountDescMap.get(keyL2) || [];
+        listL2.push(tx);
+        dateAmountDescMap.set(keyL2, listL2);
+
+        // Indice Livello 3
+        const keyL3 = `${dateStr}|${amountCent}|${tx.type}`;
+        const listL3 = dateAmountTypeMap.get(keyL3) || [];
+        listL3.push(tx);
+        dateAmountTypeMap.set(keyL3, listL3);
+      }
+
+      const indexes: ExistingTransactionIndexes = { fepMap, feaMap, dateAmountDescMap, dateAmountTypeMap };
+
       // PASSO 4, 5, 6, 7: Costruzione RigaClassificata
       const classificate: RigaClassificata[] = movimentiBanca.map(mov => {
-        const { duplicato, livello } = isDuplicato(mov, transazioniEsistenti);
+        const { duplicato, livello } = isDuplicato(mov, transazioniEsistenti, indexes);
         
         let categoria: string | null = null;
         let ceType: string | null = null;
@@ -168,41 +222,80 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         let cantierePuntaNet = '';
         let cantiereSuggerito: string | null = null;
         let cantiereScore = 0;
+        let cantiereMatchFonte: 'cliente_fea' | 'fornitore_fep' | 'nome_cantiere' | 'testo_banca' | null = null;
         let tipoEntrata: 'sal' | 'acconto' | 'saldo' | 'immobile' | 'altro' | null = null;
 
         // Arricchimento FEP
-        if (mov.tipoMovimento === 'FEP' && mov.numeroFattura && mapFEP.has(mov.numeroFattura)) {
-          const dett = mapFEP.get(mov.numeroFattura);
-          cantierePuntaNet = dett.cantiere;
-          
-          // Calcola l'aliquota IVA dinamicamente da imponibile e imposte della fattura
-          if (dett.imponibile > 0) {
-            if (dett.imposte > 0) {
-              const ratio = dett.imposte / dett.imponibile;
-              const percent = Math.round(ratio * 100);
-              if (percent >= 20) vatRateSuggerito = 22;
-              else if (percent >= 8) vatRateSuggerito = 10;
-              else if (percent >= 3) vatRateSuggerito = 4;
-              else vatRateSuggerito = 0;
+        if (mov.tipoMovimento === 'FEP') {
+          if (mov.numeroFattura && mapFEP.has(mov.numeroFattura)) {
+            const dett = mapFEP.get(mov.numeroFattura);
+            cantierePuntaNet = dett.cantiere;
+            
+            // Calcola l'aliquota IVA dinamicamente da imponibile e imposte della fattura
+            if (dett.imponibile > 0) {
+              if (dett.imposte > 0) {
+                const ratio = dett.imposte / dett.imponibile;
+                const percent = Math.round(ratio * 100);
+                if (percent >= 20) vatRateSuggerito = 22;
+                else if (percent >= 8) vatRateSuggerito = 10;
+                else if (percent >= 3) vatRateSuggerito = 4;
+                else vatRateSuggerito = 0;
+              } else {
+                vatRateSuggerito = 0;
+              }
             } else {
-              vatRateSuggerito = 0;
+              vatRateSuggerito = codIvaToNumber(dett.codIva);
+            }
+            
+            // Mappa la tipologia della fattura alla categoria dell'app
+            if (dett.tipologia) {
+              const catMappata = mappaTipologiaACategoriaApp(dett.tipologia, 'FEP');
+              if (catMappata) {
+                categoria = catMappata;
+                ceType = CATEGORY_TO_CE_TYPE[catMappata] ?? 'solo_cashflow';
+                confidenza = 'alta';
+              }
+            }
+            
+            vatRateNota = `Da fattura FEP n. ${dett.numero}`;
+            arricchitoDaFattura = true;
+
+            // Gap F: Se cantierePuntaNet è vuoto o non abbinato, prova con il fornitore
+            if ((!cantierePuntaNet || cantierePuntaNet.trim() === '') && dett.fornitore && dett.fornitore.trim().length > 2) {
+              const matchFornitore = abbinaCantiereDaProgetto(dett.fornitore.trim(), projectsApp);
+              if (matchFornitore && matchFornitore.score > cantiereScore) {
+                cantiereSuggerito = matchFornitore.cantiere;
+                cantiereScore = matchFornitore.score;
+                cantiereMatchFonte = 'fornitore_fep';
+              }
             }
           } else {
-            vatRateSuggerito = codIvaToNumber(dett.codIva);
-          }
-          
-          // Mappa la tipologia della fattura alla categoria dell'app
-          if (dett.tipologia) {
-            const catMappata = mappaTipologiaACategoriaApp(dett.tipologia, 'FEP');
-            if (catMappata) {
-              categoria = catMappata;
-              ceType = CATEGORY_TO_CE_TYPE[catMappata] ?? 'solo_cashflow';
-              confidenza = 'alta';
+            // Gap E: FEP senza file dettaglio (o dettaglio non trovato)
+            const descLower = mov.descrizione.toLowerCase();
+            const entLower = mov.entity.toLowerCase();
+            
+            if (/subappalto|sub-appalto|sub appalto/i.test(descLower) || /subappalto|sub-appalto|sub appalto/i.test(entLower)) {
+              categoria = '[PERSONALE] Subappalti Manodopera';
+              ceType = 'costo_variabile';
+              confidenza = 'media';
+            } else if (/materiale|ferro|cemento|sabbia|ghiaia|fornitura/i.test(descLower) || /materiale|ferro|cemento|sabbia|ghiaia|fornitura/i.test(entLower)) {
+              categoria = '[FORNITORI] Fornitori Materiali';
+              ceType = 'costo_variabile';
+              confidenza = 'media';
+            } else if (/noleggio|gru|piattaforma|automezzo|veicolo/i.test(descLower) || /noleggio|gru|piattaforma|automezzo|veicolo/i.test(entLower)) {
+              categoria = '[CANTIERE] Noleggi Attrezzature e Mezzi';
+              ceType = 'costo_variabile';
+              confidenza = 'media';
+            } else if (/smaltimento|rifiuti|macerie|discarica/i.test(descLower) || /smaltimento|rifiuti|macerie|discarica/i.test(entLower)) {
+              categoria = '[CANTIERE] Rifiuti e Macerie';
+              ceType = 'costo_variabile';
+              confidenza = 'media';
+            } else if (/progettazione|rilievo|direzione lavori|architetto|ingegnere|geometra|professionista/i.test(descLower) || /progettazione|rilievo|direzione lavori|architetto|ingegnere|geometra|professionista/i.test(entLower)) {
+              categoria = '[CONSULENZE] Professionisti Esterni di Cantiere';
+              ceType = 'costo_variabile';
+              confidenza = 'media';
             }
           }
-          
-          vatRateNota = `Da fattura FEP n. ${dett.numero}`;
-          arricchitoDaFattura = true;
         }
         // Arricchimento FEA
         else if (mov.tipoMovimento === 'FEA' && mov.numeroFattura && mapFEA.has(mov.numeroFattura)) {
@@ -243,31 +336,75 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
               confidenza = 'alta';
             }
           }
+
+          // --- ABBINAMENTO CANTIERI DA CLIENTE FEA ---
+          // dett.cliente è la fonte più affidabile: nome cliente come appare sulla fattura emessa.
+          // Usare word-set matching permette di gestire inversione nome/cognome.
+          if (dett.cliente && dett.cliente.trim().length > 2) {
+            const matchCliente = abbinaCantiereDaProgetto(dett.cliente.trim(), projectsApp);
+            if (matchCliente && matchCliente.score > cantiereScore) {
+              cantiereSuggerito = matchCliente.cantiere;
+              cantiereScore = matchCliente.score;
+              cantiereMatchFonte = 'cliente_fea';
+            }
+          }
+        }
+        // Arricchimento NEP (Gap C)
+        else if (mov.tipoMovimento === 'NEP') {
+          let dettFEP = null;
+          if (mov.numeroFattura && mapFEP.has(mov.numeroFattura)) {
+            dettFEP = mapFEP.get(mov.numeroFattura);
+          } else {
+            // Cerca se c'è un numero nel testo che corrisponde a una chiave di mapFEP
+            for (const [fepNum, dett] of mapFEP.entries()) {
+              if (mov.descrizione.includes(fepNum)) {
+                dettFEP = dett;
+                break;
+              }
+            }
+          }
+
+          if (dettFEP) {
+            cantierePuntaNet = dettFEP.cantiere;
+            vatRateSuggerito = codIvaToNumber(dettFEP.codIva);
+            vatRateNota = `Ereditato da FEP di riferimento n. ${dettFEP.numero}`;
+            arricchitoDaFattura = true;
+            if (dettFEP.tipologia) {
+              const catMappata = mappaTipologiaACategoriaApp(dettFEP.tipologia, 'FEP');
+              if (catMappata) {
+                categoria = catMappata;
+                ceType = CATEGORY_TO_CE_TYPE[catMappata] ?? 'solo_cashflow';
+                confidenza = 'alta';
+              }
+            }
+          }
         }
 
         // --- ABBINAMENTO CANTIERI INTELLIGENTE ---
-        // 1. Prova dal cantiere presente nel file di dettaglio (arricchito)
-        if (cantierePuntaNet) {
+        // 1. Prova dal nome cantiere presente nel file di dettaglio (arricchito)
+        if (cantierePuntaNet && (!cantiereSuggerito || cantiereScore < 55)) {
           const match = abbinaCantiereDaProgetto(cantierePuntaNet, projectsApp);
-          if (match) {
+          if (match && match.score > cantiereScore) {
             cantiereSuggerito = match.cantiere;
             cantiereScore = match.score;
+            cantiereMatchFonte = 'nome_cantiere';
           }
         }
         
         // 2. Fallback su descrizione e entità del movimento bancario
-        if (!cantiereSuggerito || cantiereScore < 50) {
+        if (!cantiereSuggerito || cantiereScore < 55) {
           const testoBanca = `${mov.entity} ${mov.descrizione}`;
           const matchBanca = abbinaCantiereDaProgetto(testoBanca, projectsApp);
           if (matchBanca && matchBanca.score > cantiereScore) {
             cantiereSuggerito = matchBanca.cantiere;
             cantiereScore = matchBanca.score;
+            cantiereMatchFonte = 'testo_banca';
           }
         }
 
-        // 3. Se cantiere abbinato ed è un'entrata (FEA), eredita il metodoPagamento concordato (SAL/Acconto)
+        // 3. Se cantiere abbinato ed è un'entrata (qualsiasi tipo), eredita il metodoPagamento concordato (SAL/Acconto)
         const matchedProj = projectsApp.find(p => p.name === cantiereSuggerito);
-        if (mov.tipoMovimento === 'FEA' && !tipoEntrata && matchedProj && matchedProj.metodoPagamento) {
+        if (mov.tipo === 'INCOME' && !tipoEntrata && matchedProj && matchedProj.metodoPagamento) {
           tipoEntrata = matchedProj.metodoPagamento;
           const mapping: Record<string, { categoria: string; ceType: string }> = {
             sal:      { categoria: '[CANTIERE] SAL — Stato Avanzamento Lavori', ceType: 'ricavo_core' },
@@ -289,8 +426,9 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           confidenza = auto.confidenza;
         }
         if (!vatRateSuggerito) {
-          vatRateSuggerito = auto.vatRateSuggerito;
-          vatRateNota = auto.vatRateNota;
+          // Se la categoria è stata assegnata dall'euristica, proviamo a prendere il VAT standard da quella categoria!
+          vatRateSuggerito = categoria ? suggerisciAliquotaIVADaCategoria(categoria) : auto.vatRateSuggerito;
+          vatRateNota = categoria ? `Aliquota standard per categoria` : auto.vatRateNota;
         }
 
         return {
@@ -309,15 +447,17 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           cantiereSuggerito,
           cantiereScore,
           cantierePuntaNet,
-          tipoEntrata
+          cantiereMatchFonte,
+          tipoEntrata,
+          aliquoteMiste: mov.tipoMovimento === 'FEP' && mov.numeroFattura && mapFEP.get(mov.numeroFattura)?.aliquoteMiste
         };
       });
 
       setRighe(classificate);
       setStep(mappingContiSalvato ? 'revisione' : 'mappaConti');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setErrore('Errore durante l\'analisi dei file. Verifica il formato.');
+      setErrore(err?.message || 'Errore durante l\'analisi dei file. Verifica il formato.');
     } finally {
       setLoading(false);
     }
@@ -391,7 +531,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       onSalvaRegole([...regoleSalvate, ...nuoveRegole]);
     }
 
-    // Riconciliazione automatica per entrate
+    // Riconciliazione automatica per entrate e uscite
     const linkedForecastIds = new Set<string>();
     transazioniEsistenti.forEach(t => {
       if (!t.isForecast && t.linkedForecastId) {
@@ -409,33 +549,31 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         tx.project = r.cantiereSuggerito;
       }
 
-      // Reconciliation for INCOME only
-      if (tx.type === 'INCOME') {
-        const txDate = new Date(tx.date);
-        const txMonth = txDate.getMonth();
-        const txYear = txDate.getFullYear();
-        const txProj = tx.project?.trim() || 'Generale';
-        const txCat = tx.category;
+      // Reconciliation for INCOME and EXPENSE
+      const txDate = new Date(tx.date);
+      const txMonth = txDate.getMonth();
+      const txYear = txDate.getFullYear();
+      const txProj = tx.project?.trim() || 'Generale';
+      const txCat = tx.category;
 
-        const matchingForecast = transazioniEsistenti.find(f => {
-          if (!f.isForecast || f.type !== 'INCOME') return false;
-          if (linkedForecastIds.has(f.id)) return false;
+      const matchingForecast = transazioniEsistenti.find(f => {
+        if (!f.isForecast || f.type !== tx.type) return false;
+        if (linkedForecastIds.has(f.id)) return false;
 
-          const fDate = new Date(f.date);
-          if (fDate.getMonth() !== txMonth || fDate.getFullYear() !== txYear) return false;
+        const fDate = new Date(f.date);
+        if (fDate.getMonth() !== txMonth || fDate.getFullYear() !== txYear) return false;
 
-          const fProj = f.project?.trim() || 'Generale';
-          if (fProj !== txProj) return false;
+        const fProj = f.project?.trim() || 'Generale';
+        if (fProj !== txProj) return false;
 
-          if (f.category !== txCat) return false;
+        if (f.category !== txCat) return false;
 
-          return true;
-        });
+        return true;
+      });
 
-        if (matchingForecast) {
-          tx.linkedForecastId = matchingForecast.id;
-          linkedForecastIds.add(matchingForecast.id);
-        }
+      if (matchingForecast) {
+        tx.linkedForecastId = matchingForecast.id;
+        linkedForecastIds.add(matchingForecast.id);
       }
 
       return tx;
@@ -616,7 +754,11 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                         <div key={idx} className="bg-white border border-rose-100 rounded-xl p-3 flex items-center justify-between opacity-60">
                           <div>
                             <p className="text-[11px] font-bold text-slate-700">{r.riga.entity}</p>
-                            <p className="text-[9px] text-rose-500">Livello {r.livelloDuplicato} — {r.riga.data.toLocaleDateString()}</p>
+                            <p className="text-[9px] text-rose-500">
+                              {r.livelloDuplicato === 3
+                                ? `Sospetto Duplicato (Stessa data e importo: ${r.riga.data.toLocaleDateString()})`
+                                : `Livello ${r.livelloDuplicato} — ${r.riga.data.toLocaleDateString()}`}
+                            </p>
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="text-xs font-black font-mono">{formatEuro(r.riga.importo)}</span>
@@ -648,25 +790,39 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Badge Cantiere */}
+                      {/* Badge Cantiere + Fonte Match */}
                       <div className="flex flex-wrap gap-2">
-                        {r.cantierePuntaNet && (
-                          <div className={`px-2 py-1 rounded-lg text-[9px] font-black flex items-center gap-1.5 ${r.cantiereScore >= 80 ? 'bg-emerald-100 text-emerald-700' : r.cantiereScore >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
-                            {r.cantiereScore >= 40 ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
-                            {r.cantiereSuggerito ? (r.cantiereScore >= 80 ? `✓ ${r.cantiereSuggerito}` : `≈ ${r.cantiereSuggerito} (${r.cantiereScore}%)`) : `⚠ Non abbinato: ${r.cantierePuntaNet}`}
+                        {(r.cantierePuntaNet || r.cantiereSuggerito) && (
+                          <div className={`px-2 py-1 rounded-lg text-[9px] font-black flex items-center gap-1.5 ${r.cantiereScore >= 80 ? 'bg-emerald-100 text-emerald-700' : r.cantiereScore >= 55 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {r.cantiereSuggerito ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
+                            <span>
+                              {r.cantiereSuggerito
+                                ? (r.cantiereScore >= 80 ? `✓ ${r.cantiereSuggerito}` : `≈ ${r.cantiereSuggerito} (${r.cantiereScore}%)`)
+                                : `⚠ Non abbinato: ${r.cantierePuntaNet}`}
+                            </span>
+                            {r.cantiereMatchFonte && (
+                              <span className="opacity-60 font-normal">
+                                · {r.cantiereMatchFonte === 'cliente_fea' ? 'da fattura' : r.cantiereMatchFonte === 'fornitore_fep' ? 'da fornitore' : r.cantiereMatchFonte === 'nome_cantiere' ? 'da cantiere' : 'da banca'}
+                              </span>
+                            )}
                           </div>
                         )}
                         {r.arricchitoDaFattura && <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[9px] font-black uppercase">Arricchito ✓</span>}
+                        {r.riga.tipoMovimento === 'NEP' && <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-lg text-[9px] font-black uppercase">Nota di Credito</span>}
+                        {r.aliquoteMiste && <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-lg text-[9px] font-black uppercase" title="Questa fattura presenta righe con aliquote IVA diverse. Verrà usata l'aliquota dominante.">⚠ IVA mista — verificare</span>}
                       </div>
 
                       {/* Azioni */}
-                      {r.riga.tipoMovimento === 'FEA' && r.tipoEntrata === null ? (
-                        <div className="grid grid-cols-2 gap-2">
-                          <button onClick={() => selezionaTipoEntrata(realIdx, 'sal')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">SAL</button>
-                          <button onClick={() => selezionaTipoEntrata(realIdx, 'acconto')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">Acconto</button>
-                          <button onClick={() => selezionaTipoEntrata(realIdx, 'saldo')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">Saldo Finale</button>
-                          <button onClick={() => selezionaTipoEntrata(realIdx, 'immobile')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">Vendita Immobile</button>
-                          <button onClick={() => selezionaTipoEntrata(realIdx, 'altro')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all col-span-2">Altro</button>
+                      {r.riga.tipo === 'INCOME' && r.tipoEntrata === null ? (
+                        <div className="space-y-2">
+                          <p className="text-[9px] font-black text-slate-400 uppercase">Tipo incasso</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button onClick={() => selezionaTipoEntrata(realIdx, 'sal')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 hover:bg-emerald-50 transition-all">SAL</button>
+                            <button onClick={() => selezionaTipoEntrata(realIdx, 'acconto')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 hover:bg-emerald-50 transition-all">Acconto</button>
+                            <button onClick={() => selezionaTipoEntrata(realIdx, 'saldo')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 hover:bg-emerald-50 transition-all">Saldo Finale</button>
+                            <button onClick={() => selezionaTipoEntrata(realIdx, 'immobile')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 hover:bg-emerald-50 transition-all">Vendita Immobile</button>
+                            <button onClick={() => selezionaTipoEntrata(realIdx, 'altro')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-slate-400 hover:bg-slate-50 transition-all col-span-2">Altro / Non è un pagamento commessa</button>
+                          </div>
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 gap-3">
@@ -717,7 +873,11 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                         </div>
                         <div className="text-right shrink-0 ml-4">
                           <p className="text-xs font-black font-mono text-slate-600">{formatEuro(r.riga.importo)}</p>
-                          {r.arricchitoDaFattura && <span className="text-[8px] font-black text-blue-500 uppercase">Arricchito ✓</span>}
+                          <div className="flex gap-1 justify-end">
+                            {r.arricchitoDaFattura && <span className="text-[8px] font-black text-blue-500 uppercase">Arricchito ✓</span>}
+                            {r.riga.tipoMovimento === 'NEP' && <span className="text-[8px] font-black text-purple-500 uppercase">Nota di Credito</span>}
+                            {r.aliquoteMiste && <span className="text-[8px] font-black text-amber-500 uppercase">⚠ IVA Mista</span>}
+                          </div>
                         </div>
                       </div>
                     ))}
