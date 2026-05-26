@@ -297,14 +297,12 @@ export const validaFileFEP = (workbook: XLSX.WorkBook): void => {
   const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
   if (rows.length === 0) throw new Error("Il file Uscite (FEP) selezionato non contiene righe.");
 
-  const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
-  const indexDesc = headers.findIndex(h => h.includes('DESCRIZIONE') || h.includes('DETTAGLIO') || h.includes('CAUSALE') || h.includes('FATTURA'));
-  const targetColIdx = indexDesc !== -1 ? indexDesc : 1;
-
   const hasFEP = rows.some(row => {
     if (!row) return false;
-    const desc = String(row[targetColIdx] ?? '').trim();
-    return desc.toUpperCase().startsWith('FEP');
+    return row.some(cell => {
+      const cellStr = String(cell ?? '').trim().toUpperCase();
+      return cellStr.startsWith('FEP');
+    });
   });
 
   if (!hasFEP) {
@@ -319,14 +317,12 @@ export const validaFileFEA = (workbook: XLSX.WorkBook, label: string = "Entrate 
   const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
   if (rows.length === 0) throw new Error(`Il file ${label} selezionato non contiene righe.`);
 
-  const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
-  const indexDesc = headers.findIndex(h => h.includes('DESCRIZIONE') || h.includes('DETTAGLIO') || h.includes('CAUSALE') || h.includes('FATTURA'));
-  const targetColIdx = indexDesc !== -1 ? indexDesc : 1;
-
   const hasFEA = rows.some(row => {
     if (!row) return false;
-    const desc = String(row[targetColIdx] ?? '').trim();
-    return /^FEA\s+\d+/i.test(desc);
+    return row.some(cell => {
+      const cellStr = String(cell ?? '').trim().toUpperCase();
+      return cellStr.startsWith('FEA') || cellStr.startsWith('EMESSA FEA') || cellStr.includes('FEA N.');
+    });
   });
 
   if (!hasFEA) {
@@ -485,7 +481,11 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
   if (rows.length === 0) return map;
 
   const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
-  const indexDesc = findHeaderIndex(headers, ['DESCRIZIONE', 'DETTAGLIO', 'CAUSALE', 'FATTURA'], 1);
+  let fallbackDesc = 1;
+  if (!headers[1] && !headers[2]) {
+    fallbackDesc = 2;
+  }
+  const indexDesc = findHeaderIndex(headers, ['DESCRIZIONE', 'DETTAGLIO', 'CAUSALE', 'FATTURA'], fallbackDesc);
   const indexImp = findHeaderIndex(headers, ['IMPONIBILE', 'VALORE'], 6);
   const indexTax = findHeaderIndex(headers, ['IMPOSTE', 'IVA IMPORTO', 'IMPOSTA'], 7);
   const indexTot = findHeaderIndex(headers, ['TOTALE', 'LORDO'], 8);
@@ -585,7 +585,11 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
   if (rows.length === 0) return map;
 
   const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
-  const indexDesc = findHeaderIndex(headers, ['DESCRIZIONE', 'DETTAGLIO', 'CAUSALE', 'FATTURA'], 1);
+  let fallbackDesc = 1;
+  if (!headers[1] && !headers[2]) {
+    fallbackDesc = 2;
+  }
+  const indexDesc = findHeaderIndex(headers, ['DESCRIZIONE', 'DETTAGLIO', 'CAUSALE', 'FATTURA'], fallbackDesc);
   const indexImp = findHeaderIndex(headers, ['IMPONIBILE', 'VALORE'], 6);
   const indexTot = findHeaderIndex(headers, ['TOTALE', 'LORDO'], 8);
   const indexCodIva = findHeaderIndex(headers, ['COD. IVA', 'COD IVA', 'IVA COD', 'ALIQUOTA'], 5);
@@ -596,22 +600,44 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
     if (!row || row.length === 0) continue;
     const desc = String(row[indexDesc] ?? '').trim();
 
-    // Riga intestazione FEA: "FEA 12/2025 del DD/MM/YYYY NomeCliente"
-    if (desc.match(/^FEA\s+\d+\/\d{4}\s+del/i)) {
+    const isFeaHeader = desc.match(/^FEA\s+\d+\/\d{4}\s+del/i) || 
+                        desc.match(/^Emessa\s+FEA\s+n\.\s*(\d+)\s+(\d{4})/i) ||
+                        desc.match(/^FEA\s+n\.\s*(\d+)\/(\d{4})/i);
+
+    // Riga intestazione FEA: "FEA 12/2025 del DD/MM/YYYY NomeCliente" or "Emessa FEA..."
+    if (isFeaHeader) {
       salvaCorrente();
 
-      const match = desc.match(/^FEA\s+(\d+)\/(\d{4})\s+del/i);
-      const cliMatch = desc.match(/del\s+\d{2}\/\d{2}\/\d{4}\s+(.+)$/i);
+      let match = desc.match(/^FEA\s+(\d+)\/(\d{4})\s+del/i);
+      let cliMatch = desc.match(/del\s+\d{2}\/\d{2}\/\d{4}\s+(.+)$/i);
+      
+      if (!match) {
+        match = desc.match(/^Emessa\s+FEA\s+n\.\s*(\d+)\s+(\d{4})/i);
+        if (match) {
+          const yearIndex = desc.indexOf(match[2]) + match[2].length;
+          cliMatch = [null, desc.slice(yearIndex).trim()];
+        }
+      }
+      
+      if (!match) {
+        match = desc.match(/^FEA\s+n\.\s*(\d+)\/(\d{4})/i);
+        if (match) {
+          const slashIndex = desc.indexOf('/') + 5;
+          cliMatch = [null, desc.slice(slashIndex).trim()];
+        }
+      }
 
       if (match) {
+        const isPrimaNota = headers[8] === 'BANCA' || headers[8] === 'CONTO';
+        const rowAmount = (isPrimaNota && typeof row[5] === 'number') ? row[5] : 0;
         current = {
           _key: `${match[1]}/${match[2]}`,
           numero: match[1],
           anno: match[2],
           cliente: cliMatch ? cliMatch[1].trim() : '',
-          imponibile: 0,
+          imponibile: rowAmount,
           codIva: '',
-          totale: 0,
+          totale: rowAmount,
           cantiere: '',
           descrizioneDettaglio: ''
         };
