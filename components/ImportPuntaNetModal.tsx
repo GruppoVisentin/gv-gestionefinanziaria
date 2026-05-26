@@ -823,6 +823,33 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                         {r.aliquoteMiste && <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-lg text-[9px] font-black uppercase" title="Questa fattura presenta righe con aliquote IVA diverse. Verrà usata l'aliquota dominante.">⚠ IVA mista — verificare</span>}
                       </div>
 
+                      {/* Warning box per dati mancanti */}
+                      {(!r.categoria || (r.vatRateConfermato ?? r.vatRateSuggerito) === null || (r.riga.tipo === 'INCOME' && r.tipoEntrata === null)) && (
+                        <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-[11px] text-rose-700 space-y-1">
+                          <p className="font-black flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
+                            <AlertCircle size={13} className="text-rose-500 shrink-0" />
+                            Dati mancanti per l'importazione automatica:
+                          </p>
+                          <ul className="list-disc pl-4 space-y-0.5 font-medium">
+                            {!r.categoria && (
+                              <li>Categoria non classificata automaticamente.</li>
+                            )}
+                            {(r.vatRateConfermato ?? r.vatRateSuggerito) === null && (
+                              <li>Aliquota IVA non determinata dal file o dalle regole.</li>
+                            )}
+                            {r.riga.tipo === 'INCOME' && r.tipoEntrata === null && (
+                              r.cantiereSuggerito ? (
+                                <li>
+                                  Il cantiere <strong>{r.cantiereSuggerito}</strong> non ha un metodo di pagamento (SAL/Acconto) configurato nelle Commesse.
+                                </li>
+                              ) : (
+                                <li>Cantiere non associato (necessario per determinare se SAL o Acconto).</li>
+                              )
+                            )}
+                          </ul>
+                        </div>
+                      )}
+
                       {/* Azioni */}
                       {r.riga.tipo === 'INCOME' && r.tipoEntrata === null ? (
                         <div className="space-y-2">

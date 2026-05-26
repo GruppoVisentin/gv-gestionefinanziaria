@@ -39,7 +39,7 @@ const emptyForm = () => ({
   jobTypeCustom: '',
   startDate: new Date().toISOString().split('T')[0],
   intestatari: [] as IntestatarioFattura[],
-  metodoPagamento: 'sal' as 'sal' | 'acconto',
+  metodoPagamento: '' as 'sal' | 'acconto' | '',
 });
 
 // ─── COMPONENTE ──────────────────────────────────────────────────
@@ -96,7 +96,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
         jobType,
         startDate: form.startDate,
         intestatari: form.intestatari,
-        metodoPagamento: form.metodoPagamento,
+        metodoPagamento: form.metodoPagamento || undefined,
       });
     } else {
       onSave({
@@ -107,7 +107,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
         startDate: form.startDate,
         status: 'ACTIVE',
         intestatari: form.intestatari,
-        metodoPagamento: form.metodoPagamento,
+        metodoPagamento: form.metodoPagamento || undefined,
       });
     }
     resetForm();
@@ -129,7 +129,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
       jobTypeCustom: isPreset ? '' : project.jobType,
       startDate: project.startDate,
       intestatari: project.intestatari || [],
-      metodoPagamento: project.metodoPagamento || 'sal',
+      metodoPagamento: project.metodoPagamento || '',
     });
     setEditingId(project.id);
     setMode('edit');
@@ -231,6 +231,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
               <Wallet className="absolute left-3 top-2.5 text-slate-400" size={18} />
               <select value={form.metodoPagamento} onChange={e => setField('metodoPagamento', e.target.value)}
                 className="w-full pl-10 pr-8 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-slate-500 outline-none appearance-none bg-white">
+                <option value="">-- Seleziona metodo --</option>
                 <option value="sal">SAL (Stato Avanzamento Lavori)</option>
                 <option value="acconto">Acconto (Anticipi su Commessa)</option>
               </select>
@@ -356,9 +357,15 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
                   <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium border border-slate-200">
                     Attiva
                   </span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ml-1.5 ${project.metodoPagamento === 'acconto' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
-                    {project.metodoPagamento === 'acconto' ? 'Metodo: Acconto' : 'Metodo: SAL'}
-                  </span>
+                  {project.metodoPagamento ? (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ml-1.5 ${project.metodoPagamento === 'acconto' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                      {project.metodoPagamento === 'acconto' ? 'Metodo: Acconto' : 'Metodo: SAL'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold border border-rose-200 bg-rose-50 text-rose-700 ml-1.5">
+                      Metodo: Non specificato
+                    </span>
+                  )}
                 </div>
               </div>
 
