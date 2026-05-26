@@ -232,11 +232,20 @@ export const abbinaCantiereDaProgetto = (
 
 // ─── PARSER FILE BANCA (Cartel1.xlsx) ────────────────────────────
 
-export const findHeaderIndex = (headers: string[], keywords: string[], fallback: number): number => {
-  for (let i = 0; i < headers.length; i++) {
-    const h = String(headers[i] ?? '').toUpperCase();
-    if (keywords.some(kw => h.includes(kw))) {
-      return i;
+export const findHeaderIndex = (headers: string[], keywords: string[], fallback: number, searchFromRight: boolean = false): number => {
+  if (searchFromRight) {
+    for (let i = headers.length - 1; i >= 0; i--) {
+      const h = String(headers[i] ?? '').toUpperCase();
+      if (keywords.some(kw => h.includes(kw))) {
+        return i;
+      }
+    }
+  } else {
+    for (let i = 0; i < headers.length; i++) {
+      const h = String(headers[i] ?? '').toUpperCase();
+      if (keywords.some(kw => h.includes(kw))) {
+        return i;
+      }
     }
   }
   return fallback;
@@ -272,15 +281,12 @@ export const validaFileBanca = (workbook: XLSX.WorkBook): void => {
   if (rows.length === 0) throw new Error("Il file Banca selezionato non contiene righe.");
 
   const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
-  const hasData = headers.some(h => h.includes('DATA'));
-  const hasDesc = headers.some(h => h.includes('DESCRIZIONE') || h.includes('CAUSALE'));
-  const hasFlag = headers.some(h => h.includes('CONTO') || h.includes('B/I') || h.includes('B O I') || h.includes('FLAG'));
+  const hasFlag = headers.some(h => ['CONTO', 'B/I', 'B O I', 'FLAG', 'BANCA'].some(kw => h.includes(kw)));
+  const hasEntrate = headers.some(h => ['ENTRAT', 'AVERE', 'IMPORTI ENTRATE'].some(kw => h.includes(kw)));
+  const hasUscite = headers.some(h => ['USCIT', 'DARE', 'IMPORTI USCITE'].some(kw => h.includes(kw)));
 
-  if (!hasData || !hasDesc) {
-    throw new Error("Il file Banca selezionato non contiene le colonne necessarie (es. Data, Descrizione/Causale).");
-  }
-  if (!hasFlag) {
-    throw new Error("Il file Banca selezionato non contiene la colonna di flag del conto (B/I).");
+  if (!hasFlag || (!hasEntrate && !hasUscite)) {
+    throw new Error("Il file Banca selezionato non sembra essere nel formato corretto. Verifica che contenga i movimenti con flag conto (es. colonna Banca o B/I).");
   }
 };
 
@@ -338,9 +344,9 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
   const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
   const indexData = findHeaderIndex(headers, ['DATA'], 0);
   const indexDesc = findHeaderIndex(headers, ['DESCRIZIONE', 'CAUSALE'], 2);
-  const indexEntrate = findHeaderIndex(headers, ['ENTRAT', 'AVERE', 'IMPORTI ENTRATE'], 6);
-  const indexUscite = findHeaderIndex(headers, ['USCIT', 'DARE', 'IMPORTI USCITE'], 7);
-  const indexFlag = findHeaderIndex(headers, ['CONTO', 'B/I', 'B O I', 'FLAG'], 8);
+  const indexEntrate = findHeaderIndex(headers, ['ENTRAT', 'AVERE', 'IMPORTI ENTRATE'], 6, true);
+  const indexUscite = findHeaderIndex(headers, ['USCIT', 'DARE', 'IMPORTI USCITE'], 7, true);
+  const indexFlag = findHeaderIndex(headers, ['CONTO', 'B/I', 'B O I', 'FLAG', 'BANCA'], 8);
 
   const maxIndexRequired = Math.max(indexData, indexDesc, indexEntrate, indexUscite, indexFlag);
 
