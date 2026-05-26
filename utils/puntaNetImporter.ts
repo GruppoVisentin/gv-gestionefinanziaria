@@ -68,7 +68,7 @@ export interface RigaClassificata {
   cantiereSuggerito: string | null;
   cantiereScore: number;
   cantierePuntaNet: string;
-  tipoEntrata: 'sal' | 'saldo' | 'immobile' | 'altro' | null;
+  tipoEntrata: 'sal' | 'acconto' | 'saldo' | 'immobile' | 'altro' | null;
 }
 
 // ─── FUNZIONI UTILI ──────────────────────────────────────────────
@@ -80,9 +80,10 @@ export const codIvaToNumber = (cod: string): AliquotaIVA => {
   return 0;
 };
 
-export const inferisciTipoEntrata = (desc: string): 'sal' | 'saldo' | null => {
+export const inferisciTipoEntrata = (desc: string): 'sal' | 'acconto' | 'saldo' | null => {
   const d = desc.toUpperCase();
   if (d.includes('S.A.L.')) return 'sal';
+  if (d.includes('ACCONTO')) return 'acconto';
   if (d.includes('SALDO')) return 'saldo';
   return null;
 };

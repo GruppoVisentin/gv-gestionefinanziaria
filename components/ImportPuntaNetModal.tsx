@@ -167,7 +167,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         let cantierePuntaNet = '';
         let cantiereSuggerito: string | null = null;
         let cantiereScore = 0;
-        let tipoEntrata: 'sal' | 'saldo' | 'immobile' | 'altro' | null = null;
+        let tipoEntrata: 'sal' | 'acconto' | 'saldo' | 'immobile' | 'altro' | null = null;
 
         // Arricchimento FEP
         if (mov.tipoMovimento === 'FEP' && mov.numeroFattura && mapFEP.has(mov.numeroFattura)) {
@@ -227,6 +227,21 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           vatRateNota = `Da fattura FEA n. ${dett.numero}/${dett.anno}`;
           arricchitoDaFattura = true;
           tipoEntrata = inferisciTipoEntrata(dett.descrizioneDettaglio);
+          if (tipoEntrata) {
+            const mapping: Record<string, { categoria: string; ceType: string }> = {
+              sal:      { categoria: '[CANTIERE] SAL — Stato Avanzamento Lavori', ceType: 'ricavo_core' },
+              acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa',   ceType: 'solo_cashflow' },
+              saldo:    { categoria: '[CANTIERE] Saldo Finale Commessa',           ceType: 'ricavo_core' },
+              immobile: { categoria: '[IMMOBILIARE] Vendita Immobili e Terreni',   ceType: 'ricavo_immobiliare' },
+              altro:    { categoria: '[CANTIERE] Manutenzioni e Piccoli Lavori',   ceType: 'ricavo_altro' },
+            };
+            const mapped = mapping[tipoEntrata];
+            if (mapped) {
+              categoria = mapped.categoria;
+              ceType = mapped.ceType;
+              confidenza = 'alta';
+            }
+          }
         }
 
         // --- ABBINAMENTO CANTIERI INTELLIGENTE ---
@@ -313,10 +328,11 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
     ));
   };
 
-  const selezionaTipoEntrata = (idx: number, tipo: 'sal' | 'saldo' | 'immobile' | 'altro') => {
+  const selezionaTipoEntrata = (idx: number, tipo: 'sal' | 'acconto' | 'saldo' | 'immobile' | 'altro') => {
     const mapping: Record<string, { categoria: string; ceType: string }> = {
       sal:      { categoria: '[CANTIERE] SAL — Stato Avanzamento Lavori', ceType: 'ricavo_core' },
-      immobile: { categoria: '[IMMOBILIARE] Vendita Immobile',            ceType: 'ricavo_immobiliare' },
+      acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa',   ceType: 'solo_cashflow' },
+      immobile: { categoria: '[IMMOBILIARE] Vendita Immobili e Terreni',   ceType: 'ricavo_immobiliare' },
       saldo:    { categoria: '[CANTIERE] Saldo Finale Commessa',           ceType: 'ricavo_core' },
       altro:    { categoria: '[CANTIERE] Manutenzioni e Piccoli Lavori',   ceType: 'ricavo_altro' },
     };
@@ -629,10 +645,11 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                       {/* Azioni */}
                       {r.riga.tipoMovimento === 'FEA' && r.tipoEntrata === null ? (
                         <div className="grid grid-cols-2 gap-2">
-                          <button onClick={() => selezionaTipoEntrata(realIdx, 'sal')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">SAL / Acconto</button>
+                          <button onClick={() => selezionaTipoEntrata(realIdx, 'sal')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">SAL</button>
+                          <button onClick={() => selezionaTipoEntrata(realIdx, 'acconto')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">Acconto</button>
                           <button onClick={() => selezionaTipoEntrata(realIdx, 'saldo')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">Saldo Finale</button>
                           <button onClick={() => selezionaTipoEntrata(realIdx, 'immobile')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">Vendita Immobile</button>
-                          <button onClick={() => selezionaTipoEntrata(realIdx, 'altro')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all">Altro</button>
+                          <button onClick={() => selezionaTipoEntrata(realIdx, 'altro')} className="p-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold hover:border-emerald-500 transition-all col-span-2">Altro</button>
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 gap-3">
