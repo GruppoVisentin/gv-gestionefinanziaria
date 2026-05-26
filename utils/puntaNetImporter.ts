@@ -388,6 +388,19 @@ export const classificaRiga = (
   vatRateSuggerito: AliquotaIVA | null;
   vatRateNota: string | null;
 } => {
+  const descLower = riga.descrizione.toLowerCase();
+  const entLower = riga.entity.toLowerCase();
+  if (descLower.includes('spese bonifico') || entLower.includes('spese bonifico')) {
+    return {
+      categoria: '[FINANZA] Commissioni e Bolli Bancari',
+      ceType: 'onere_finanziario',
+      confidenza: 'alta',
+      matchKey: 'spese bonifico',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Spesa bancaria — fuori campo IVA'
+    };
+  }
+
   const entityKey = riga.entity.trim().toUpperCase().slice(0, 40);
   const regola = regoleSalvate.find(r => r.entityKey === entityKey);
 
@@ -441,7 +454,7 @@ const REGOLE_IVA_USCITE: RegolaIVA[] = [
   { pattern: /comune di|abaco|imu|tari|tassa|tributo|bollo|camera di commercio|codice lei/i, aliquota: 0, nota: 'Tasse/tributi — fuori campo IVA' },
   { pattern: /unipol|generali|zurich|polizza|assicur|fidejussion|decennale|postuma|car condominio|normatempo/i, aliquota: 0, nota: 'Assicurazione — esente IVA art.10' },
   { pattern: /rata mutuo|quota capitale|rimborso finanziamento|solo interessi|differenzial/i, aliquota: 0, nota: 'Rata mutuo — fuori campo IVA' },
-  { pattern: /imposta di bollo|commissioni banca|spese tenuta conto|canone home banking/i, aliquota: 0, nota: 'Spesa bancaria — fuori campo IVA' },
+  { pattern: /imposta di bollo|commissioni banca|spese tenuta conto|canone home banking|spese bonifico/i, aliquota: 0, nota: 'Spesa bancaria — fuori campo IVA' },
   { pattern: /ritenuta.*bonifico|ritenute.*bonifici/i, aliquota: 0, nota: 'Ritenuta su bonifico — fuori campo IVA' },
   { pattern: /prelievo utile|distribuzione utile|dividendo/i, aliquota: 0, nota: 'Distribuzione utile — fuori campo IVA' },
   { pattern: /volontariato|donazione|pro.loco|proloco/i, aliquota: 0, nota: 'Donazione — fuori campo IVA' },
