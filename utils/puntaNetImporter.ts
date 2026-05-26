@@ -156,6 +156,16 @@ const tutteLeParolePresenti = (a: string, b: string): boolean => {
   return paroleA.every(p => b.includes(p));
 };
 
+const paroleEscluseComuni = ['srl', 'spa', 'snc', 'sas', 'srls', 'coop', 'condominio', 'residence', 'impresa', 'lavori', 'servizi', 'studio', 'di', 'del', 'da', 'in', 'con', 'su', 'per', 'a', 'e', 'o', 'and'];
+
+// Verifica se almeno una parola significativa e distintiva (≥3 char) di 'a' compare in 'b' come parola intera
+const haParolaComuneSignificativa = (a: string, b: string): boolean => {
+  const paroleA = a.split(' ').filter(p => p.length >= 3 && !paroleEscluseComuni.includes(p));
+  if (paroleA.length === 0) return false;
+  const paroleB = b.split(' ');
+  return paroleA.some(p => paroleB.includes(p));
+};
+
 export const abbinaCantiereDaProgetto = (
   testoPuntaNet: string,
   projects: Project[]
@@ -186,12 +196,14 @@ export const abbinaCantiereDaProgetto = (
     }
 
     // 2. Prova corrispondenza con il nome del cliente principale
-    //    Usa word-set matching per gestire inversione nome/cognome
+    //    Usa word-set matching per gestire inversione nome/cognome e fallback parziale
     if (clienteCantiere.length > 2) {
       const matchDiretto = raw.includes(clienteCantiere) || clienteCantiere.includes(raw);
       const matchParole = tutteLeParolePresenti(clienteCantiere, raw) || tutteLeParolePresenti(raw, clienteCantiere);
-      if (matchDiretto || matchParole) {
-        const score = matchDiretto ? 85 : 80;
+      const matchParziale = haParolaComuneSignificativa(clienteCantiere, raw);
+      
+      if (matchDiretto || matchParole || matchParziale) {
+        const score = matchDiretto ? 85 : (matchParole ? 80 : 70);
         if (score > (bestMatch?.score ?? 0)) {
           bestMatch = { cantiere: p.name, score };
         }
@@ -199,13 +211,15 @@ export const abbinaCantiereDaProgetto = (
     }
 
     // 3. Prova corrispondenza con gli intestatari delle fatture
-    //    Usa word-set matching per gestire inversione nome/cognome
+    //    Usa word-set matching per gestire inversione nome/cognome e fallback parziale
     for (const nomeIntestatario of intestatariCantiere) {
       if (nomeIntestatario.length > 2) {
         const matchDiretto = raw.includes(nomeIntestatario) || nomeIntestatario.includes(raw);
         const matchParole = tutteLeParolePresenti(nomeIntestatario, raw) || tutteLeParolePresenti(raw, nomeIntestatario);
-        if (matchDiretto || matchParole) {
-          const score = matchDiretto ? 80 : 75;
+        const matchParziale = haParolaComuneSignificativa(nomeIntestatario, raw);
+        
+        if (matchDiretto || matchParole || matchParziale) {
+          const score = matchDiretto ? 80 : (matchParole ? 75 : 68);
           if (score > (bestMatch?.score ?? 0)) {
             bestMatch = { cantiere: p.name, score };
           }
@@ -639,8 +653,12 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
           codIva: '',
           totale: rowAmount,
           cantiere: '',
-          descrizioneDettaglio: ''
+          descrizioneDettaglio: isPrimaNota ? desc : ''
         };
+        if (isPrimaNota) {
+          salvaCorrente();
+          current = null;
+        }
       } else {
         current = null;
       }
