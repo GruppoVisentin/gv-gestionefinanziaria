@@ -418,6 +418,23 @@ export const classificaRiga = (
     };
   }
 
+  // Riconoscimento automatico affitti/locazioni/canoni
+  if (/affitto|locazione|canone/i.test(descLower) || /affitto|locazione|canone/i.test(entLower)) {
+    const isUscita = riga.tipo === 'EXPENSE';
+    const categoria = isUscita ? '[STRUTTURA] Affitti Sedi' : '[IMMOBILIARE] Affitti Attivi';
+    const ceType = isUscita ? 'costo_fisso' : 'ricavo_core';
+    const vatRateSuggerito = isUscita ? 22 : 10;
+    const vatRateNota = isUscita ? 'Affitto passivo — aliquota 22%' : 'Affitto attivo — aliquota 10%';
+    return {
+      categoria,
+      ceType,
+      confidenza: 'alta',
+      matchKey: 'automazione affitti',
+      vatRateSuggerito,
+      vatRateNota
+    };
+  }
+
   const entityKey = riga.entity.trim().toUpperCase().slice(0, 40);
   const regola = regoleSalvate.find(r => r.entityKey === entityKey);
 
