@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Transaction, TransactionType } from '../types';
+import { Transaction, TransactionType, Project } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
@@ -133,6 +133,61 @@ export const fuzzyMatchCantiere = (
 
     if (score > (bestMatch?.score ?? 0)) {
       bestMatch = { cantiere: c, score };
+    }
+  }
+
+  return bestMatch && bestMatch.score >= 40 ? bestMatch : null;
+};
+
+export const abbinaCantiereDaProgetto = (
+  testoPuntaNet: string,
+  projects: Project[]
+): { cantiere: string; score: number } | null => {
+  if (!testoPuntaNet || projects.length === 0) return null;
+
+  const normalizza = (s: string) =>
+    s.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const raw = normalizza(testoPuntaNet);
+  if (!raw) return null;
+
+  let bestMatch: { cantiere: string; score: number } | null = null;
+
+  for (const p of projects) {
+    const nomeCantiere = normalizza(p.name);
+    const clienteCantiere = normalizza(p.client);
+    const intestatariCantiere = (p.intestatari || []).map(i => normalizza(i.nome));
+
+    // 1. Prova corrispondenza con il nome del cantiere
+    const matchNome = fuzzyMatchCantiere(testoPuntaNet, [p.name]);
+    if (matchNome && matchNome.score > (bestMatch?.score ?? 0)) {
+      bestMatch = { cantiere: p.name, score: matchNome.score };
+    }
+
+    // 2. Prova corrispondenza con il nome del cliente principale
+    if (clienteCantiere.length > 2) {
+      if (raw.includes(clienteCantiere) || clienteCantiere.includes(raw)) {
+        const score = 85;
+        if (score > (bestMatch?.score ?? 0)) {
+          bestMatch = { cantiere: p.name, score };
+        }
+      }
+    }
+
+    // 3. Prova corrispondenza con gli intestatari delle fatture
+    for (const nomeIntestatario of intestatariCantiere) {
+      if (nomeIntestatario.length > 2) {
+        if (raw.includes(nomeIntestatario) || nomeIntestatario.includes(raw)) {
+          const score = 80;
+          if (score > (bestMatch?.score ?? 0)) {
+            bestMatch = { cantiere: p.name, score };
+          }
+        }
+      }
     }
   }
 

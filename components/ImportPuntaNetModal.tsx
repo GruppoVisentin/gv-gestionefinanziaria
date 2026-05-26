@@ -18,11 +18,12 @@ import {
   isDuplicato,
   codIvaToNumber,
   fuzzyMatchCantiere,
+  abbinaCantiereDaProgetto,
   inferisciTipoEntrata,
   mappaTipologiaACategoriaApp,
   AliquotaIVA
 } from '../utils/puntaNetImporter';
-import { Transaction, BankAccount, ImportSession } from '../types';
+import { Transaction, BankAccount, ImportSession, Project } from '../types';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, CATEGORY_TO_CE_TYPE } from '../constants';
 import * as XLSX from 'xlsx';
 
@@ -35,7 +36,7 @@ interface ImportPuntaNetModalProps {
   contiConfigurati: BankAccount[];
   regoleSalvate: RegolaMapping[];
   mappingContiSalvato: MappingConto | null;
-  cantieriApp: string[];
+  projectsApp: Project[];
   transazioniEsistenti: Transaction[];
   bozza: RigaClassificata[];
   fileFEP?: File | null;
@@ -56,7 +57,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   contiConfigurati,
   regoleSalvate,
   mappingContiSalvato,
-  cantieriApp,
+  projectsApp,
   transazioniEsistenti,
   bozza,
   fileFEP: initialFileFEP,
@@ -247,7 +248,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         // --- ABBINAMENTO CANTIERI INTELLIGENTE ---
         // 1. Prova dal cantiere presente nel file di dettaglio (arricchito)
         if (cantierePuntaNet) {
-          const match = fuzzyMatchCantiere(cantierePuntaNet, cantieriApp);
+          const match = abbinaCantiereDaProgetto(cantierePuntaNet, projectsApp);
           if (match) {
             cantiereSuggerito = match.cantiere;
             cantiereScore = match.score;
@@ -257,7 +258,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         // 2. Fallback su descrizione e entità del movimento bancario
         if (!cantiereSuggerito || cantiereScore < 50) {
           const testoBanca = `${mov.entity} ${mov.descrizione}`;
-          const matchBanca = fuzzyMatchCantiere(testoBanca, cantieriApp);
+          const matchBanca = abbinaCantiereDaProgetto(testoBanca, projectsApp);
           if (matchBanca && matchBanca.score > cantiereScore) {
             cantiereSuggerito = matchBanca.cantiere;
             cantiereScore = matchBanca.score;
@@ -676,7 +677,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                           className="w-full p-2 rounded-xl border border-slate-200 text-[11px] font-bold bg-white"
                         >
                           <option value="">Nessun cantiere (Spese Generali)</option>
-                          {cantieriApp.map(c => <option key={c} value={c}>{c}</option>)}
+                          {projectsApp.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
                         </select>
                       </div>
                     </div>

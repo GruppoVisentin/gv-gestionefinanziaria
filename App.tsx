@@ -1538,7 +1538,7 @@ const App: React.FC = () => {
             contiConfigurati={initialData.accounts}
             regoleSalvate={regolePuntaNet}
             mappingContiSalvato={mappingContiPuntaNet}
-            cantieriApp={projects.map(p => p.name)}
+            projectsApp={projects}
             transazioniEsistenti={transactions}
             bozza={bozzaImportPuntaNet}
             fileFEP={fileFEP}
