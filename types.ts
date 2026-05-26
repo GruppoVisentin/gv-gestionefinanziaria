@@ -87,6 +87,7 @@ export interface Project {
   startDate: string;
   status: 'ACTIVE' | 'COMPLETED';
   intestatari?: IntestatarioFattura[];   // ← NUOVO
+  metodoPagamento?: 'sal' | 'acconto';   // ← NUOVO
   estimatedStartDate?: string;
   estimatedLabor?: number;
   laborType?: 'INTERNAL' | 'EXTERNAL';

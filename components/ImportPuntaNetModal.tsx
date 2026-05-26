@@ -265,6 +265,22 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           }
         }
 
+        // 3. Se cantiere abbinato ed è un'entrata (FEA), eredita il metodoPagamento concordato (SAL/Acconto)
+        const matchedProj = projectsApp.find(p => p.name === cantiereSuggerito);
+        if (mov.tipoMovimento === 'FEA' && !tipoEntrata && matchedProj && matchedProj.metodoPagamento) {
+          tipoEntrata = matchedProj.metodoPagamento;
+          const mapping: Record<string, { categoria: string; ceType: string }> = {
+            sal:      { categoria: '[CANTIERE] SAL — Stato Avanzamento Lavori', ceType: 'ricavo_core' },
+            acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa',   ceType: 'solo_cashflow' },
+          };
+          const mapped = mapping[tipoEntrata];
+          if (mapped) {
+            categoria = mapped.categoria;
+            ceType = mapped.ceType;
+            confidenza = 'alta';
+          }
+        }
+
         // Se non arricchito o manca categoria, usa classificazione automatica
         const auto = classificaRiga(mov, regoleSalvate);
         if (!categoria) {

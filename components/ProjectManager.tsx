@@ -39,6 +39,7 @@ const emptyForm = () => ({
   jobTypeCustom: '',
   startDate: new Date().toISOString().split('T')[0],
   intestatari: [] as IntestatarioFattura[],
+  metodoPagamento: 'sal' as 'sal' | 'acconto',
 });
 
 // ─── COMPONENTE ──────────────────────────────────────────────────
@@ -95,6 +96,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
         jobType,
         startDate: form.startDate,
         intestatari: form.intestatari,
+        metodoPagamento: form.metodoPagamento,
       });
     } else {
       onSave({
@@ -105,6 +107,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
         startDate: form.startDate,
         status: 'ACTIVE',
         intestatari: form.intestatari,
+        metodoPagamento: form.metodoPagamento,
       });
     }
     resetForm();
@@ -126,6 +129,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
       jobTypeCustom: isPreset ? '' : project.jobType,
       startDate: project.startDate,
       intestatari: project.intestatari || [],
+      metodoPagamento: project.metodoPagamento || 'sal',
     });
     setEditingId(project.id);
     setMode('edit');
@@ -217,6 +221,20 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
               <Calendar className="absolute left-3 top-2.5 text-slate-400" size={18} />
               <input type="date" value={form.startDate} onChange={e => setField('startDate', e.target.value)}
                 className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-slate-500 outline-none" />
+            </div>
+          </div>
+
+          {/* Metodo Pagamento */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Metodo Pagamento Concordato</label>
+            <div className="relative">
+              <Wallet className="absolute left-3 top-2.5 text-slate-400" size={18} />
+              <select value={form.metodoPagamento} onChange={e => setField('metodoPagamento', e.target.value)}
+                className="w-full pl-10 pr-8 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-slate-500 outline-none appearance-none bg-white">
+                <option value="sal">SAL (Stato Avanzamento Lavori)</option>
+                <option value="acconto">Acconto (Anticipi su Commessa)</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" size={16} />
             </div>
           </div>
         </div>
@@ -337,6 +355,9 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
                   <h3 className="font-bold text-slate-800 pr-16">{project.name}</h3>
                   <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium border border-slate-200">
                     Attiva
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ml-1.5 ${project.metodoPagamento === 'acconto' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                    {project.metodoPagamento === 'acconto' ? 'Metodo: Acconto' : 'Metodo: SAL'}
                   </span>
                 </div>
               </div>
