@@ -40,8 +40,10 @@ interface ImportPuntaNetModalProps {
   bozza: RigaClassificata[];
   fileFEP?: File | null;
   fileFEA?: File | null;
+  fileFEA2?: File | null;
   onSetFileFEP?: (file: File | null) => void;
   onSetFileFEA?: (file: File | null) => void;
+  onSetFileFEA2?: (file: File | null) => void;
   onAggiornaBozza: (righe: RigaClassificata[]) => void;
   onImport: (transactions: Transaction[]) => void;
   onSalvaRegole: (regole: RegolaMapping[]) => void;
@@ -59,8 +61,10 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   bozza,
   fileFEP: initialFileFEP,
   fileFEA: initialFileFEA,
+  fileFEA2: initialFileFEA2,
   onSetFileFEP,
   onSetFileFEA,
+  onSetFileFEA2,
   onAggiornaBozza,
   onImport,
   onSalvaRegole,
@@ -74,6 +78,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   const [fileBanca, setFileBanca] = useState<File | null>(null);
   const [fileFEP, setFileFEP] = useState<File | null>(initialFileFEP ?? null);
   const [fileFEA, setFileFEA] = useState<File | null>(initialFileFEA ?? null);
+  const [fileFEA2, setFileFEA2] = useState<File | null>(initialFileFEA2 ?? null);
 
   const handleSetFileFEP = (file: File | null) => {
     setFileFEP(file);
@@ -83,6 +88,11 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   const handleSetFileFEA = (file: File | null) => {
     setFileFEA(file);
     onSetFileFEA?.(file);
+  };
+
+  const handleSetFileFEA2 = (file: File | null) => {
+    setFileFEA2(file);
+    onSetFileFEA2?.(file);
   };
   
   const [mappingConti, setMappingConti] = useState<MappingConto>(
@@ -135,6 +145,13 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       if (fileFEA) {
         const wbFEA = await readFile(fileFEA);
         mapFEA = parseDettaglioFEA(wbFEA);
+      }
+      if (fileFEA2) {
+        const wbFEA2 = await readFile(fileFEA2);
+        const mapFEA2 = parseDettaglioFEA(wbFEA2);
+        for (const [key, value] of mapFEA2.entries()) {
+          mapFEA.set(key, value);
+        }
       }
 
       // PASSO 4, 5, 6, 7: Costruzione RigaClassificata
@@ -452,21 +469,35 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
 
               <div className="space-y-4">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">File di Dettaglio (Opzionali)</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <label className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center gap-2 transition-all cursor-pointer ${fileFEP ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50'}`}>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <label className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer ${fileFEP ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50'}`}>
                     <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => handleSetFileFEP(e.target.files?.[0] ?? null)} />
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${fileFEP ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
                       <FileText size={20} />
                     </div>
-                    <p className="text-[11px] font-bold text-slate-700 text-center truncate w-full">{fileFEP ? fileFEP.name : '📤 USCITE (FEP)'}</p>
+                    <p className="text-[11px] font-bold text-slate-700 text-center truncate w-full" title={fileFEP ? fileFEP.name : '📤 USCITE (FEP)'}>
+                      {fileFEP ? fileFEP.name : '📤 USCITE (FEP)'}
+                    </p>
                   </label>
 
-                  <label className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center gap-2 transition-all cursor-pointer ${fileFEA ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50'}`}>
+                  <label className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer ${fileFEA ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50'}`}>
                     <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => handleSetFileFEA(e.target.files?.[0] ?? null)} />
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${fileFEA ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
                       <FileText size={20} />
                     </div>
-                    <p className="text-[11px] font-bold text-slate-700 text-center truncate w-full">{fileFEA ? fileFEA.name : '📥 ENTRATE (FEA)'}</p>
+                    <p className="text-[11px] font-bold text-slate-700 text-center truncate w-full" title={fileFEA ? fileFEA.name : '📥 ENTRATE (FEA 1)'}>
+                      {fileFEA ? fileFEA.name : '📥 ENTRATE (FEA 1)'}
+                    </p>
+                  </label>
+
+                  <label className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer ${fileFEA2 ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50'}`}>
+                    <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => handleSetFileFEA2(e.target.files?.[0] ?? null)} />
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${fileFEA2 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                      <FileText size={20} />
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-700 text-center truncate w-full" title={fileFEA2 ? fileFEA2.name : '📥 ENTRATE (FEA 2)'}>
+                      {fileFEA2 ? fileFEA2.name : '📥 ENTRATE (FEA 2)'}
+                    </p>
                   </label>
                 </div>
               </div>

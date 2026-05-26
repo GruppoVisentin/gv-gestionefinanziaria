@@ -372,6 +372,7 @@ const App: React.FC = () => {
   const [fileBanca, setFileBanca] = useState<File | null>(null);
   const [fileFEP, setFileFEP] = useState<File | null>(null);
   const [fileFEA, setFileFEA] = useState<File | null>(null);
+  const [fileFEA2, setFileFEA2] = useState<File | null>(null);
   const [showImportPuntaNet, setShowImportPuntaNet] = useState(false);
   const [showImportStorico, setShowImportStorico] = useState(false);
   const [storicoImportato, setStoricoImportato]   = useState(false);
@@ -1542,8 +1543,10 @@ const App: React.FC = () => {
             bozza={bozzaImportPuntaNet}
             fileFEP={fileFEP}
             fileFEA={fileFEA}
+            fileFEA2={fileFEA2}
             onSetFileFEP={setFileFEP}
             onSetFileFEA={setFileFEA}
+            onSetFileFEA2={setFileFEA2}
             onAggiornaBozza={setBozzaImportPuntaNet}
             onImport={(txs) => {
               setTransactions(prev => [...prev, ...txs]);
@@ -1551,6 +1554,7 @@ const App: React.FC = () => {
               setFileBanca(null);
               setFileFEP(null);
               setFileFEA(null);
+              setFileFEA2(null);
               setShowImportPuntaNet(false);
             }}
             onSalvaRegole={setRegolePuntaNet}
