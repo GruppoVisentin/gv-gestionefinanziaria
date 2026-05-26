@@ -103,7 +103,12 @@ export const fuzzyMatchCantiere = (
       .trim();
 
   const raw = normalizza(cantierePuntaNet);
-  const paroleRaw = raw.split(' ').filter(p => p.length > 2 && !['via', 'viale', 'piazza', 'corso'].includes(p));
+  const paroleEscluse = ['via', 'viale', 'piazza', 'corso', 'condominio', 'lavori', 'ristrutturazione', 'palazzina', 'comune', 'lotto', 'strada', 'residence', 'residenziale', 'edificio', 'fabbricato', 'gestione', 'costi', 'generali', 'ripartibili', 'magazzino', 'sede'];
+
+  let paroleRaw = raw.split(' ').filter(p => p.length > 2 && !paroleEscluse.includes(p));
+  if (paroleRaw.length === 0) {
+    paroleRaw = raw.split(' ').filter(p => p.length > 2 && !['via', 'viale', 'piazza', 'corso'].includes(p));
+  }
 
   let bestMatch: { cantiere: string; score: number } | null = null;
 
@@ -116,7 +121,10 @@ export const fuzzyMatchCantiere = (
     } else if (raw.includes(norm) || norm.includes(raw)) {
       score = 85;
     } else {
-      const paroleApp = norm.split(' ').filter(p => p.length > 2);
+      let paroleApp = norm.split(' ').filter(p => p.length > 2 && !paroleEscluse.includes(p));
+      if (paroleApp.length === 0) {
+        paroleApp = norm.split(' ').filter(p => p.length > 2 && !['via', 'viale', 'piazza', 'corso'].includes(p));
+      }
       const comuni = paroleRaw.filter(p => paroleApp.includes(p));
       const totParole = Math.max(paroleRaw.length, paroleApp.length);
       score = totParole > 0 ? Math.round((comuni.length / totParole) * 100) : 0;
@@ -393,8 +401,8 @@ export const classificaRiga = (
 
   // Riconoscimento automatico spese e commissioni bancarie / bolli / interessi
   if (
-    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|commissione rid|commissioni rid|imposta di bollo|commissioni banc|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(descLower) ||
-    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|commissione rid|commissioni rid|imposta di bollo|commissioni banc|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(entLower)
+    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|commissione rid|commissioni rid|spese di commissioni|spese per cbill|imposta di bollo|commissioni banc|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(descLower) ||
+    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|commissione rid|commissioni rid|spese di commissioni|spese per cbill|imposta di bollo|commissioni banc|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(entLower)
   ) {
     const isInteressi = /interessi/i.test(descLower) || /interessi/i.test(entLower);
     const categoria = isInteressi 
@@ -469,7 +477,7 @@ const REGOLE_IVA_USCITE: RegolaIVA[] = [
   { pattern: /comune di|abaco|imu|tari|tassa|tributo|bollo|camera di commercio|codice lei/i, aliquota: 0, nota: 'Tasse/tributi — fuori campo IVA' },
   { pattern: /unipol|generali|zurich|polizza|assicur|fidejussion|decennale|postuma|car condominio|normatempo/i, aliquota: 0, nota: 'Assicurazione — esente IVA art.10' },
   { pattern: /rata mutuo|quota capitale|rimborso finanziamento|solo interessi|differenzial/i, aliquota: 0, nota: 'Rata mutuo — fuori campo IVA' },
-  { pattern: /imposta di bollo|commissioni banca|spese tenuta conto|canone home banking|spese bonifico|spese rid|spese per rid|addebito rid|commissione rid|commissioni rid/i, aliquota: 0, nota: 'Spesa bancaria — fuori campo IVA' },
+  { pattern: /imposta di bollo|commissioni banca|spese tenuta conto|canone home banking|spese bonifico|spese rid|spese per rid|addebito rid|commissione rid|commissioni rid|spese di commissioni|spese per cbill/i, aliquota: 0, nota: 'Spesa bancaria — fuori campo IVA' },
   { pattern: /ritenuta.*bonifico|ritenute.*bonifici/i, aliquota: 0, nota: 'Ritenuta su bonifico — fuori campo IVA' },
   { pattern: /prelievo utile|distribuzione utile|dividendo/i, aliquota: 0, nota: 'Distribuzione utile — fuori campo IVA' },
   { pattern: /volontariato|donazione|pro.loco|proloco/i, aliquota: 0, nota: 'Donazione — fuori campo IVA' },

@@ -174,12 +174,6 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           
           vatRateNota = `Da fattura FEP n. ${dett.numero}`;
           arricchitoDaFattura = true;
-          // Fuzzy match cantiere
-          const match = fuzzyMatchCantiere(dett.cantiere, cantieriApp);
-          if (match) {
-            cantiereSuggerito = match.cantiere;
-            cantiereScore = match.score;
-          }
         }
         // Arricchimento FEA
         else if (mov.tipoMovimento === 'FEA' && mov.numeroFattura && mapFEA.has(mov.numeroFattura)) {
@@ -205,11 +199,25 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           vatRateNota = `Da fattura FEA n. ${dett.numero}/${dett.anno}`;
           arricchitoDaFattura = true;
           tipoEntrata = inferisciTipoEntrata(dett.descrizioneDettaglio);
-          // Fuzzy match cantiere
-          const match = fuzzyMatchCantiere(dett.cantiere, cantieriApp);
+        }
+
+        // --- ABBINAMENTO CANTIERI INTELLIGENTE ---
+        // 1. Prova dal cantiere presente nel file di dettaglio (arricchito)
+        if (cantierePuntaNet) {
+          const match = fuzzyMatchCantiere(cantierePuntaNet, cantieriApp);
           if (match) {
             cantiereSuggerito = match.cantiere;
             cantiereScore = match.score;
+          }
+        }
+        
+        // 2. Fallback su descrizione e entità del movimento bancario
+        if (!cantiereSuggerito || cantiereScore < 50) {
+          const testoBanca = `${mov.entity} ${mov.descrizione}`;
+          const matchBanca = fuzzyMatchCantiere(testoBanca, cantieriApp);
+          if (matchBanca && matchBanca.score > cantiereScore) {
+            cantiereSuggerito = matchBanca.cantiere;
+            cantiereScore = matchBanca.score;
           }
         }
 
@@ -266,6 +274,12 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   const aggiornaVatRate = (idx: number, vatRate: number) => {
     setRighe(righe.map((r, i) =>
       i === idx ? { ...r, vatRateConfermato: vatRate as any } : r
+    ));
+  };
+
+  const aggiornaCantiere = (idx: number, cantiere: string) => {
+    setRighe(righe.map((r, i) =>
+      i === idx ? { ...r, cantiereSuggerito: cantiere || null } : r
     ));
   };
 
@@ -591,6 +605,19 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                           </select>
                         </div>
                       )}
+
+                      {/* Selettore Cantiere */}
+                      <div className="mt-2 space-y-1">
+                        <p className="text-[9px] font-black text-slate-400 uppercase">Abbinamento Cantiere</p>
+                        <select 
+                          value={r.cantiereSuggerito ?? ''} 
+                          onChange={e => aggiornaCantiere(realIdx, e.target.value)} 
+                          className="w-full p-2 rounded-xl border border-slate-200 text-[11px] font-bold bg-white"
+                        >
+                          <option value="">Nessun cantiere (Spese Generali)</option>
+                          {cantieriApp.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
                     </div>
                   );
                 })}
