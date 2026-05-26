@@ -850,8 +850,8 @@ export const classificaRiga = (
 
   // Riconoscimento automatico spese e commissioni bancarie / bolli / interessi
   if (
-    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(descLower) ||
-    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(entLower)
+    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(descLower) ||
+    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(entLower)
   ) {
     const isInteressi = /interessi/i.test(descLower) || /interessi/i.test(entLower);
     const categoria = isInteressi 
@@ -946,7 +946,7 @@ const REGOLE_IVA_USCITE: RegolaIVA[] = [
   { pattern: /comune di|abaco|imu|tari|tassa|tributo|bollo|camera di commercio|codice lei/i, aliquota: 0, nota: 'Tasse/tributi — fuori campo IVA' },
   { pattern: /unipol|generali|zurich|polizza|assicur|fidejussion|decennale|postuma|car condominio|normatempo/i, aliquota: 0, nota: 'Assicurazione — esente IVA art.10' },
   { pattern: /rata mutuo|quota capitale|rimborso finanziamento|solo interessi|differenzial/i, aliquota: 0, nota: 'Rata mutuo — fuori campo IVA' },
-  { pattern: /imposta di bollo|spese tenuta conto|canone home banking|spese bonifico|spese rid|spese per rid|addebito rid|commissione|commissioni|cbill/i, aliquota: 0, nota: 'Spesa bancaria — fuori campo IVA' },
+  { pattern: /imposta di bollo|spese tenuta conto|canone home banking|spese bonifico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|commissione|commissioni|cbill/i, aliquota: 0, nota: 'Spesa bancaria — fuori campo IVA' },
   { pattern: /ritenuta.*bonifico|ritenute.*bonifici/i, aliquota: 0, nota: 'Ritenuta su bonifico — fuori campo IVA' },
   { pattern: /prelievo utile|distribuzione utile|dividendo/i, aliquota: 0, nota: 'Distribuzione utile — fuori campo IVA' },
   { pattern: /volontariato|donazione|pro.loco|proloco/i, aliquota: 0, nota: 'Donazione — fuori campo IVA' },
