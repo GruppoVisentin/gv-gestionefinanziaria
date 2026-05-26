@@ -367,8 +367,8 @@ export const mappaTipologiaACategoriaApp = (
 ): string | null => {
   if (tipo === 'FEA') return null;
   const t = tipologia.toLowerCase();
-  if (t.includes('sub appalti') || t.includes('subappalto')) return '[CANTIERE] Subappalti Manodopera';
-  if (t.includes('fornitore materiale') || t.includes('materiale edile') || t.includes('fornitura ferro')) return '[CANTIERE] Fornitori Materiali';
+  if (t.includes('sub appalti') || t.includes('subappalto')) return '[PERSONALE] Subappalti Manodopera';
+  if (t.includes('fornitore materiale') || t.includes('materiale edile') || t.includes('fornitura ferro')) return '[FORNITORI] Fornitori Materiali';
   if (t.includes('smaltimento') || t.includes('rifiuti') || t.includes('wc') || t.includes('box')) return '[CANTIERE] Rifiuti e Macerie';
   if (t.includes('professionisti') || t.includes('professionist')) return '[CONSULENZE] Professionisti Esterni di Cantiere';
   if (t.includes('stipendi') || t.includes('stipendio')) return '[PERSONALE] Stipendi Dipendenti Operativi';

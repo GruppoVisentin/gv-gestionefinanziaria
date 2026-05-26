@@ -19,6 +19,7 @@ import {
   codIvaToNumber,
   fuzzyMatchCantiere,
   inferisciTipoEntrata,
+  mappaTipologiaACategoriaApp,
   AliquotaIVA
 } from '../utils/puntaNetImporter';
 import { Transaction, BankAccount, ImportSession } from '../types';
@@ -172,6 +173,16 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
             vatRateSuggerito = codIvaToNumber(dett.codIva);
           }
           
+          // Mappa la tipologia della fattura alla categoria dell'app
+          if (dett.tipologia) {
+            const catMappata = mappaTipologiaACategoriaApp(dett.tipologia, 'FEP');
+            if (catMappata) {
+              categoria = catMappata;
+              ceType = CATEGORY_TO_CE_TYPE[catMappata] ?? 'solo_cashflow';
+              confidenza = 'alta';
+            }
+          }
+          
           vatRateNota = `Da fattura FEP n. ${dett.numero}`;
           arricchitoDaFattura = true;
         }
@@ -223,9 +234,11 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
 
         // Se non arricchito o manca categoria, usa classificazione automatica
         const auto = classificaRiga(mov, regoleSalvate);
-        categoria = auto.categoria;
-        ceType = auto.ceType;
-        confidenza = auto.confidenza;
+        if (!categoria) {
+          categoria = auto.categoria;
+          ceType = auto.ceType;
+          confidenza = auto.confidenza;
+        }
         if (!vatRateSuggerito) {
           vatRateSuggerito = auto.vatRateSuggerito;
           vatRateNota = auto.vatRateNota;
