@@ -390,12 +390,21 @@ export const classificaRiga = (
 } => {
   const descLower = riga.descrizione.toLowerCase();
   const entLower = riga.entity.toLowerCase();
-  if (descLower.includes('spese bonifico') || entLower.includes('spese bonifico')) {
+
+  // Riconoscimento automatico spese e commissioni bancarie / bolli / interessi
+  if (
+    /spese bonifico|spese per bonifico|imposta di bollo|commissioni banc|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(descLower) ||
+    /spese bonifico|spese per bonifico|imposta di bollo|commissioni banc|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(entLower)
+  ) {
+    const isInteressi = /interessi/i.test(descLower) || /interessi/i.test(entLower);
+    const categoria = isInteressi 
+      ? '[FINANZA] Interessi Passivi Finanziamenti' 
+      : '[FINANZA] Commissioni e Bolli Bancari';
     return {
-      categoria: '[FINANZA] Commissioni e Bolli Bancari',
+      categoria,
       ceType: 'onere_finanziario',
       confidenza: 'alta',
-      matchKey: 'spese bonifico',
+      matchKey: 'automazione bancaria',
       vatRateSuggerito: 0,
       vatRateNota: 'Spesa bancaria — fuori campo IVA'
     };
@@ -405,25 +414,31 @@ export const classificaRiga = (
   const regola = regoleSalvate.find(r => r.entityKey === entityKey);
 
   if (regola) {
+    const sugIVA = suggerisciAliquotaIVA(riga);
+    const vatRateSuggerito = sugIVA?.aliquota ?? suggerisciAliquotaIVADaCategoria(regola.categoria);
+    const vatRateNota = sugIVA?.nota ?? (vatRateSuggerito !== null ? `Aliquota standard per categoria` : null);
     return {
       categoria: regola.categoria,
       ceType: regola.ceType,
       confidenza: 'alta',
       matchKey: entityKey,
-      vatRateSuggerito: suggerisciAliquotaIVA(riga)?.aliquota ?? null,
-      vatRateNota: suggerisciAliquotaIVA(riga)?.nota ?? null
+      vatRateSuggerito,
+      vatRateNota
     };
   }
 
   for (const r of REGOLE_BUILTIN) {
     if (riga.entity.toUpperCase().includes(r.pattern.toUpperCase())) {
+      const sugIVA = suggerisciAliquotaIVA(riga);
+      const vatRateSuggerito = sugIVA?.aliquota ?? suggerisciAliquotaIVADaCategoria(r.categoria);
+      const vatRateNota = sugIVA?.nota ?? (vatRateSuggerito !== null ? `Aliquota standard per categoria` : null);
       return {
         categoria: r.categoria,
         ceType: r.ceType,
         confidenza: r.confidenza,
         matchKey: r.pattern,
-        vatRateSuggerito: suggerisciAliquotaIVA(riga)?.aliquota ?? null,
-        vatRateNota: suggerisciAliquotaIVA(riga)?.nota ?? null
+        vatRateSuggerito,
+        vatRateNota
       };
     }
   }
@@ -531,6 +546,11 @@ export const suggerisciAliquotaIVADaCategoria = (categoria: string): AliquotaIVA
     "[FISCO] Ritenute d'Acconto su Professionisti",
     '[FINANZA] Quota Capitale Rate Finanziamenti',
     '[FINANZA] Finanziamenti Ricevuti',
+    '[FINANZA] Interessi Passivi Finanziamenti',
+    '[FINANZA] Commissioni e Bolli Bancari',
+    '[FINANZA] Interessi su Mutuo Cantiere',
+    '[SOCI] Prelievo Utile Soci',
+    '[SOCI] Ritenuta su Prelievo Soci',
     '[PERSONALE] Compenso Amministratori',
     '[STRAORDINARI] Sanzioni e Penali',
     '[STRAORDINARI] Volontariato e Donazioni',

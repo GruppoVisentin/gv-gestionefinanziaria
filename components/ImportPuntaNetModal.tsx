@@ -155,7 +155,23 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         if (mov.tipoMovimento === 'FEP' && mov.numeroFattura && mapFEP.has(mov.numeroFattura)) {
           const dett = mapFEP.get(mov.numeroFattura);
           cantierePuntaNet = dett.cantiere;
-          vatRateSuggerito = codIvaToNumber(dett.codIva);
+          
+          // Calcola l'aliquota IVA dinamicamente da imponibile e imposte della fattura
+          if (dett.imponibile > 0) {
+            if (dett.imposte > 0) {
+              const ratio = dett.imposte / dett.imponibile;
+              const percent = Math.round(ratio * 100);
+              if (percent >= 20) vatRateSuggerito = 22;
+              else if (percent >= 8) vatRateSuggerito = 10;
+              else if (percent >= 3) vatRateSuggerito = 4;
+              else vatRateSuggerito = 0;
+            } else {
+              vatRateSuggerito = 0;
+            }
+          } else {
+            vatRateSuggerito = codIvaToNumber(dett.codIva);
+          }
+          
           vatRateNota = `Da fattura FEP n. ${dett.numero}`;
           arricchitoDaFattura = true;
           // Fuzzy match cantiere
@@ -169,7 +185,23 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         else if (mov.tipoMovimento === 'FEA' && mov.numeroFattura && mapFEA.has(mov.numeroFattura)) {
           const dett = mapFEA.get(mov.numeroFattura);
           cantierePuntaNet = dett.cantiere;
-          vatRateSuggerito = codIvaToNumber(dett.codIva);
+          
+          // Calcola l'aliquota IVA dinamicamente da imponibile e totale della fattura FEA
+          if (dett.imponibile > 0) {
+            if (dett.totale > dett.imponibile) {
+              const ratio = (dett.totale - dett.imponibile) / dett.imponibile;
+              const percent = Math.round(ratio * 100);
+              if (percent >= 20) vatRateSuggerito = 22;
+              else if (percent >= 8) vatRateSuggerito = 10;
+              else if (percent >= 3) vatRateSuggerito = 4;
+              else vatRateSuggerito = 0;
+            } else {
+              vatRateSuggerito = 0;
+            }
+          } else {
+            vatRateSuggerito = codIvaToNumber(dett.codIva);
+          }
+          
           vatRateNota = `Da fattura FEA n. ${dett.numero}/${dett.anno}`;
           arricchitoDaFattura = true;
           tipoEntrata = inferisciTipoEntrata(dett.descrizioneDettaglio);
