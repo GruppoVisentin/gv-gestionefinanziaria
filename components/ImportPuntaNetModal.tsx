@@ -3,7 +3,7 @@ import {
   X, Upload, CheckCircle2, AlertCircle, HelpCircle,
   ChevronDown, Zap, ArrowRight, Database,
   Building2, Briefcase, RefreshCw, ArrowLeftRight, FileText,
-  ChevronRight, ChevronUp
+  ChevronRight, ChevronUp, Circle
 } from 'lucide-react';
 import {
   parseBancaExcel,
@@ -906,7 +906,54 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                     {righe.filter(r => !r.isDuplicato && r.categoria && r.confidenza === 'alta' && r.vatRateSuggerito !== null && (r.riga.tipoMovimento !== 'FEA' || r.tipoEntrata !== null)).map((r, idx) => {
                       const realIdx = righe.indexOf(r);
                       return (
-                        <div key={idx} className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between">
+                        <div 
+                          key={idx} 
+                          className={`
+                            relative group border rounded-xl p-3 flex items-center justify-between transition-all duration-200
+                            ${r.confermata 
+                              ? 'bg-emerald-50/10 border-slate-100 hover:border-slate-200 hover:shadow-sm' 
+                              : 'bg-slate-100/50 border-slate-200 opacity-60'
+                            }
+                          `}
+                        >
+                          {/* Premium Hover Tooltip Box */}
+                          <div className="absolute bottom-full left-4 mb-2 hidden group-hover:flex flex-col gap-2 p-3 bg-slate-950/95 backdrop-blur-sm text-slate-100 text-[11px] rounded-xl shadow-xl border border-slate-800 z-50 w-80 text-left pointer-events-none transition-all duration-200 animate-in fade-in slide-in-from-bottom-2">
+                            <div className="flex items-center justify-between border-b border-slate-850 pb-1.5 mb-1">
+                              <span className="font-black uppercase tracking-wider text-[9px] text-slate-400">Dettaglio Transazione</span>
+                              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[8px] font-black text-slate-300 uppercase">
+                                {r.riga.tipoMovimento}
+                              </span>
+                            </div>
+                            <div className="space-y-1.5 leading-relaxed">
+                              <div>
+                                <span className="text-slate-400 font-bold">Soggetto: </span>
+                                <span>{r.riga.entity}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 font-bold">Data operazione: </span>
+                                <span>{new Date(r.riga.data).toLocaleDateString('it-IT')}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 font-bold">Importo: </span>
+                                <span className="font-mono font-bold text-emerald-400">{formatEuro(r.riga.importo)}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 font-bold">Flusso Conto: </span>
+                                <span>{r.riga.flagConto === 'B' ? 'Banca (Conto B)' : 'Impresa (Conto I)'}</span>
+                              </div>
+                              {r.riga.numeroFattura && (
+                                <div>
+                                  <span className="text-slate-400 font-bold">Numero Fattura: </span>
+                                  <span className="font-mono">{r.riga.numeroFattura}</span>
+                                </div>
+                              )}
+                              <div className="border-t border-slate-850 pt-1.5 mt-1.5">
+                                <span className="text-slate-400 font-bold block mb-0.5">Causale Originale:</span>
+                                <span className="italic text-slate-300 block break-words whitespace-pre-wrap font-sans">{r.riga.descrizione}</span>
+                              </div>
+                            </div>
+                          </div>
+
                           <div className="min-w-0 flex-1 mr-4">
                             <p className="text-[11px] font-bold text-slate-700 truncate">{r.riga.entity}</p>
                             <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -930,6 +977,22 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                                 {r.aliquoteMiste && <span className="text-[8px] font-black text-amber-500 uppercase">⚠ IVA Mista</span>}
                               </div>
                             </div>
+                            
+                            {/* Confirmation Toggle Button */}
+                            <button
+                              onClick={() => {
+                                setRighe(righe.map((x, i) => i === realIdx ? { ...x, confermata: !x.confermata } : x));
+                              }}
+                              className={`p-1 rounded-lg transition-all ${
+                                r.confermata 
+                                  ? 'text-emerald-600 hover:bg-emerald-50' 
+                                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                              }`}
+                              title={r.confermata ? "Escludi da importazione" : "Includi in importazione"}
+                            >
+                              {r.confermata ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+                            </button>
+
                             <button
                               onClick={() => {
                                 if (window.confirm("Annullare l'importazione di questo movimento?")) {
