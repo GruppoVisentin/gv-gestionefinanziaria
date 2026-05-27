@@ -903,36 +903,48 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                 </button>
                 {showAutoClassificati && (
                   <div className="mt-2 space-y-2">
-                    {righe.filter(r => !r.isDuplicato && r.categoria && r.confidenza === 'alta' && r.vatRateSuggerito !== null && (r.riga.tipoMovimento !== 'FEA' || r.tipoEntrata !== null)).map((r, idx) => (
-                      <div key={idx} className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-bold text-slate-700 truncate">{r.riga.entity}</p>
-                          <p className="text-[9px] text-slate-400 truncate">{r.categoria} · IVA {r.vatRateSuggerito}%</p>
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0 ml-4">
-                          <div className="text-right">
-                            <p className="text-xs font-black font-mono text-slate-600">{formatEuro(r.riga.importo)}</p>
-                            <div className="flex gap-1 justify-end">
-                              {r.arricchitoDaFattura && <span className="text-[8px] font-black text-blue-500 uppercase">Arricchito ✓</span>}
-                              {r.riga.tipoMovimento === 'NEP' && <span className="text-[8px] font-black text-purple-500 uppercase">Nota di Credito</span>}
-                              {r.aliquoteMiste && <span className="text-[8px] font-black text-amber-500 uppercase">⚠ IVA Mista</span>}
+                    {righe.filter(r => !r.isDuplicato && r.categoria && r.confidenza === 'alta' && r.vatRateSuggerito !== null && (r.riga.tipoMovimento !== 'FEA' || r.tipoEntrata !== null)).map((r, idx) => {
+                      const realIdx = righe.indexOf(r);
+                      return (
+                        <div key={idx} className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between">
+                          <div className="min-w-0 flex-1 mr-4">
+                            <p className="text-[11px] font-bold text-slate-700 truncate">{r.riga.entity}</p>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span className="text-[9px] text-slate-400 shrink-0">IVA {r.vatRateSuggerito}% · Categoria:</span>
+                              <select 
+                                value={r.categoria ?? ''} 
+                                onChange={e => aggiornaCategoria(realIdx, e.target.value)} 
+                                className="px-2 py-0.5 rounded-lg border border-slate-200 text-[10px] font-bold bg-slate-50 focus:bg-white transition-colors outline-none cursor-pointer"
+                              >
+                                <option value="">Seleziona categoria...</option>
+                                {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
                             </div>
                           </div>
-                          <button
-                            onClick={() => {
-                              const realIdx = righe.indexOf(r);
-                              if (window.confirm("Annullare l'importazione di questo movimento?")) {
-                                setRighe(righe.filter((_, i) => i !== realIdx));
-                              }
-                            }}
-                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
-                            title="Annulla importazione di questo movimento"
-                          >
-                            <X size={14} />
-                          </button>
+                          <div className="flex items-center gap-3 shrink-0 ml-4">
+                            <div className="text-right">
+                              <p className="text-xs font-black font-mono text-slate-600">{formatEuro(r.riga.importo)}</p>
+                              <div className="flex gap-1 justify-end">
+                                {r.arricchitoDaFattura && <span className="text-[8px] font-black text-blue-500 uppercase">Arricchito ✓</span>}
+                                {r.riga.tipoMovimento === 'NEP' && <span className="text-[8px] font-black text-purple-500 uppercase">Nota di Credito</span>}
+                                {r.aliquoteMiste && <span className="text-[8px] font-black text-amber-500 uppercase">⚠ IVA Mista</span>}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                if (window.confirm("Annullare l'importazione di questo movimento?")) {
+                                  setRighe(righe.filter((_, i) => i !== realIdx));
+                                }
+                              }}
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                              title="Annulla importazione di questo movimento"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
