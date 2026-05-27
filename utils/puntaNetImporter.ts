@@ -826,14 +826,22 @@ export const mappaTipologiaACategoriaApp = (
 // ─── CLASSIFICAZIONE AUTOMATICA (Fallback) ───────────────────────
 
 const matchesPattern = (text: string, pattern: string): boolean => {
-  const t = text.toUpperCase();
-  const p = pattern.toUpperCase();
+  const normalizza = (s: string) =>
+    s.toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const t = normalizza(text);
+  const p = normalizza(pattern);
   if (!t.includes(p)) return false;
   // Per pattern molto corti (es. < 5 caratteri), richiediamo che sia una parola intera
   if (p.length < 5) {
     const escaped = p.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
     const regex = new RegExp('\\b' + escaped + '\\b', 'i');
-    return regex.test(text);
+    return regex.test(t);
   }
   return true;
 };
