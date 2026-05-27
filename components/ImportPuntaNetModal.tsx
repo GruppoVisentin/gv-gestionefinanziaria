@@ -437,7 +437,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           ceType,
           confidenza,
           matchKey: auto.matchKey,
-          confermata: categoria !== null && vatRateSuggerito !== null && !duplicato && (mov.tipoMovimento !== 'FEA' || tipoEntrata !== null),
+          confermata: false, // Inizializzato a false di default per consentire la convalida manuale dell'operatore
           vatRateSuggerito,
           vatRateNota,
           vatRateConfermato: null,
@@ -911,8 +911,8 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                           className={`
                             relative group border rounded-xl p-3 flex items-center justify-between transition-all duration-200
                             ${r.confermata 
-                              ? 'bg-emerald-50/10 border-slate-100 hover:border-slate-200 hover:shadow-sm' 
-                              : 'bg-slate-100/50 border-slate-200 opacity-60'
+                              ? 'bg-emerald-50/30 border-emerald-200 hover:border-emerald-300 hover:shadow-sm' 
+                              : 'bg-white border-slate-150 hover:border-slate-200'
                             }
                           `}
                         >
