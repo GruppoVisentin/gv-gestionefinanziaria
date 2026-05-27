@@ -896,6 +896,162 @@ export const classificaRiga = (
     };
   }
 
+  // Automazione Edilcassa (Ufficio vs Operativi)
+  if (/edilcassa/i.test(descLower) || /edilcassa/i.test(entLower)) {
+    const isOperativi = /udine|\+ udine/i.test(descLower) || /udine|\+ udine/i.test(entLower);
+    return {
+      categoria: isOperativi ? '[PERSONALE] Contributi Dipendenti Operativi' : '[PERSONALE] Contributi Dipendenti Ufficio',
+      ceType: isOperativi ? 'costo_variabile' : 'costo_fisso',
+      confidenza: 'alta',
+      matchKey: 'automazione edilcassa',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Contributi Edilcassa — esente IVA'
+    };
+  }
+
+  // Automazione Generica Contributi (INPS/F24)
+  if (/contributi/i.test(descLower) || /contributi/i.test(entLower)) {
+    const isUfficio = /ufficio|socio|soci/i.test(descLower) || /ufficio|socio|soci/i.test(entLower);
+    return {
+      categoria: isUfficio ? '[PERSONALE] Contributi Dipendenti Ufficio' : '[PERSONALE] Contributi Dipendenti Operativi',
+      ceType: isUfficio ? 'costo_fisso' : 'costo_variabile',
+      confidenza: 'alta',
+      matchKey: 'automazione contributi',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Contributi previdenziali — esente IVA'
+    };
+  }
+
+
+  // Automazione Mutui, Rate, Interessi e Derivati
+  if (/mutuo|finanziamento|contratt.*derivat|differenzial.*tass/i.test(descLower) || /mutuo|finanziamento|contratt.*derivat|differenzial.*tass/i.test(entLower)) {
+    const isInteressi = /interess|solo interess|differenzial|commission/i.test(descLower) || /interess|solo interess|differenzial|commission/i.test(entLower);
+    return {
+      categoria: isInteressi ? '[FINANZA] Interessi Passivi Finanziamenti' : '[FINANZA] Quota Capitale Rate Finanziamenti',
+      ceType: isInteressi ? 'onere_finanziario' : 'solo_cashflow',
+      confidenza: 'alta',
+      matchKey: 'automazione mutuo/finanziamento',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Movimento finanziario — fuori campo IVA'
+    };
+  }
+
+  // Automazione Ritenute Fiscali su Bonifici (Entrate/Uscite)
+  if (/ritenuta fiscale su bonifico|ritenuta su bonifico|dedotta ritenuta/i.test(descLower) || /ritenuta fiscale su bonifico|ritenuta su bonifico|dedotta ritenuta/i.test(entLower)) {
+    return {
+      categoria: '[FISCO] Ritenute su Bonifici (versate)',
+      ceType: 'solo_cashflow',
+      confidenza: 'alta',
+      matchKey: 'automazione ritenute su bonifico',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Ritenuta su bonifico — fuori campo IVA'
+    };
+  }
+
+
+  // Automazione Carburanti / Gasolio
+  if (/gasolio|carburant/i.test(descLower) || /gasolio|carburant/i.test(entLower)) {
+    return {
+      categoria: '[CANTIERE] Carburanti',
+      ceType: 'costo_variabile',
+      confidenza: 'alta',
+      matchKey: 'automazione carburanti',
+      vatRateSuggerito: 22,
+      vatRateNota: 'Carburante — aliquota 22%'
+    };
+  }
+
+  // Automazione Assicurazioni e Polizze (Mezzi vs Cantieri vs Generali)
+  if (/unipol|generali|zurich|polizza|assicur/i.test(descLower) || /unipol|generali|zurich|polizza|assicur/i.test(entLower)) {
+    const isMezzi = /escavatore|terna|furgone|camion|daily|mercedes|jeep|veicolo|mezzi|mezzo|auto|tg/i.test(descLower) || /escavatore|terna|furgone|camion|daily|mercedes|jeep|veicolo|mezzi|mezzo|auto|tg/i.test(entLower);
+    const isCantiere = /cantiere|cantieri|postuma|decennale|car/i.test(descLower) || /cantiere|cantieri|postuma|decennale|car/i.test(entLower);
+    let categoria = '[COMPLIANCE] Assicurazioni Generali';
+    let ceType = 'costo_fisso';
+    if (isMezzi) {
+      categoria = '[MEZZI] Assicurazione Mezzi e Bolli';
+    } else if (isCantiere) {
+      categoria = '[CANTIERE] Assicurazione Cantieri';
+      ceType = 'costo_variabile';
+    }
+    return {
+      categoria,
+      ceType,
+      confidenza: 'alta',
+      matchKey: 'automazione assicurazioni',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Polizza assicurativa — esente IVA art.10'
+    };
+  }
+
+  // Automazione Albo Gestori Ambientali
+  if (/albo gestori|gestori ambientali/i.test(descLower) || /albo gestori|gestori ambientali/i.test(entLower)) {
+    return {
+      categoria: '[FISCO] Tasse e Tributi Aziendali (IMU, TARI, ecc.)',
+      ceType: 'costo_fisso',
+      confidenza: 'alta',
+      matchKey: 'automazione albo gestori',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Bollettino albo gestori — esente IVA'
+    };
+  }
+
+  // Automazione Lottizzazioni
+  if (/lottizz/i.test(descLower) || /lottizz/i.test(entLower)) {
+    return {
+      categoria: '[CONSULENZE] Professionisti Esterni di Cantiere',
+      ceType: 'costo_variabile',
+      confidenza: 'alta',
+      matchKey: 'automazione lottizzazione',
+      vatRateSuggerito: 22,
+      vatRateNota: 'Prestazione professionale — aliquota 22%'
+    };
+  }
+
+  // Automazione Risarcimenti Danni e Rimborsi Assicurativi
+  if (/risarcimento danni/i.test(descLower) || /risarcimento danni/i.test(entLower)) {
+    return {
+      categoria: '[STRAORDINARI] Imprevisti Straordinari',
+      ceType: 'costo_fisso',
+      confidenza: 'alta',
+      matchKey: 'automazione risarcimento danni',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Risarcimento danni — esente IVA'
+    };
+  }
+  if (/accredito.*assicurazion/i.test(descLower) || /accredito.*assicurazion/i.test(entLower)) {
+    return {
+      categoria: '[RIMBORSI] Rimborsi Assicurativi',
+      ceType: 'ricavo_altro',
+      confidenza: 'alta',
+      matchKey: 'automazione rimborsi assicurativi',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Rimborso da assicurazione — fuori campo IVA'
+    };
+  }
+
+  // Ricariche Prepagate e Arrotondamenti
+  if (/ricarica prepagata/i.test(descLower) || /ricarica prepagata/i.test(entLower)) {
+    return {
+      categoria: 'Altro / Non Classificato',
+      ceType: 'solo_cashflow',
+      confidenza: 'alta',
+      matchKey: 'automazione ricarica prepagata',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Giroconto / Ricarica prepagata'
+    };
+  }
+  if (/arrotondamento/i.test(descLower) || /arrotondamento/i.test(entLower)) {
+    return {
+      categoria: '[FINANZA] Commissioni e Bolli Bancari',
+      ceType: 'onere_finanziario',
+      confidenza: 'alta',
+      matchKey: 'automazione arrotondamento',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Arrotondamento centesimi'
+    };
+  }
+
+
   const entityKey = riga.entity.trim().toUpperCase().slice(0, 40);
   const regola = regoleSalvate.find(r => r.entityKey === entityKey);
 
@@ -1099,7 +1255,7 @@ const REGOLE_BUILTIN: Array<{
 }> = [
   { pattern: "VISENTIN ODILLO E MASARO", categoria: "[STRUTTURA] Affitti Sedi", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "VISENTIN LIVIO E PIOVESAN NADIA", categoria: "[STRUTTURA] Affitti Sedi", ceType: "costo_fisso", confidenza: "alta" },
-  { pattern: "OFFICINA FANTIN DI FANTIN VITO", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "OFFICINA FANTIN", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "ACI PER GIRARE CON CAMION", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "BOLLETTINO GRU INAIL", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "CENPI SRL", categoria: "[MEZZI] Riparazioni Macchinari Programmate", ceType: "costo_fisso", confidenza: "alta" },
@@ -1482,4 +1638,56 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "TERRENO …....", categoria: "[INVESTIMENTI] Acquisto Terreni per Sviluppo", ceType: "capex", confidenza: "alta" },
   { pattern: "O VERSAMENTO CAPITALE SOCIALE", categoria: "[INVESTIMENTI] Investimento in Nuova Società", ceType: "capex", confidenza: "alta" },
   { pattern: "LIQUIDITA' IN CONTO CORRENTE", categoria: "[FINANZA] Commissioni e Bolli Bancari", ceType: "onere_finanziario", confidenza: "alta" },
+  { pattern: "FEJZULOSKI EDIP", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "LONDERO MARIO", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "S.S. COSTRUZIONI E RESTAURI", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "ONGARATO CRISTIAN", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "MASSIMO RECINZIONI", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "DANIEL FABIO", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "MARTINOIA MARCO", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "BALDUCCI MARCO ANTONIO", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "STUDIO VISENTIN S.R.L", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "Osteria Antica Pesa", categoria: "[CANTIERE] Pranzi e Trasferte Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "IPI INGEGNERIA", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "ALLIANZ FONDO PENSIONE", categoria: "[PERSONALE] Contributi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "SEFE COSTRUZIONI", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "BRESSAN STEFANO ANDREA", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "WOOD TOP", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "MAKNES", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "MARENGON", categoria: "[INVESTIMENTI] Acquisto Attrezzature e Macchinari", ceType: "capex", confidenza: "alta" },
+  { pattern: "DE LAGE LANDEN", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "SCHOECK", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "TVM RENT", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "LAZZARON ALESSANDRO", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "PANETTA GIOVANNA", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "GHIAIE PONTE ROSSO", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "IDEALSERVICE", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "ISEPPON", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "IKON S.R.L.S.", categoria: "[COMPLIANCE] Corsi Dipendenti", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "POSA PAV", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "A.A.M.A.P.", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "GIEM SRLS", categoria: "[PERSONALE] Subappalti Manodopera", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "SANTIN MATTIA", categoria: "[PERSONALE] Stipendi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "MIAHLI IOAN", categoria: "[PERSONALE] Stipendi Dipendenti Operativi", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "VECIA OSTERIA DEI MORINI", categoria: "[CANTIERE] Pranzi e Trasferte Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "NESIMOSKI SELMEDIN", categoria: "[PERSONALE] Collaboratori Fissi", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "VISENTIN RONNY", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "I BAMBINI DELLE FATE", categoria: "[STRAORDINARI] Volontariato e Donazioni", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "ESNA SOCIETA' ORGANISMO", categoria: "[CONSULENZE] SOA e ISO", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "TREVISO EDILIZIA", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "DPS S.R.L.", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "G.SC. DI GATTO TARCISIO", categoria: "[FORNITORI] Subappalti su Cantieri", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "GAZZOLA ARCH. ALESSIA", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "SERVIZI ECOLOGICI IMEC", categoria: "[CANTIERE] Rifiuti e Macerie", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "Labor Medica", categoria: "[COMPLIANCE] Visite Mediche Dipendenti", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "Falegnameria F.lli Trentin", categoria: "[FORNITORI] Subappalti su Cantieri", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "iliad", categoria: "[STRUTTURA] Utenze Sedi", ceType: "costo_fisso", confidenza: "alta" },
+  { pattern: "MORETTO GIUSEPPE", categoria: "[FORNITORI] Subappalti su Cantieri", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "NASATO FEDERICA", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "EDIL MULI", categoria: "[FORNITORI] Subappalti su Cantieri", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "GRIGOLIN", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "DALLA MORA", categoria: "[FORNITORI] Fornitori Materiali", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "TONIOLO MASSIMO", categoria: "[FORNITORI] Subappalti su Cantieri", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "VISENTIN MARCO", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "CO.I.M.", categoria: "[PERSONALE] Contributi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
 ];
