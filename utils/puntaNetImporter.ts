@@ -168,7 +168,8 @@ const haParolaComuneSignificativa = (a: string, b: string): boolean => {
 
 export const abbinaCantiereDaProgetto = (
   testoPuntaNet: string,
-  projects: Project[]
+  projects: Project[],
+  isExpense?: boolean
 ): { cantiere: string; score: number } | null => {
   if (!testoPuntaNet || projects.length === 0) return null;
 
@@ -195,33 +196,36 @@ export const abbinaCantiereDaProgetto = (
       bestMatch = { cantiere: p.name, score: matchNome.score };
     }
 
-    // 2. Prova corrispondenza con il nome del cliente principale
-    //    Usa word-set matching per gestire inversione nome/cognome e fallback parziale
-    if (clienteCantiere.length > 2) {
-      const matchDiretto = raw.includes(clienteCantiere) || clienteCantiere.includes(raw);
-      const matchParole = tutteLeParolePresenti(clienteCantiere, raw) || tutteLeParolePresenti(raw, clienteCantiere);
-      const matchParziale = haParolaComuneSignificativa(clienteCantiere, raw);
-      
-      if (matchDiretto || matchParole || matchParziale) {
-        const score = matchDiretto ? 85 : (matchParole ? 80 : 70);
-        if (score > (bestMatch?.score ?? 0)) {
-          bestMatch = { cantiere: p.name, score };
-        }
-      }
-    }
-
-    // 3. Prova corrispondenza con gli intestatari delle fatture
-    //    Usa word-set matching per gestire inversione nome/cognome e fallback parziale
-    for (const nomeIntestatario of intestatariCantiere) {
-      if (nomeIntestatario.length > 2) {
-        const matchDiretto = raw.includes(nomeIntestatario) || nomeIntestatario.includes(raw);
-        const matchParole = tutteLeParolePresenti(nomeIntestatario, raw) || tutteLeParolePresenti(raw, nomeIntestatario);
-        const matchParziale = haParolaComuneSignificativa(nomeIntestatario, raw);
+    // Skip client and intestatari matching for expenses to avoid matching subcontractors to client projects of the same name
+    if (!isExpense) {
+      // 2. Prova corrispondenza con il nome del cliente principale
+      //    Usa word-set matching per gestire inversione nome/cognome e fallback parziale
+      if (clienteCantiere.length > 2) {
+        const matchDiretto = raw.includes(clienteCantiere) || clienteCantiere.includes(raw);
+        const matchParole = tutteLeParolePresenti(clienteCantiere, raw) || tutteLeParolePresenti(raw, clienteCantiere);
+        const matchParziale = haParolaComuneSignificativa(clienteCantiere, raw);
         
         if (matchDiretto || matchParole || matchParziale) {
-          const score = matchDiretto ? 80 : (matchParole ? 75 : 68);
+          const score = matchDiretto ? 85 : (matchParole ? 80 : 70);
           if (score > (bestMatch?.score ?? 0)) {
             bestMatch = { cantiere: p.name, score };
+          }
+        }
+      }
+
+      // 3. Prova corrispondenza con gli intestatari delle fatture
+      //    Usa word-set matching per gestire inversione nome/cognome e fallback parziale
+      for (const nomeIntestatario of intestatariCantiere) {
+        if (nomeIntestatario.length > 2) {
+          const matchDiretto = raw.includes(nomeIntestatario) || nomeIntestatario.includes(raw);
+          const matchParole = tutteLeParolePresenti(nomeIntestatario, raw) || tutteLeParolePresenti(raw, nomeIntestatario);
+          const matchParziale = haParolaComuneSignificativa(nomeIntestatario, raw);
+          
+          if (matchDiretto || matchParole || matchParziale) {
+            const score = matchDiretto ? 80 : (matchParole ? 75 : 68);
+            if (score > (bestMatch?.score ?? 0)) {
+              bestMatch = { cantiere: p.name, score };
+            }
           }
         }
       }

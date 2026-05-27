@@ -262,7 +262,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
 
             // Gap F: Se cantierePuntaNet è vuoto o non abbinato, prova con il fornitore
             if ((!cantierePuntaNet || cantierePuntaNet.trim() === '') && dett.fornitore && dett.fornitore.trim().length > 2) {
-              const matchFornitore = abbinaCantiereDaProgetto(dett.fornitore.trim(), projectsApp);
+              const matchFornitore = abbinaCantiereDaProgetto(dett.fornitore.trim(), projectsApp, true);
               if (matchFornitore && matchFornitore.score > cantiereScore) {
                 cantiereSuggerito = matchFornitore.cantiere;
                 cantiereScore = matchFornitore.score;
@@ -341,7 +341,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           // dett.cliente è la fonte più affidabile: nome cliente come appare sulla fattura emessa.
           // Usare word-set matching permette di gestire inversione nome/cognome.
           if (dett.cliente && dett.cliente.trim().length > 2) {
-            const matchCliente = abbinaCantiereDaProgetto(dett.cliente.trim(), projectsApp);
+            const matchCliente = abbinaCantiereDaProgetto(dett.cliente.trim(), projectsApp, false);
             if (matchCliente && matchCliente.score > cantiereScore) {
               cantiereSuggerito = matchCliente.cantiere;
               cantiereScore = matchCliente.score;
@@ -383,7 +383,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         // --- ABBINAMENTO CANTIERI INTELLIGENTE ---
         // 1. Prova dal nome cantiere presente nel file di dettaglio (arricchito)
         if (cantierePuntaNet && (!cantiereSuggerito || cantiereScore < 55)) {
-          const match = abbinaCantiereDaProgetto(cantierePuntaNet, projectsApp);
+          const match = abbinaCantiereDaProgetto(cantierePuntaNet, projectsApp, mov.tipo === 'EXPENSE');
           if (match && match.score > cantiereScore) {
             cantiereSuggerito = match.cantiere;
             cantiereScore = match.score;
@@ -394,7 +394,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         // 2. Fallback su descrizione e entità del movimento bancario
         if (!cantiereSuggerito || cantiereScore < 55) {
           const testoBanca = `${mov.entity} ${mov.descrizione}`;
-          const matchBanca = abbinaCantiereDaProgetto(testoBanca, projectsApp);
+          const matchBanca = abbinaCantiereDaProgetto(testoBanca, projectsApp, mov.tipo === 'EXPENSE');
           if (matchBanca && matchBanca.score > cantiereScore) {
             cantiereSuggerito = matchBanca.cantiere;
             cantiereScore = matchBanca.score;
