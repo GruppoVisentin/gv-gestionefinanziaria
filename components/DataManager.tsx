@@ -1,12 +1,19 @@
 import React, { useRef, useState } from 'react';
 import { BackupData, ImportSession } from '../types';
-import { Download, Upload, Database, CheckCircle, AlertCircle, FileJson, HardDrive, Info, FolderOpen, Shield, History, Trash2, RotateCcw, FileSpreadsheet } from 'lucide-react';
+import { Download, Upload, Database, CheckCircle, AlertCircle, FileJson, HardDrive, Info, FolderOpen, Shield, History, Trash2, RotateCcw, FileSpreadsheet, Plus } from 'lucide-react';
 
 interface DataManagerProps {
   onExport: () => BackupData;
   onImport: (data: BackupData) => void;
   onChangeFile?: () => void;
   currentFileName?: string;
+  backupFileName?: string;
+  onSetBackupFile?: () => void;
+  onClearBackupFile?: () => void;
+  rulesFileName?: string;
+  onLinkRulesFile?: () => void;
+  onCreateRulesFile?: () => void;
+  onClearRulesFile?: () => void;
   importSessions?: ImportSession[];
   onAnnullaSessione?: (id: string) => void;
   onImportStorico?: () => void;
@@ -18,6 +25,13 @@ const DataManager: React.FC<DataManagerProps> = ({
   onImport, 
   onChangeFile,
   currentFileName,
+  backupFileName,
+  onSetBackupFile,
+  onClearBackupFile,
+  rulesFileName,
+  onLinkRulesFile,
+  onCreateRulesFile,
+  onClearRulesFile,
   importSessions = [],
   onAnnullaSessione,
   onImportStorico,
@@ -182,6 +196,146 @@ const DataManager: React.FC<DataManagerProps> = ({
                 Puoi cambiare il file di lavoro o crearne uno nuovo cliccando su "Cambia file".
             </div>
         </div>
+      </div>
+
+      {/* SEZIONE BACKUP DI SICUREZZA SU DRIVE */}
+      <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 shadow-lg">
+        <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-800 rounded-xl">
+                    <Shield size={20} className="text-emerald-400" />
+                </div>
+                <div>
+                    <h3 className="font-bold text-sm uppercase tracking-wider text-slate-100">Backup di Sicurezza Specchio</h3>
+                    <p className="text-xs text-slate-400">Salvataggio simultaneo su Google Drive</p>
+                </div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 border border-slate-700 rounded-full">
+                <span className={`relative flex h-2 w-2`}>
+                  {backupFileName ? (
+                    <>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </>
+                  ) : (
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-500"></span>
+                  )}
+                </span>
+                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                  {backupFileName ? 'Attivo' : 'Non configurato'}
+                </span>
+            </div>
+        </div>
+
+        {backupFileName ? (
+          <div className="bg-black/40 rounded-lg border border-slate-850 p-3 mb-4 font-mono text-xs text-slate-300 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <FolderOpen size={16} className="text-emerald-400 shrink-0" />
+                <span className="text-emerald-400">backup:</span>
+                <span className="text-slate-200 truncate select-all">
+                    {backupFileName}
+                </span>
+              </div>
+              {onClearBackupFile && (
+                <button 
+                  onClick={onClearBackupFile}
+                  className="shrink-0 px-3 py-1 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-900 text-rose-200 rounded text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
+                >
+                  Scollega
+                </button>
+              )}
+          </div>
+        ) : (
+          <div className="mb-2">
+            <p className="text-xs text-slate-400 leading-relaxed mb-3">
+              Configura un file di backup specchio (es. all'interno del tuo Google Drive, disco G:).
+              L'applicazione scriverà i dati in parallelo su entrambi i file ad ogni auto-salvataggio.
+            </p>
+            {onSetBackupFile && (
+              <button
+                onClick={onSetBackupFile}
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              >
+                <Shield size={14} /> Collega File di Backup su Drive (G:)
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* SEZIONE REGOLE DI IMPORTAZIONE CONDIVISE */}
+      <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 shadow-lg">
+        <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-800 rounded-xl">
+                    <Database size={20} className="text-amber-400" />
+                </div>
+                <div>
+                    <h3 className="font-bold text-sm uppercase tracking-wider text-slate-100">Regole di Importazione Condivise</h3>
+                    <p className="text-xs text-slate-400">Mantieni le regole salvate tra file diversi</p>
+                </div>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 border border-slate-700 rounded-full">
+                <span className={`relative flex h-2 w-2`}>
+                  {rulesFileName ? (
+                    <>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </>
+                  ) : (
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-500"></span>
+                  )}
+                </span>
+                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                  {rulesFileName ? 'Attivo' : 'Browser LocalStorage'}
+                </span>
+            </div>
+        </div>
+
+        {rulesFileName ? (
+          <div className="bg-black/40 rounded-lg border border-slate-850 p-3 mb-4 font-mono text-xs text-slate-300 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <FolderOpen size={16} className="text-amber-400 shrink-0" />
+                <span className="text-amber-400">regole:</span>
+                <span className="text-slate-200 truncate select-all">
+                    {rulesFileName}
+                </span>
+              </div>
+              {onClearRulesFile && (
+                <button 
+                  onClick={onClearRulesFile}
+                  className="shrink-0 px-3 py-1 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-900 text-rose-200 rounded text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
+                >
+                  Scollega
+                </button>
+              )}
+          </div>
+        ) : (
+          <div className="mb-2">
+            <p className="text-xs text-slate-400 leading-relaxed mb-4">
+              Collega o crea un file di regole centralizzato (es. sul NAS o su Drive). 
+              Le nuove regole configurate durante l'importazione verranno salvate automaticamente in questo file e saranno disponibili anche all'avvio di nuovi progetti.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {onLinkRulesFile && (
+                <button
+                  onClick={onLinkRulesFile}
+                  className="py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <FolderOpen size={14} className="text-amber-400" /> Collega File Esistente
+                </button>
+              )}
+              {onCreateRulesFile && (
+                <button
+                  onClick={onCreateRulesFile}
+                  className="py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                >
+                  <Plus size={14} /> Crea Nuovo File Regole
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

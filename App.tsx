@@ -94,7 +94,15 @@ import {
   writeFile, 
   openExistingFile, 
   createNewFile,
-  clearHandleFromIDB
+  clearHandleFromIDB,
+  saveBackupHandleToIDB,
+  getBackupHandleFromIDB,
+  clearBackupHandleFromIDB,
+  saveRulesHandleToIDB,
+  getRulesHandleFromIDB,
+  clearRulesHandleFromIDB,
+  readRulesFile,
+  writeRulesFile
 } from './services/fileStorage';
 
 interface WelcomeScreenProps {
@@ -276,6 +284,31 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   </div>
 );
 
+function mergeRegole(listA: any[], listB: any[]): any[] {
+  const map = new Map<string, any>();
+  if (Array.isArray(listB)) {
+    listB.forEach(r => {
+      if (r && r.entityKey) map.set(r.entityKey.trim().toUpperCase(), r);
+    });
+  }
+  if (Array.isArray(listA)) {
+    listA.forEach(r => {
+      if (r && r.entityKey) map.set(r.entityKey.trim().toUpperCase(), r);
+    });
+  }
+  return Array.from(map.values());
+}
+
+function getGlobalRules(): any[] {
+  try {
+    const cached = localStorage.getItem('gv_global_rules');
+    return cached ? JSON.parse(cached) : [];
+  } catch (e) {
+    console.error("Errore lettura gv_global_rules", e);
+    return [];
+  }
+}
+
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.HOME);
   
@@ -284,10 +317,14 @@ const App: React.FC = () => {
 
   // File Storage States
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | null>(null);
+  const [backupFileHandle, setBackupFileHandle] = useState<FileSystemFileHandle | null>(null);
+  const [rulesFileHandle, setRulesFileHandle] = useState<FileSystemFileHandle | null>(null);
   const [appState, setAppState] = useState<'loading' | 'welcome' | 'ready'>('loading');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [pendingHandleFromIDB, setPendingHandleFromIDB] = useState<FileSystemFileHandle | null>(null);
+  const [pendingBackupHandleFromIDB, setPendingBackupHandleFromIDB] = useState<FileSystemFileHandle | null>(null);
+  const [pendingRulesHandleFromIDB, setPendingRulesHandleFromIDB] = useState<FileSystemFileHandle | null>(null);
 
   const isCashFlowView = [
     AppView.DASHBOARD, 
@@ -521,7 +558,11 @@ const App: React.FC = () => {
     if (data.tipologieCantiere) setTipologieCantiere(data.tipologieCantiere);
     if (data.cantieriPrev) setCantieriPrev(data.cantieriPrev);
     if (data.rimanenze) setRimanenze(data.rimanenze);
-    if (data.regolePuntaNet) setRegolePuntaNet(data.regolePuntaNet);
+    if (data.regolePuntaNet) {
+      setRegolePuntaNet(mergeRegole(data.regolePuntaNet, getGlobalRules()));
+    } else {
+      setRegolePuntaNet(getGlobalRules());
+    }
     if (data.mappingContiPuntaNet) setMappingContiPuntaNet(data.mappingContiPuntaNet);
     if (data.bozzaImportPuntaNet) setBozzaImportPuntaNet(data.bozzaImportPuntaNet);
     if (data.importSessions) setImportSessions(data.importSessions);
@@ -532,11 +573,21 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const saveToFile = useCallback(async (handle: FileSystemFileHandle) => {
+  const saveToFile = useCallback(async (handle: FileSystemFileHandle, backupHandle?: FileSystemFileHandle | null) => {
     try {
       setSaveStatus('saving');
       const data = buildBackupDataRef.current(); // ← legge sempre l'ultima versione
       await writeFile(handle, data);
+      
+      // Salva in parallelo sul file di backup su Drive se configurato
+      if (backupHandle) {
+        try {
+          await writeFile(backupHandle, data);
+        } catch (err) {
+          console.error("Errore scrittura file di backup di sicurezza", err);
+        }
+      }
+      
       setLastSaved(new Date());
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
@@ -557,41 +608,66 @@ const App: React.FC = () => {
       if (handle) {
         setPendingHandleFromIDB(handle);
       }
+      const backupHandle = await getBackupHandleFromIDB();
+      if (backupHandle) {
+        setPendingBackupHandleFromIDB(backupHandle);
+      }
+      const rulesHandle = await getRulesHandleFromIDB();
+      if (rulesHandle) {
+        setPendingRulesHandleFromIDB(rulesHandle);
+      }
       setAppState('welcome');
     };
     init();
   }, [isFileSystemSupported]);
 
+  // --- SYNC RULES ---
+  useEffect(() => {
+    if (appState !== 'ready') return;
+    
+    // 1. Sync to localStorage (Opzione A)
+    try {
+      localStorage.setItem('gv_global_rules', JSON.stringify(regolePuntaNet));
+    } catch (e) {
+      console.error("Errore scrittura gv_global_rules", e);
+    }
+    
+    // 2. Sync to Rules File if linked (Opzione B/C)
+    if (rulesFileHandle) {
+      writeRulesFile(rulesFileHandle, regolePuntaNet).catch(err => {
+        console.error("Errore scrittura file regole", err);
+      });
+    }
+  }, [regolePuntaNet, rulesFileHandle, appState]);
+
   // --- AUTO-SAVE ---
   useEffect(() => {
     if (!fileHandle || appState !== 'ready') return;
-    // Disable auto-save in demo mode (when fileHandle is null but appState is ready)
-    if (!fileHandle) return;
     
     const interval = setInterval(() => {
-      saveToFile(fileHandle);
+      saveToFile(fileHandle, backupFileHandle);
     }, 3 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [fileHandle, appState, saveToFile]);
+  }, [fileHandle, backupFileHandle, appState, saveToFile]);
 
   // --- KEYBOARD SHORTCUTS ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (fileHandle) saveToFile(fileHandle);
+        if (fileHandle) saveToFile(fileHandle, backupFileHandle);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [fileHandle, saveToFile]);
+  }, [fileHandle, backupFileHandle, saveToFile]);
 
   // --- SALVATAGGIO ALLA CHIUSURA BROWSER ---
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!fileHandle) return;
       // Tenta salvataggio best-effort (asincrono, potrebbe non completare)
-      saveToFile(fileHandle);
+      saveToFile(fileHandle, backupFileHandle);
       // Se ci sono modifiche non ancora salvate, avvisa l'utente
       if (saveStatus !== 'saved') {
         e.preventDefault();
@@ -600,7 +676,7 @@ const App: React.FC = () => {
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [fileHandle, saveStatus, saveToFile]);
+  }, [fileHandle, backupFileHandle, saveStatus, saveToFile]);
 
   // --- HANDLERS ---
   const handleDownloadBackup = useCallback(async (forceFallback: boolean = false) => {
@@ -663,18 +739,84 @@ const App: React.FC = () => {
       loadFromData(result.data);
       setFileHandle(result.handle);
       await saveHandleToIDB(result.handle);
+      
+      // Chiedi autorizzazione per il file di Backup di Sicurezza se presente
+      if (pendingBackupHandleFromIDB) {
+        const hasBackupPerm = await requestPermission(pendingBackupHandleFromIDB);
+        if (hasBackupPerm) {
+          setBackupFileHandle(pendingBackupHandleFromIDB);
+        } else {
+          console.warn("Permesso negato per il file di backup. Scollegato.");
+          await clearBackupHandleFromIDB();
+        }
+        setPendingBackupHandleFromIDB(null);
+      }
+      
+      // Chiedi autorizzazione per il file delle Regole se presente
+      if (pendingRulesHandleFromIDB) {
+        const hasRulesPerm = await requestPermission(pendingRulesHandleFromIDB);
+        if (hasRulesPerm) {
+          setRulesFileHandle(pendingRulesHandleFromIDB);
+          try {
+            const fileRegole = await readRulesFile(pendingRulesHandleFromIDB);
+            if (fileRegole && fileRegole.length > 0) {
+              setRegolePuntaNet(prev => mergeRegole(prev, fileRegole));
+            }
+          } catch (e) {
+            console.error("Errore lettura regole", e);
+          }
+        } else {
+          console.warn("Permesso negato per il file delle regole. Scollegato.");
+          await clearRulesHandleFromIDB();
+        }
+        setPendingRulesHandleFromIDB(null);
+      }
+      
       setAppState('ready');
     }
-  }, [loadFromData]);
+  }, [loadFromData, pendingBackupHandleFromIDB, pendingRulesHandleFromIDB]);
 
   const handleCreateNew = useCallback(async () => {
     const result = await createNewFile(buildBackupData());
     if (result) {
       setFileHandle(result.handle);
       await saveHandleToIDB(result.handle);
+      
+      // Chiedi autorizzazione per il file di Backup di Sicurezza se presente
+      if (pendingBackupHandleFromIDB) {
+        const hasBackupPerm = await requestPermission(pendingBackupHandleFromIDB);
+        if (hasBackupPerm) {
+          setBackupFileHandle(pendingBackupHandleFromIDB);
+        } else {
+          console.warn("Permesso negato per il file di backup. Scollegato.");
+          await clearBackupHandleFromIDB();
+        }
+        setPendingBackupHandleFromIDB(null);
+      }
+      
+      // Chiedi autorizzazione per il file delle Regole se presente
+      if (pendingRulesHandleFromIDB) {
+        const hasRulesPerm = await requestPermission(pendingRulesHandleFromIDB);
+        if (hasRulesPerm) {
+          setRulesFileHandle(pendingRulesHandleFromIDB);
+          try {
+            const fileRegole = await readRulesFile(pendingRulesHandleFromIDB);
+            if (fileRegole && fileRegole.length > 0) {
+              setRegolePuntaNet(prev => mergeRegole(prev, fileRegole));
+            }
+          } catch (e) {
+            console.error("Errore lettura regole", e);
+          }
+        } else {
+          console.warn("Permesso negato per il file delle regole. Scollegato.");
+          await clearRulesHandleFromIDB();
+        }
+        setPendingRulesHandleFromIDB(null);
+      }
+      
       setAppState('ready');
     }
-  }, [buildBackupData]);
+  }, [buildBackupData, pendingBackupHandleFromIDB, pendingRulesHandleFromIDB]);
 
   const handleConfirmIDBHandle = useCallback(async () => {
     if (!pendingHandleFromIDB) return;
@@ -684,13 +826,46 @@ const App: React.FC = () => {
       if (data) {
         loadFromData(data);
         setFileHandle(pendingHandleFromIDB);
+        
+        // Permesso sequenziale per il file di Backup di Sicurezza
+        if (pendingBackupHandleFromIDB) {
+          const hasBackupPerm = await requestPermission(pendingBackupHandleFromIDB);
+          if (hasBackupPerm) {
+            setBackupFileHandle(pendingBackupHandleFromIDB);
+          } else {
+            console.warn("Permesso negato per il file di backup. Scollegato.");
+            await clearBackupHandleFromIDB();
+          }
+          setPendingBackupHandleFromIDB(null);
+        }
+        
+        // Permesso sequenziale per il file delle Regole
+        if (pendingRulesHandleFromIDB) {
+          const hasRulesPerm = await requestPermission(pendingRulesHandleFromIDB);
+          if (hasRulesPerm) {
+            setRulesFileHandle(pendingRulesHandleFromIDB);
+            try {
+              const fileRegole = await readRulesFile(pendingRulesHandleFromIDB);
+              if (fileRegole && fileRegole.length > 0) {
+                setRegolePuntaNet(prev => mergeRegole(prev, fileRegole));
+              }
+            } catch (err) {
+              console.error("Errore caricamento regole da file", err);
+            }
+          } else {
+            console.warn("Permesso negato per il file delle regole. Scollegato.");
+            await clearRulesHandleFromIDB();
+          }
+          setPendingRulesHandleFromIDB(null);
+        }
+        
         setAppState('ready');
       }
     } else {
       // If permission denied, go back to welcome without pending
       setPendingHandleFromIDB(null);
     }
-  }, [pendingHandleFromIDB, loadFromData]);
+  }, [pendingHandleFromIDB, pendingBackupHandleFromIDB, pendingRulesHandleFromIDB, loadFromData]);
 
   const handleMigrateFromLocalStorage = useCallback(async () => {
     // Read all current states (which might have been loaded from localStorage if we didn't clear them yet)
@@ -742,6 +917,98 @@ const App: React.FC = () => {
 
   const handleDemoMode = useCallback(() => {
     setAppState('ready');
+  }, []);
+
+  const handleSetBackupFile = useCallback(async () => {
+    try {
+      // @ts-ignore
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'backup-cashflow.gvcf',
+        types: [{
+          description: 'GV Cash Flow Backup',
+          accept: { 'application/json': ['.gvcf', '.json'] },
+        }],
+      });
+      if (handle) {
+        setBackupFileHandle(handle);
+        await saveBackupHandleToIDB(handle);
+        // Scrive subito i dati correnti nel file di backup
+        const data = buildBackupData();
+        await writeFile(handle, data);
+        alert("Backup di sicurezza configurato con successo!");
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        alert("Errore durante la configurazione del backup: " + e.message);
+      }
+    }
+  }, [buildBackupData]);
+
+  const handleClearBackupFile = useCallback(async () => {
+    if (confirm("Sei sicuro di voler scollegare il file di backup di sicurezza? I salvataggi non verranno più specchiati su Google Drive.")) {
+      setBackupFileHandle(null);
+      await clearBackupHandleFromIDB();
+    }
+  }, []);
+
+  const handleLinkRulesFile = useCallback(async () => {
+    try {
+      // @ts-ignore
+      const [handle] = await window.showOpenFilePicker({
+        types: [{
+          description: 'File Regole GV',
+          accept: { 'application/json': ['.json'] },
+        }],
+        multiple: false
+      });
+      if (handle) {
+        setRulesFileHandle(handle);
+        await saveRulesHandleToIDB(handle);
+        // Carica e unisce le regole
+        const fileRegole = await readRulesFile(handle);
+        setRegolePuntaNet(prev => {
+          const merged = mergeRegole(prev, fileRegole);
+          writeRulesFile(handle, merged).catch(console.error);
+          return merged;
+        });
+        alert("File regole collegato e sincronizzato con successo!");
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        alert("Errore durante il collegamento del file regole: " + e.message);
+      }
+    }
+  }, []);
+
+  const handleCreateRulesFile = useCallback(async () => {
+    try {
+      // @ts-ignore
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'gv-regole.json',
+        types: [{
+          description: 'File Regole GV',
+          accept: { 'application/json': ['.json'] },
+        }],
+      });
+      if (handle) {
+        setRulesFileHandle(handle);
+        await saveRulesHandleToIDB(handle);
+        // Salva le regole correnti nel nuovo file
+        await writeRulesFile(handle, regolePuntaNet);
+        alert("Nuovo file regole creato e collegato con successo!");
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        alert("Errore durante la creazione del file regole: " + e.message);
+      }
+    }
+  }, [regolePuntaNet]);
+
+  const handleClearRulesFile = useCallback(async () => {
+    if (confirm("Sei sicuro di voler scollegare il file delle regole? Le modifiche alle regole non verranno più scritte su questo file.")) {
+      setRulesFileHandle(null);
+      await clearRulesHandleFromIDB();
+    }
   }, []);
 
   // --- UI LOGIC ---
@@ -1186,6 +1453,13 @@ const App: React.FC = () => {
                     onImportData={loadFromData}
                     onChangeFile={handleChangeFile}
                     currentFileName={fileHandle?.name}
+                    backupFileName={backupFileHandle?.name}
+                    onSetBackupFile={handleSetBackupFile}
+                    onClearBackupFile={handleClearBackupFile}
+                    rulesFileName={rulesFileHandle?.name}
+                    onLinkRulesFile={handleLinkRulesFile}
+                    onCreateRulesFile={handleCreateRulesFile}
+                    onClearRulesFile={handleClearRulesFile}
                     importSessions={importSessions}
                     onAnnullaSessione={handleAnnullaSessioneImport}
                     onImportStorico={() => setShowImportStorico(true)}

@@ -6,8 +6,10 @@ import { BackupData } from '../types';
 const DB_NAME = 'GVCashFlowDB';
 const STORE_NAME = 'FileHandles';
 const HANDLE_KEY = 'currentFileHandle';
+const BACKUP_HANDLE_KEY = 'backupFileHandle';
+const RULES_HANDLE_KEY = 'rulesFileHandle';
 
-export async function saveHandleToIDB(handle: FileSystemFileHandle): Promise<void> {
+async function saveKeyedHandleToIDB(key: string, handle: FileSystemFileHandle): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = () => {
@@ -17,7 +19,7 @@ export async function saveHandleToIDB(handle: FileSystemFileHandle): Promise<voi
       const db = request.result;
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      store.put(handle, HANDLE_KEY);
+      store.put(handle, key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     };
@@ -25,7 +27,7 @@ export async function saveHandleToIDB(handle: FileSystemFileHandle): Promise<voi
   });
 }
 
-export async function getHandleFromIDB(): Promise<FileSystemFileHandle | null> {
+async function getKeyedHandleFromIDB(key: string): Promise<FileSystemFileHandle | null> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = () => {
@@ -35,7 +37,7 @@ export async function getHandleFromIDB(): Promise<FileSystemFileHandle | null> {
       const db = request.result;
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
-      const getReq = store.get(HANDLE_KEY);
+      const getReq = store.get(key);
       getReq.onsuccess = () => resolve(getReq.result || null);
       getReq.onerror = () => reject(getReq.error);
     };
@@ -43,19 +45,74 @@ export async function getHandleFromIDB(): Promise<FileSystemFileHandle | null> {
   });
 }
 
-export async function clearHandleFromIDB(): Promise<void> {
+async function clearKeyedHandleFromIDB(key: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
     request.onsuccess = () => {
       const db = request.result;
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      store.delete(HANDLE_KEY);
+      store.delete(key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     };
     request.onerror = () => reject(request.error);
   });
+}
+
+export async function saveHandleToIDB(handle: FileSystemFileHandle): Promise<void> {
+  return saveKeyedHandleToIDB(HANDLE_KEY, handle);
+}
+
+export async function getHandleFromIDB(): Promise<FileSystemFileHandle | null> {
+  return getKeyedHandleFromIDB(HANDLE_KEY);
+}
+
+export async function clearHandleFromIDB(): Promise<void> {
+  return clearKeyedHandleFromIDB(HANDLE_KEY);
+}
+
+export async function saveBackupHandleToIDB(handle: FileSystemFileHandle): Promise<void> {
+  return saveKeyedHandleToIDB(BACKUP_HANDLE_KEY, handle);
+}
+
+export async function getBackupHandleFromIDB(): Promise<FileSystemFileHandle | null> {
+  return getKeyedHandleFromIDB(BACKUP_HANDLE_KEY);
+}
+
+export async function clearBackupHandleFromIDB(): Promise<void> {
+  return clearKeyedHandleFromIDB(BACKUP_HANDLE_KEY);
+}
+
+export async function saveRulesHandleToIDB(handle: FileSystemFileHandle): Promise<void> {
+  return saveKeyedHandleToIDB(RULES_HANDLE_KEY, handle);
+}
+
+export async function getRulesHandleFromIDB(): Promise<FileSystemFileHandle | null> {
+  return getKeyedHandleFromIDB(RULES_HANDLE_KEY);
+}
+
+export async function clearRulesHandleFromIDB(): Promise<void> {
+  return clearKeyedHandleFromIDB(RULES_HANDLE_KEY);
+}
+
+export async function readRulesFile(handle: FileSystemFileHandle): Promise<any[]> {
+  const file = await handle.getFile();
+  const contents = await file.text();
+  const data = JSON.parse(contents);
+  return data.regolePuntaNet || [];
+}
+
+export async function writeRulesFile(handle: FileSystemFileHandle, regole: any[]): Promise<void> {
+  // @ts-ignore
+  const writable = await handle.createWritable();
+  const data = {
+    version: '1.0',
+    timestamp: new Date().toISOString(),
+    regolePuntaNet: regole
+  };
+  await writable.write(JSON.stringify(data, null, 2));
+  await writable.close();
 }
 
 /**

@@ -20,6 +20,13 @@ interface CategoryManagerProps {
   onImportData?: (data: BackupData) => void;
   onChangeFile?: () => void;
   currentFileName?: string;
+  backupFileName?: string;
+  onSetBackupFile?: () => void;
+  onClearBackupFile?: () => void;
+  rulesFileName?: string;
+  onLinkRulesFile?: () => void;
+  onCreateRulesFile?: () => void;
+  onClearRulesFile?: () => void;
   importSessions?: import('../types').ImportSession[];
   onAnnullaSessione?: (id: string) => void;
   onImportStorico?: () => void;
@@ -42,6 +49,13 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   onImportData,
   onChangeFile,
   currentFileName,
+  backupFileName,
+  onSetBackupFile,
+  onClearBackupFile,
+  rulesFileName,
+  onLinkRulesFile,
+  onCreateRulesFile,
+  onClearRulesFile,
   importSessions = [],
   onAnnullaSessione,
   onImportStorico,
@@ -220,6 +234,13 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
                     onImport={onImportData} 
                     onChangeFile={onChangeFile}
                     currentFileName={currentFileName}
+                    backupFileName={backupFileName}
+                    onSetBackupFile={onSetBackupFile}
+                    onClearBackupFile={onClearBackupFile}
+                    rulesFileName={rulesFileName}
+                    onLinkRulesFile={onLinkRulesFile}
+                    onCreateRulesFile={onCreateRulesFile}
+                    onClearRulesFile={onClearRulesFile}
                     importSessions={importSessions}
                     onAnnullaSessione={onAnnullaSessione}
                     onImportStorico={onImportStorico}
