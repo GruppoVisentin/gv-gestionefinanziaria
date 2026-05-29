@@ -470,6 +470,25 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
     return expenseTransactions.filter(t => t.isForecast && t.category === category && !isForecastPaid(t.id));
   };
 
+  const getSupplierName = (t: Transaction): string => {
+    if (t.sourceRef) {
+      const descr = t.description;
+      let m = descr.match(/(?:Pagamento|Incasso)\s+(?:FEP|NEP)\s+n\.\s+[\w/]+\s+-\s+(.+?)\s+-\s+/i);
+      if (m) return m[1].trim();
+      m = descr.match(/RIF\.TO\s+(.+?)\s+-\s+/i);
+      if (m) return m[1].trim();
+      m = descr.match(/^.+?\s+-\s+(.+?)\s+-\s+Home banking/i);
+      if (m) return m[1].trim();
+      m = descr.match(/-\s+(.+?)\s+-\s+Bonifico/i);
+      if (m) return m[1].trim();
+      return descr.slice(0, 30);
+    } else {
+      const match = t.description.match(/(.*) \(Rif\. (.*)\)$/);
+      if (match) return match[1].trim();
+      return t.description.trim();
+    }
+  };
+
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!isAuthorized) return;
@@ -1257,13 +1276,16 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                 <div className="flex flex-col items-center w-full gap-0.5">
                                                     <div className="flex items-center gap-1 mb-1"><span className="font-mono font-bold text-rose-700 text-[11px]">{CURRENCY_FORMATTER.format(actualSum)}</span><button onClick={(e) => { e.stopPropagation(); setBreakdownView({ category, monthIndex: mIdx }); }} className="text-rose-400 hover:text-rose-700 transition-colors p-0.5"><ListFilter size={10} /></button></div>
                                                     {actuals.map(t => (
-                                                        <div key={t.id} className="group/item flex items-center justify-center w-full relative h-3">
-                                                            <div className={`w-1.5 h-1.5 rounded-full ${t.sourceRef ? 'bg-blue-400' : 'bg-rose-400'}`}
+                                                        <div key={t.id} className="group/item flex items-center justify-center w-full relative min-h-[14px]">
+                                                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.sourceRef ? 'bg-blue-400' : 'bg-rose-400'}`}
                                                                  title={t.sourceRef ?? undefined} />
-                                                            {(isInterestCategory(category) || isPrincipalCategory(category)) && <Landmark size={8} className="text-slate-400 ml-1" />}
-                                                            {t.sourceRef && (
-                                                              <span className="text-[7px] font-black text-blue-400 ml-0.5 leading-none">PN</span>
-                                                            )}
+                                                            {(isInterestCategory(category) || isPrincipalCategory(category)) && <Landmark size={8} className="text-slate-400 ml-1 shrink-0" />}
+                                                            <span 
+                                                              className={`text-[8px] font-bold ml-1 truncate max-w-[80px] leading-none ${t.sourceRef ? 'text-blue-500' : 'text-slate-500'}`}
+                                                              title={t.description}
+                                                            >
+                                                              {getSupplierName(t)}
+                                                            </span>
                                                             {isAuthorized && (
                                                                 <div className="absolute right-0 -top-1 bg-white shadow-sm border border-slate-100 rounded px-1 hidden group-hover/item:flex gap-1 z-20">
                                                                     <button onClick={(e) => { e.stopPropagation(); openEditActual(t, category, mIdx); }} className="text-slate-400 hover:text-slate-900"><Pencil size={10} /></button>
@@ -1451,12 +1473,15 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                 <div className="flex flex-col items-center w-full gap-0.5">
                                                     <div className="flex items-center gap-1 mb-1"><span className="font-mono font-bold text-violet-700 text-[11px]">{CURRENCY_FORMATTER.format(actualSum)}</span><button onClick={(e) => { e.stopPropagation(); setBreakdownView({ category, monthIndex: mIdx }); }} className="text-violet-400 hover:text-violet-700 transition-colors p-0.5"><ListFilter size={10} /></button></div>
                                                     {actuals.map(t => (
-                                                        <div key={t.id} className="group/item flex items-center justify-center w-full relative h-3">
-                                                            <div className={`w-1.5 h-1.5 rounded-full ${t.sourceRef ? 'bg-blue-400' : 'bg-violet-400'}`}
+                                                        <div key={t.id} className="group/item flex items-center justify-center w-full relative min-h-[14px]">
+                                                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.sourceRef ? 'bg-blue-400' : 'bg-violet-400'}`}
                                                                  title={t.sourceRef ?? undefined} />
-                                                            {t.sourceRef && (
-                                                              <span className="text-[7px] font-black text-blue-400 ml-0.5 leading-none">PN</span>
-                                                            )}
+                                                            <span 
+                                                              className={`text-[8px] font-bold ml-1 truncate max-w-[80px] leading-none ${t.sourceRef ? 'text-blue-500' : 'text-slate-500'}`}
+                                                              title={t.description}
+                                                            >
+                                                              {getSupplierName(t)}
+                                                            </span>
                                                         </div>
                                                     ))}
                                                 </div>

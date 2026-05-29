@@ -302,21 +302,31 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           const dett = mapFEA.get(mov.numeroFattura);
           cantierePuntaNet = dett.cantiere;
           
-          // Calcola l'aliquota IVA dinamicamente da imponibile e totale della fattura FEA
-          if (dett.imponibile > 0) {
-            if (dett.totale > dett.imponibile) {
-              const ratio = (dett.totale - dett.imponibile) / dett.imponibile;
-              const percent = Math.round(ratio * 100);
-              if (percent >= 20) vatRateSuggerito = 22;
-              else if (percent >= 8) vatRateSuggerito = 10;
-              else if (percent >= 3) vatRateSuggerito = 4;
-              else vatRateSuggerito = 0;
-            } else {
-              vatRateSuggerito = 0;
-            }
-          } else {
-            vatRateSuggerito = codIvaToNumber(dett.codIva);
+          // Calcola l'aliquota IVA: catena di fallback per robustezza
+          // 1) Calcola da ratio matematico imponibile/totale
+          if (dett.imponibile > 0 && dett.totale > dett.imponibile) {
+            const ratio = (dett.totale - dett.imponibile) / dett.imponibile;
+            const percent = Math.round(ratio * 100);
+            if (percent >= 20) vatRateSuggerito = 22;
+            else if (percent >= 8) vatRateSuggerito = 10;
+            else if (percent >= 3) vatRateSuggerito = 4;
+            else vatRateSuggerito = 0;
           }
+          // 2) Fallback: usa il codice IVA dalla fattura (es. X11 → 22%, X06 → 10%)
+          if (vatRateSuggerito === null && dett.codIva) {
+            const fromCod = codIvaToNumber(dett.codIva);
+            vatRateSuggerito = fromCod;
+          }
+          // 3) Fallback: stima ratio usando importo reale bancario vs imponibile fattura
+          //    (il movimento banca contiene l'importo lordo effettivo)
+          if ((vatRateSuggerito === null || vatRateSuggerito === 0) && dett.imponibile > 0 && mov.importo > dett.imponibile) {
+            const ratio = (mov.importo - dett.imponibile) / dett.imponibile;
+            const percent = Math.round(ratio * 100);
+            if (percent >= 20) vatRateSuggerito = 22;
+            else if (percent >= 8) vatRateSuggerito = 10;
+            else if (percent >= 3) vatRateSuggerito = 4;
+          }
+          // 4) Ultima risorsa: rimane null (verrà assegnato dalla categoria in seguito)
           
           vatRateNota = `Da fattura FEA n. ${dett.numero}/${dett.anno}`;
           arricchitoDaFattura = true;
