@@ -1199,8 +1199,6 @@ export const suggerisciAliquotaIVADaCategoria = (categoria: string): AliquotaIVA
     '[PERSONALE] Compenso Amministratori',
     '[STRAORDINARI] Sanzioni e Penali',
     '[STRAORDINARI] Volontariato e Donazioni',
-    '[CANTIERE] Anticipi da Clienti su Commessa',
-    '[CANTIERE] Caparra Confirmatoria',
   ].includes(categoria)) return 0;
   if ([
     '[COMPLIANCE] Visite Mediche Dipendenti',
@@ -1217,6 +1215,8 @@ export const suggerisciAliquotaIVADaCategoria = (categoria: string): AliquotaIVA
     '[IMMOBILIARE] Vendita Immobili e Terreni',
     '[IMMOBILIARE] Affitti Attivi',
     '[PERSONALE] Stipendi Dipendenti Operativi',
+    '[CANTIERE] Anticipi da Clienti su Commessa',
+    '[CANTIERE] Caparra Confirmatoria',
   ].includes(categoria)) return 10;
   return 22;
 };
@@ -1231,15 +1231,17 @@ export const rigaToTransaction = (
   sourceRef?: string,
   importSessionId?: string
 ): Transaction => {
+  const rate = vatRate ?? 0;
+  const netAmount = riga.importo / (1 + rate / 100);
   return {
     id: uuidv4(),
     date: riga.data.toISOString().split('T')[0],
     description: riga.descrizione,
-    amount: riga.importo,
+    amount: Math.round(netAmount * 100) / 100,
     type: riga.tipo === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
     category: categoria,
     ceType: ceType as any,
-    vatRate: vatRate ?? 0,
+    vatRate: rate,
     sourceRef: sourceRef ?? `Punta Net · ${riga.data.toLocaleDateString('it-IT')}`,
     importSessionId,
   };
