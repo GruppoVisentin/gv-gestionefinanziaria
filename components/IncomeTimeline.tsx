@@ -374,8 +374,14 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     const isInvestment = addingForecast.key === 'INVESTMENT';
 
     let category = '[CANTIERE] SAL — Stato Avanzamento Lavori';
-    let defaultDesc = formType === 'FORECAST' ? 'Acconto previsionale' : 'Incasso generico';
     let project = addingForecast.key;
+    const matchedProj = availableProjects.find(p => p.name === project);
+    if (matchedProj && matchedProj.metodoPagamento === 'acconto') {
+        category = '[CANTIERE] Anticipi da Clienti su Commessa';
+    }
+    let defaultDesc = formType === 'FORECAST' 
+        ? (matchedProj && matchedProj.metodoPagamento === 'acconto' ? 'Anticipo previsionale' : 'Acconto previsionale') 
+        : 'Incasso generico';
 
     // Construct Loan Details if Financing
     let loanDetails: LoanDetails | undefined = undefined;
@@ -481,6 +487,10 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
       let category = '[CANTIERE] SAL — Stato Avanzamento Lavori';
       let project = activeCell.key;
+      const matchedProj = availableProjects.find(p => p.name === project);
+      if (matchedProj && matchedProj.metodoPagamento === 'acconto') {
+          category = '[CANTIERE] Anticipi da Clienti su Commessa';
+      }
 
       if (isFinancing) {
           category = '[FINANZA] Finanziamenti Ricevuti';
