@@ -57,21 +57,21 @@ export const buildCEData = (
 
   return {
     anno,
-    ricaviCore:           agg['ricavo_core'],
-    ricaviImmobiliare:    agg['ricavo_immobiliare'],
-    ricaviAltro:          agg['ricavo_altro'],
-    costiVariabili:       agg['costo_variabile'].map(v => Math.abs(v)),
-    costiFissi:           agg['costo_fisso'].map(v => Math.abs(v)),
-    costiStudio:          agg['costo_studio'].map(v => Math.abs(v)),
+    ricaviCore:           manualOverrides?.ricaviCore ?? agg['ricavo_core'],
+    ricaviImmobiliare:    manualOverrides?.ricaviImmobiliare ?? agg['ricavo_immobiliare'],
+    ricaviAltro:          manualOverrides?.ricaviAltro ?? agg['ricavo_altro'],
+    costiVariabili:       manualOverrides?.costiVariabili ?? agg['costo_variabile'].map(v => Math.abs(v)),
+    costiFissi:           manualOverrides?.costiFissi ?? agg['costo_fisso'].map(v => Math.abs(v)),
+    costiStudio:          manualOverrides?.costiStudio ?? agg['costo_studio'].map(v => Math.abs(v)),
     ammortamenti:         manualOverrides?.ammortamenti ?? 
       (agg['ammortamento'].some(v => v !== 0) 
         ? agg['ammortamento'].map(v => Math.abs(v)) 
         : Array(12).fill(0)),
-    oneriFin:             agg['onere_finanziario'].map(v => Math.abs(v)),
-    proventiFin:          agg['provento_finanziario'].map(v => Math.abs(v)),
-    straordinario:        agg['straordinario'],
+    oneriFin:             manualOverrides?.oneriFin ?? agg['onere_finanziario'].map(v => Math.abs(v)),
+    proventiFin:          manualOverrides?.proventiFin ?? agg['provento_finanziario'].map(v => Math.abs(v)),
+    straordinario:        manualOverrides?.straordinario ?? agg['straordinario'],
     imposte:              manualOverrides?.imposte ?? Array(12).fill(0),
-    compensoImprenditore: agg['distribuzione_utile'].map(v => Math.abs(v)),
+    compensoImprenditore: manualOverrides?.compensoImprenditore ?? agg['distribuzione_utile'].map(v => Math.abs(v)),
   };
 };
 
