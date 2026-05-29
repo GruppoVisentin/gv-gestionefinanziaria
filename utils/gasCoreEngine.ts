@@ -18,7 +18,7 @@ export const aggregateByMonthAndType = (
   ceTypes.forEach(t => result[t] = Array(12).fill(0));
 
   transactions
-    .filter(tx => tx.ceType)
+    .filter(tx => tx.ceType && !tx.isForecast)
     .forEach(tx => {
       const type = tx.ceType!;
       const isRicavo = type.startsWith('ricavo') ||
@@ -138,7 +138,8 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
       .filter(tx => 
         tx.isForecast && 
         new Date(tx.date).getFullYear() === ce.anno && 
-        tx.ceType && types.includes(tx.ceType)
+        tx.ceType && types.includes(tx.ceType) &&
+        !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id)
       )
       .reduce((s, tx) => {
         const type = tx.ceType!;

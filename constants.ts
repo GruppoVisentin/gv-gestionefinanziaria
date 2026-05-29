@@ -178,7 +178,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
   "[CANTIERE] Caparra Confirmatoria":                  'solo_cashflow',
   "[CANTIERE] Manutenzioni e Piccoli Lavori":          'ricavo_core',
   "[IMMOBILIARE] Vendita Immobili e Terreni":          'ricavo_immobiliare',
-  "[IMMOBILIARE] Affitti Attivi":                      'ricavo_core',
+  "[IMMOBILIARE] Affitti Attivi":                      'ricavo_altro',
 
   // RICAVI ALTRO
   "[RIMBORSI] Rimborsi Spese da Clienti":              'ricavo_altro',
@@ -192,7 +192,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
 
   // SOLO CASH FLOW — MAI NEL CE
   "[FINANZA] Finanziamenti Ricevuti":                  'solo_cashflow',
-  "[CANTIERE] Anticipi da Clienti su Commessa":        'solo_cashflow',
+  "[CANTIERE] Anticipi da Clienti su Commessa":        'ricavo_core',
   "Altro / Non Classificato":                          'solo_cashflow',
 
   // COSTI VARIABILI
