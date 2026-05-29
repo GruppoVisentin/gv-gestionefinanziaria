@@ -309,6 +309,148 @@ function getGlobalRules(): any[] {
   }
 }
 
+function migrateBackupData(data: BackupData): BackupData {
+  if (!data) return data;
+
+  const migrated: BackupData = { ...data };
+
+  // 1. Migrate transactions
+  if (data.transactions) {
+    migrated.transactions = data.transactions.map(tx => {
+      const oldCat = tx.category;
+      if (oldCat && CATEGORY_MIGRATION_MAP[oldCat]) {
+        const newCat = CATEGORY_MIGRATION_MAP[oldCat];
+        return {
+          ...tx,
+          category: newCat,
+          ceType: CATEGORY_TO_CE_TYPE[newCat] ?? tx.ceType,
+        };
+      }
+      return tx;
+    });
+  }
+
+  // 2. Migrate category lists
+  if (data.fixedCategories) {
+    migrated.fixedCategories = Array.from(new Set(
+      data.fixedCategories.map(cat => CATEGORY_MIGRATION_MAP[cat] || cat)
+    ));
+  }
+  if (data.variableCategories) {
+    migrated.variableCategories = Array.from(new Set(
+      data.variableCategories.map(cat => CATEGORY_MIGRATION_MAP[cat] || cat)
+    ));
+  }
+  if (data.incomeCategories) {
+    migrated.incomeCategories = Array.from(new Set(
+      data.incomeCategories.map(cat => CATEGORY_MIGRATION_MAP[cat] || cat)
+    ));
+  }
+
+  // 3. Migrate budgetData
+  if (data.budgetData) {
+    const migratedBudget: Record<string, BudgetData> = {};
+    for (const [key, bData] of Object.entries(data.budgetData)) {
+      if (bData && bData.righe) {
+        migratedBudget[key] = {
+          ...bData,
+          righe: bData.righe.map(r => {
+            const oldCat = r.categoria;
+            if (oldCat && CATEGORY_MIGRATION_MAP[oldCat]) {
+              const newCat = CATEGORY_MIGRATION_MAP[oldCat];
+              return {
+                ...r,
+                categoria: newCat,
+                ceType: CATEGORY_TO_CE_TYPE[newCat] ?? r.ceType,
+              };
+            }
+            return r;
+          })
+        };
+      } else {
+        migratedBudget[key] = bData;
+      }
+    }
+    migrated.budgetData = migratedBudget;
+  }
+
+  // 4. Migrate tipologieCantiere
+  if (data.tipologieCantiere) {
+    migrated.tipologieCantiere = data.tipologieCantiere.map(t => {
+      if (t && t.vociAttive) {
+        return {
+          ...t,
+          vociAttive: t.vociAttive.map(v => {
+            const oldCat = v.categoria;
+            if (oldCat && CATEGORY_MIGRATION_MAP[oldCat]) {
+              const newCat = CATEGORY_MIGRATION_MAP[oldCat];
+              return {
+                ...v,
+                categoria: newCat,
+                ceType: CATEGORY_TO_CE_TYPE[newCat] ?? v.ceType,
+              };
+            }
+            return v;
+          })
+        };
+      }
+      return t;
+    });
+  }
+
+  // 5. Migrate cantieriPrev
+  if (data.cantieriPrev) {
+    migrated.cantieriPrev = data.cantieriPrev.map(c => {
+      if (c && c.costiStimati) {
+        const migratedCosti: Record<string, number> = {};
+        for (const [cat, value] of Object.entries(c.costiStimati)) {
+          const newCat = CATEGORY_MIGRATION_MAP[cat] || cat;
+          migratedCosti[newCat] = (migratedCosti[newCat] || 0) + value;
+        }
+        return {
+          ...c,
+          costiStimati: migratedCosti
+        };
+      }
+      return c;
+    });
+  }
+
+  // 6. Migrate supplierPresets
+  if (data.supplierPresets) {
+    const migratedPresets: Record<string, string[]> = {};
+    for (const [cat, suppliers] of Object.entries(data.supplierPresets)) {
+      const newCat = CATEGORY_MIGRATION_MAP[cat] || cat;
+      if (!migratedPresets[newCat]) {
+        migratedPresets[newCat] = [];
+      }
+      migratedPresets[newCat] = Array.from(new Set([
+        ...migratedPresets[newCat],
+        ...(suppliers || [])
+      ]));
+    }
+    migrated.supplierPresets = migratedPresets;
+  }
+
+  // 7. Migrate regolePuntaNet
+  if (data.regolePuntaNet) {
+    migrated.regolePuntaNet = data.regolePuntaNet.map(r => {
+      const oldCat = r.categoria;
+      if (oldCat && CATEGORY_MIGRATION_MAP[oldCat]) {
+        const newCat = CATEGORY_MIGRATION_MAP[oldCat];
+        return {
+          ...r,
+          categoria: newCat,
+          ceType: CATEGORY_TO_CE_TYPE[newCat] ?? r.ceType
+        };
+      }
+      return r;
+    });
+  }
+
+  return migrated;
+}
+
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.HOME);
   
@@ -516,7 +658,8 @@ const App: React.FC = () => {
     buildBackupDataRef.current = buildBackupData;
   }, [buildBackupData]);
 
-  const loadFromData = useCallback((data: BackupData) => {
+  const loadFromData = useCallback((rawData: BackupData) => {
+    const data = migrateBackupData(rawData);
     if (data.transactions) setTransactions(data.transactions);
     if (data.projects) setProjects(data.projects);
     
