@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Transaction, TransactionType, Project, LoanDetails, AppView, RinegoziazioneMutuo, InitialBalanceBreakdown, ExistingLoan } from '../types';
 import { fetchEuriborRates } from '../services/geminiService';
 import { CURRENCY_FORMATTER, DATE_FORMATTER, CATEGORY_TO_CE_TYPE } from '../constants';
-import { Plus, X, ArrowRight, Save, Landmark, TrendingUp, Pencil, Trash2, Calendar, FileText, User, Shield, Search, RefreshCw } from 'lucide-react';
+import { Plus, X, ArrowRight, Save, Landmark, TrendingUp, Pencil, Trash2, Calendar, FileText, User, Shield, Search, RefreshCw, ListFilter } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { HelpButton } from './HelpPanel';
@@ -51,6 +51,9 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   // State to handle the "Add Actual" dropdown
   const [activeCell, setActiveCell] = useState<{ key: string; monthIndex: number } | null>(null);
   const [activeTab, setActiveTab] = useState<'budget' | 'new'>('budget');
+  
+  // State for breakdown details popup
+  const [breakdownView, setBreakdownView] = useState<{ key: string; monthIndex: number } | null>(null);
   
   // State for "New Actual" Income
   const [newActualDate, setNewActualDate] = useState('');
@@ -880,11 +883,20 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                 <div className="flex flex-col items-center justify-between min-h-[30px] w-full">
                   {actualSum > 0 ? (
                       <div className="flex flex-col items-center w-full">
-                          <span className={`font-mono font-bold text-xs ${actualItemClass} flex items-center justify-center gap-1`}>
-                              {actuals.some(t => !!t.loanDetails) && <Landmark size={8} className="text-emerald-400" />}
-                              {actuals.some(t => t.category === '[FINANZA] Ritorno da Investimenti / Dividendi') && <TrendingUp size={8} className="text-emerald-400" />}
-                              {CURRENCY_FORMATTER.format(actualSum)}
-                          </span>
+                          <div className="flex items-center gap-1 mb-1 justify-center">
+                              <span className={`font-mono font-bold text-xs ${actualItemClass} flex items-center justify-center gap-1`}>
+                                  {actuals.some(t => !!t.loanDetails) && <Landmark size={8} className="text-emerald-400" />}
+                                  {actuals.some(t => t.category === '[FINANZA] Ritorno da Investimenti / Dividendi') && <TrendingUp size={8} className="text-emerald-400" />}
+                                  {CURRENCY_FORMATTER.format(actualSum)}
+                              </span>
+                              <button 
+                                  onClick={(e) => { e.stopPropagation(); setBreakdownView({ key, monthIndex: mIdx }); }} 
+                                  className="text-emerald-400 hover:text-emerald-700 transition-colors p-0.5"
+                                  title="Dettaglio Incassi"
+                              >
+                                  <ListFilter size={10} />
+                              </button>
+                          </div>
                           {actuals.map(t => (
                               <div key={t.id} className="group/item flex items-center justify-center w-full relative">
                                   <span className="text-[9px] text-emerald-500 truncate w-full max-w-[90px] text-center mt-0.5 flex items-center justify-center gap-1"
@@ -1079,6 +1091,66 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         </td>
       </tr>
     );
+  };
+  const getRowLabel = (key: string) => {
+    if (key === 'FINANCING') return 'Finanziamenti Bancari';
+    if (key === 'INVESTMENT') return 'Ritorno da Investimenti';
+    return key;
+  };
+
+  const esportaBreakdownPDF = (key: string, monthIndex: number) => {
+    const txs = getCellTransactions(key, monthIndex, false);
+    const monthName = months[monthIndex];
+    const rowLabel = getRowLabel(key);
+
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pdfW = pdf.internal.pageSize.getWidth();
+
+    // Header
+    pdf.setFillColor(34, 34, 34);
+    pdf.rect(0, 0, pdfW, 22, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(13);
+    pdf.text('GRUPPO VISENTIN SRL', 10, 10);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Dettaglio Entrate — ${rowLabel}`, 10, 16);
+    pdf.setFontSize(8);
+    pdf.text(`${monthName} ${currentYear}  •  Generato il ${new Date().toLocaleDateString('it-IT')}`, pdfW - 10, 16, { align: 'right' });
+
+    // Totale
+    const totale = txs.reduce((s, t) => s + getGrossAmount(t), 0);
+    const totaleImponibile = txs.reduce((s, t) => s + t.amount, 0);
+
+    // Tabella transazioni
+    autoTable(pdf, {
+      startY: 28,
+      head: [['Data', 'Descrizione / Cliente', 'Commessa', 'Imponibile', 'IVA %', 'Totale Lordo']],
+      body: txs.length > 0
+        ? txs.map(t => [
+            new Date(t.date).toLocaleDateString('it-IT'),
+            t.description || '-',
+            t.project || '-',
+            CURRENCY_FORMATTER.format(t.amount),
+            `${t.vatRate || 0}%`,
+            CURRENCY_FORMATTER.format(getGrossAmount(t)),
+          ])
+        : [['', '', 'Nessuna transazione trovata', '', '', '']],
+      theme: 'striped',
+      headStyles: { fillColor: [34, 34, 34], fontSize: 8, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 8 },
+      alternateRowStyles: { fillColor: [250, 250, 250] },
+      foot: [[
+        '', '', 'TOTALE',
+        CURRENCY_FORMATTER.format(totaleImponibile),
+        '',
+        CURRENCY_FORMATTER.format(totale),
+      ]],
+      footStyles: { fillColor: [240, 240, 240], fontStyle: 'bold', fontSize: 9 },
+    });
+
+    pdf.save(`GV_Entrate_${rowLabel.replace(/\s+/g, '_')}_${monthName}_${currentYear}.pdf`);
   };
 
   const esportaTotaleAnnuoPDF = () => {
@@ -1314,6 +1386,87 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         currentView={AppView.TIMELINE}
         onGoToManuale={onGoToManuale}
       />
+
+      {/* Breakdown Modal */}
+      {breakdownView && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <div>
+                        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <ListFilter size={16} className="text-slate-500" /> Dettaglio Entrate
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                            {getRowLabel(breakdownView.key)} • {months[breakdownView.monthIndex]} {currentYear}
+                        </p>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                          onClick={() => esportaBreakdownPDF(breakdownView.key, breakdownView.monthIndex)}
+                          className="p-1.5 hover:bg-slate-200 rounded text-slate-500"
+                          title="Esporta PDF strutturato"
+                        >
+                          <FileText size={18} />
+                        </button>
+                        <button onClick={() => setBreakdownView(null)} className="text-slate-400 hover:text-slate-600 p-1.5">
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+                <div className="overflow-y-auto flex-1 p-4 print:p-0">
+                    <table className="w-full text-xs text-left">
+                        <thead className="text-slate-400 font-medium border-b border-slate-100 uppercase tracking-wide">
+                            <tr>
+                                <th className="pb-2 text-left">Data</th>
+                                <th className="pb-2 text-left">Descrizione / Cliente</th>
+                                <th className="pb-2 text-right">Imponibile</th>
+                                <th className="pb-2 text-right">IVA</th>
+                                <th className="pb-2 text-right">Totale Lordo</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                            {getCellTransactions(breakdownView.key, breakdownView.monthIndex, false).length === 0 ? (
+                                <tr><td colSpan={5} className="py-8 text-center text-slate-400 italic">Nessuna transazione trovata.</td></tr>
+                            ) : (
+                                getCellTransactions(breakdownView.key, breakdownView.monthIndex, false).map(t => (
+                                    <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="py-3 text-slate-500 font-mono text-xs">{new Date(t.date).toLocaleDateString('it-IT')}</td>
+                                        <td className="py-3 font-medium text-slate-700 text-xs">
+                                            {t.description}
+                                            {t.project && <span className="block text-[9px] text-slate-400 font-normal">{t.project}</span>}
+                                        </td>
+                                        <td className="py-3 text-right font-mono text-xs text-slate-600">{CURRENCY_FORMATTER.format(t.amount)}</td>
+                                        <td className="py-3 text-right font-mono text-xs text-slate-400">
+                                          {t.vatRate !== undefined
+                                            ? t.vatRate === 0 ? 'Esente' : `${t.vatRate}%`
+                                            : '—'}
+                                        </td>
+                                        <td className="py-3 text-right font-mono font-bold text-xs text-slate-700">
+                                            {CURRENCY_FORMATTER.format(getGrossAmount(t))}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                        <tfoot className="border-t-2 border-slate-100 font-bold bg-slate-50">
+                            <tr>
+                                <td colSpan={2} className="py-3 pl-2 text-slate-600 uppercase text-[10px] font-black">Totale Mese</td>
+                                <td className="py-3 text-right text-slate-700 text-xs font-bold">
+                                    {CURRENCY_FORMATTER.format(getCellTransactions(breakdownView.key, breakdownView.monthIndex, false).reduce((sum, t) => sum + t.amount, 0))}
+                                </td>
+                                <td className="py-3 text-right text-slate-400 text-xs">
+                                    {CURRENCY_FORMATTER.format(getCellTransactions(breakdownView.key, breakdownView.monthIndex, false).reduce((sum, t) => sum + (t.amount * (t.vatRate || 0) / 100), 0))}
+                                </td>
+                                <td className="py-3 text-right text-slate-900 text-sm font-black">
+                                    {CURRENCY_FORMATTER.format(getCellTransactions(breakdownView.key, breakdownView.monthIndex, false).reduce((sum, t) => sum + getGrossAmount(t), 0))}
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };
