@@ -94,10 +94,13 @@ export const exportCEPDF = ({
   if (activeTab === 'ytd' || activeTab === 'projection' || activeTab === 'monthly') {
     const tableBody: any[] = [];
     
-    const addRow = (label: string, data: number[], isBold = false, isKPI = false) => {
+    const addRow = (label: string, data: number[], isBold = false, isKPI = false, projOverride?: number) => {
       const sum = data.reduce((a, b) => a + b, 0);
       const pct = metrics.fatturato > 0 ? sum / metrics.fatturato : 0;
-      const projection = metrics.mesiTrascorsi > 0 ? (sum / metrics.mesiTrascorsi) * 12 : 0;
+      const hasForecasts = metrics.proiezioneFatturato !== metrics.fatturato;
+      const projection = (hasForecasts && projOverride !== undefined)
+        ? projOverride
+        : (metrics.mesiTrascorsi > 0 ? (sum / metrics.mesiTrascorsi) * 12 : 0);
 
       const row = [label];
       if (activeTab === 'monthly') {
@@ -111,8 +114,9 @@ export const exportCEPDF = ({
 
     // Header Sezione
     tableBody.push([{ content: 'RICAVI DI STRUTTURA', colSpan: activeTab === 'monthly' ? 16 : 4, styles: { fillColor: [241, 245, 249], fontStyle: 'bold', fontSize: 8 } }]);
-    addRow('Ricavi Core (SAL/Commesse)', ceData.ricaviCore);
-    addRow('Altri Ricavi (Affitti/Sviluppo)', ceData.ricaviAltro);
+    addRow('Ricavi Core (SAL/Commesse)', ceData.ricaviCore, false, false, metrics.proiezioneRicaviCore);
+    addRow('Vendite Immobiliari', ceData.ricaviImmobiliare, false, false, metrics.proiezioneRicaviImmobiliare);
+    addRow('Altri Ricavi (Affitti/Sviluppo)', ceData.ricaviAltro, false, false, metrics.proiezioneRicaviAltro);
     
     // Totale Ricavi
     const totRicaviRow = ['TOTALE RICAVI (A)'];
@@ -123,20 +127,28 @@ export const exportCEPDF = ({
     tableBody.push({ content: totRicaviRow, styles: { fillColor: [226, 232, 240], fontStyle: 'bold' } });
 
     tableBody.push([{ content: 'COSTI VARIABILI', colSpan: activeTab === 'monthly' ? 16 : 4, styles: { fillColor: [241, 245, 249], fontStyle: 'bold', fontSize: 8 } }]);
-    addRow('Costi Variabili (Materiali/Subappalti)', ceData.costiVariabili);
+    addRow('Costi Variabili (Materiali/Subappalti)', ceData.costiVariabili, false, false, metrics.proiezioneCostiVariabili);
     
+    // Totale Costi Variabili Row
+    const totCostiVarRow = ['TOTALE COSTI VARIABILI (B)'];
+    if (activeTab === 'monthly') metrics.totCostiVar.forEach(v => totCostiVarRow.push(formatEuro(v)));
+    totCostiVarRow.push(formatEuro(metrics.totCostiVar.reduce((a,b)=>a+b,0)));
+    totCostiVarRow.push(formatPercent(metrics.fatturato > 0 ? metrics.totCostiVar.reduce((a,b)=>a+b,0)/metrics.fatturato : 0));
+    totCostiVarRow.push(formatEuro(metrics.proiezioneCostiVariabili));
+    tableBody.push({ content: totCostiVarRow, styles: { fillColor: [248, 250, 252], fontStyle: 'bold' } });
+
     // Primo Margine
     const pmRow = ['PRIMO MARGINE (A - B)'];
     if (activeTab === 'monthly') metrics.primoMargine.forEach(v => pmRow.push(formatEuro(v)));
     pmRow.push(formatEuro(metrics.primoMargineTot));
     pmRow.push(formatPercent(metrics.primoMarginePercent));
-    pmRow.push(formatEuro(metrics.mesiTrascorsi > 0 ? (metrics.primoMargineTot / metrics.mesiTrascorsi) * 12 : 0));
+    pmRow.push(formatEuro(metrics.proiezionePrimoMargine));
     tableBody.push({ content: pmRow, styles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' } });
 
     tableBody.push([{ content: 'COSTI FISSI DI STRUTTURA', colSpan: activeTab === 'monthly' ? 16 : 4, styles: { fillColor: [241, 245, 249], fontStyle: 'bold', fontSize: 8 } }]);
-    addRow('Costi Studio (Personale/Amm.)', ceData.costiStudio);
-    addRow('Altri Costi Fissi (Sedi/Marketing)', ceData.costiFissi);
-    addRow('Ammortamenti', ceData.ammortamenti);
+    addRow('Costi Studio (Personale/Amm.)', ceData.costiStudio, false, false, metrics.proiezioneCostiStudio);
+    addRow('Altri Costi Fissi (Sedi/Marketing)', ceData.costiFissi, false, false, metrics.proiezioneCostiFissi);
+    addRow('Ammortamenti', ceData.ammortamenti, false, false, metrics.proiezioneAmmortamenti);
 
     // EBITDA
     const ebitdaRow = ['EBITDA'];
@@ -151,13 +163,34 @@ export const exportCEPDF = ({
     if (activeTab === 'monthly') metrics.ebit.forEach(v => ebitRow.push(formatEuro(v)));
     ebitRow.push(formatEuro(metrics.ebitTot));
     ebitRow.push(formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0));
-    ebitRow.push(formatEuro((metrics.ebitTot / metrics.mesiTrascorsi) * 12));
+    ebitRow.push(formatEuro(metrics.proiezioneEbit));
     tableBody.push({ content: ebitRow, styles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold' } });
 
     tableBody.push([{ content: 'ONERI E IMPOSTE', colSpan: activeTab === 'monthly' ? 16 : 4, styles: { fillColor: [241, 245, 249], fontStyle: 'bold', fontSize: 8 } }]);
-    addRow('Oneri Finanziari', ceData.oneriFin);
-    addRow('Proventi Finanziari', ceData.proventiFin);
-    addRow('Utile Netto', ceData.imposte, true, true); // Using imposte as a proxy if utileNetto isn't in CEData directly
+    addRow('Oneri Finanziari', ceData.oneriFin, false, false, metrics.proiezioneOneriFin);
+    addRow('Proventi Finanziari', ceData.proventiFin, false, false, metrics.proiezioneProventiFin);
+    addRow('Risultato Straordinario', ceData.straordinario, false, false, metrics.proiezioneStraordinario);
+
+    // EBT Row
+    const ebtRow = ['UTILE ANTE IMPOSTE (EBT)'];
+    if (activeTab === 'monthly') metrics.ebt.forEach(v => ebtRow.push(formatEuro(v)));
+    ebtRow.push(formatEuro(metrics.ebt.reduce((a,b)=>a+b,0)));
+    ebtRow.push(formatPercent(metrics.fatturato > 0 ? metrics.ebt.reduce((a,b)=>a+b,0)/metrics.fatturato : 0));
+    ebtRow.push(formatEuro(metrics.proiezioneEbt));
+    tableBody.push({ content: ebtRow, styles: { fillColor: [226, 232, 240], fontStyle: 'bold' } });
+
+    addRow('Imposte Stimate', ceData.imposte, false, false, ceData.imposte.reduce((a,b)=>a+b,0));
+
+    // Utile Netto Row
+    const unRow = ['UTILE NETTO'];
+    if (activeTab === 'monthly') metrics.utileNetto.forEach(v => unRow.push(formatEuro(v)));
+    unRow.push(formatEuro(metrics.utileNettoTot));
+    unRow.push(formatPercent(metrics.utileNettoPercent));
+    unRow.push(formatEuro(metrics.proiezioneUtile));
+    tableBody.push({ content: unRow, styles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' } });
+
+    tableBody.push([{ content: 'COMPENSO IMPRENDITORE', colSpan: activeTab === 'monthly' ? 16 : 4, styles: { fillColor: [241, 245, 249], fontStyle: 'bold', fontSize: 8 } }]);
+    addRow('Prelievo Utile Soci', ceData.compensoImprenditore, false, false, metrics.proiezioneCompensoImprenditore); // Using imposte as a proxy if utileNetto isn't in CEData directly
 
     const headers = ['Voce di Conto'];
     if (activeTab === 'monthly') MONTHS.forEach(m => headers.push(m));

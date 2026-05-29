@@ -148,15 +148,37 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
       }, 0);
   };
 
-  const forecastRicavi = getForecastSum(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare']);
-  const forecastEbitda = getForecastSum(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio']);
-  
-  // I-2 fix: aggiunto 'ricavo_immobiliare' per includere vendite immobiliari nelle proiezioni EBT
-  const forecastEbt = getForecastSum([
-    'ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso',
-    'costo_studio', 'ammortamento', 'onere_finanziario',
-    'provento_finanziario', 'straordinario'
-  ]);
+  const forecastRicaviCore = getForecastSum(['ricavo_core']);
+  const forecastRicaviImmobiliare = getForecastSum(['ricavo_immobiliare']);
+  const forecastRicaviAltro = getForecastSum(['ricavo_altro']);
+  const forecastCostiVar = getForecastSum(['costo_variabile']);
+  const forecastCostiFissi = getForecastSum(['costo_fisso']);
+  const forecastCostiStudio = getForecastSum(['costo_studio']);
+  const forecastAmmortamenti = getForecastSum(['ammortamento']);
+  const forecastOneriFin = getForecastSum(['onere_finanziario']);
+  const forecastProventiFin = getForecastSum(['provento_finanziario']);
+  const forecastStraordinario = getForecastSum(['straordinario']);
+  const forecastCompensoImprenditore = getForecastSum(['distribuzione_utile']);
+
+  const spiezioneMesi = ce.anno < oggi.getFullYear() ? 12 : oggi.getMonth() + 1; // used for backup if needed
+
+  const proiezioneRicaviCore = isCurrentYear ? sum12(ce.ricaviCore) + forecastRicaviCore : sum12(ce.ricaviCore);
+  const proiezioneRicaviImmobiliare = isCurrentYear ? sum12(ce.ricaviImmobiliare) + forecastRicaviImmobiliare : sum12(ce.ricaviImmobiliare);
+  const proiezioneRicaviAltro = isCurrentYear ? sum12(ce.ricaviAltro) + forecastRicaviAltro : sum12(ce.ricaviAltro);
+  const proiezioneCostiVariabili = isCurrentYear ? sum12(ce.costiVariabili) + Math.abs(forecastCostiVar) : sum12(ce.costiVariabili);
+  const proiezioneCostiFissi = isCurrentYear ? sum12(ce.costiFissi) + Math.abs(forecastCostiFissi) : sum12(ce.costiFissi);
+  const proiezioneCostiStudio = isCurrentYear ? sum12(ce.costiStudio) + Math.abs(forecastCostiStudio) : sum12(ce.costiStudio);
+  const proiezioneAmmortamenti = isCurrentYear ? sum12(ce.ammortamenti) + Math.abs(forecastAmmortamenti) : sum12(ce.ammortamenti);
+  const proiezioneOneriFin = isCurrentYear ? sum12(ce.oneriFin) + Math.abs(forecastOneriFin) : sum12(ce.oneriFin);
+  const proiezioneProventiFin = isCurrentYear ? sum12(ce.proventiFin) + forecastProventiFin : sum12(ce.proventiFin);
+  const proiezioneStraordinario = isCurrentYear ? sum12(ce.straordinario) + forecastStraordinario : sum12(ce.straordinario);
+  const proiezioneCompensoImprenditore = isCurrentYear ? sum12(ce.compensoImprenditore) + Math.abs(forecastCompensoImprenditore) : sum12(ce.compensoImprenditore);
+
+  const proiezioneFatturato = proiezioneRicaviCore + proiezioneRicaviImmobiliare + proiezioneRicaviAltro;
+  const proiezionePrimoMargine = proiezioneFatturato - proiezioneCostiVariabili;
+  const proiezioneEbitda = proiezionePrimoMargine - (proiezioneCostiFissi + proiezioneCostiStudio);
+  const proiezioneEbit = proiezioneEbitda - proiezioneAmmortamenti;
+  const proiezioneEbt = proiezioneEbit - proiezioneOneriFin + proiezioneProventiFin + proiezioneStraordinario;
 
   // Aliquota fiscale effettiva dall'anno corrente (IRES 24% + IRAP ~3.9% = ~27.9%)
   // Se sono già presenti imposte manuali YTD, usare quelle come riferimento
@@ -166,7 +188,8 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
     ? imposteManualiYtd / ebtYtd          // aliquota reale dai dati inseriti
     : 0.279;                               // fallback: IRES 24% + IRAP 3.9%
 
-  const forecastUtile = forecastEbt * (1 - aliquotaEffettiva);
+  const forecastUtile = isCurrentYear ? (proiezioneEbt - ebtYtd) * (1 - aliquotaEffettiva) : 0;
+  const proiezioneUtile = isCurrentYear ? utileNettoTot + forecastUtile : utileNettoTot;
 
   const mesiTrascorsi = ce.anno < oggi.getFullYear()
     ? 12
@@ -215,15 +238,31 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
     straordinario: sum12(ce.straordinario),
 
     // Proiezioni a fine anno
-    proiezioneFatturato:     isCurrentYear ? fatturato + forecastRicavi : fatturato,
-    proiezioneEbitda:        isCurrentYear ? ebitdaTot + forecastEbitda : ebitdaTot,
-    proiezioneUtile:         isCurrentYear ? utileNettoTot + forecastUtile : utileNettoTot,
+    proiezioneFatturato,
+    proiezioneEbitda,
+    proiezioneUtile,
     proiezioneBreakEven:     breakEven, 
     mesiTrascorsi,
     aliquotaEffettiva,
     ricaviConInvoiceDate,
     totaleRicavi,
     coperturainvoiceDate,
+
+    // Row Projections
+    proiezioneRicaviCore,
+    proiezioneRicaviImmobiliare,
+    proiezioneRicaviAltro,
+    proiezioneCostiVariabili,
+    proiezioneCostiFissi,
+    proiezioneCostiStudio,
+    proiezioneAmmortamenti,
+    proiezioneOneriFin,
+    proiezioneProventiFin,
+    proiezioneStraordinario,
+    proiezioneCompensoImprenditore,
+    proiezionePrimoMargine,
+    proiezioneEbit,
+    proiezioneEbt,
   };
 };
 

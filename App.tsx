@@ -314,19 +314,18 @@ function migrateBackupData(data: BackupData): BackupData {
 
   const migrated: BackupData = { ...data };
 
-  // 1. Migrate transactions
+  // 1. Migrate transactions and ensure they map to the correct ceType dynamically
   if (data.transactions) {
     migrated.transactions = data.transactions.map(tx => {
-      const oldCat = tx.category;
-      if (oldCat && CATEGORY_MIGRATION_MAP[oldCat]) {
-        const newCat = CATEGORY_MIGRATION_MAP[oldCat];
-        return {
-          ...tx,
-          category: newCat,
-          ceType: CATEGORY_TO_CE_TYPE[newCat] ?? tx.ceType,
-        };
+      let category = tx.category;
+      if (category && CATEGORY_MIGRATION_MAP[category]) {
+        category = CATEGORY_MIGRATION_MAP[category];
       }
-      return tx;
+      return {
+        ...tx,
+        category,
+        ceType: CATEGORY_TO_CE_TYPE[category] ?? tx.ceType,
+      };
     });
   }
 
@@ -347,7 +346,7 @@ function migrateBackupData(data: BackupData): BackupData {
     ));
   }
 
-  // 3. Migrate budgetData
+  // 3. Migrate budgetData and align ceType
   if (data.budgetData) {
     const migratedBudget: Record<string, BudgetData> = {};
     for (const [key, bData] of Object.entries(data.budgetData)) {
@@ -355,16 +354,15 @@ function migrateBackupData(data: BackupData): BackupData {
         migratedBudget[key] = {
           ...bData,
           righe: bData.righe.map(r => {
-            const oldCat = r.categoria;
-            if (oldCat && CATEGORY_MIGRATION_MAP[oldCat]) {
-              const newCat = CATEGORY_MIGRATION_MAP[oldCat];
-              return {
-                ...r,
-                categoria: newCat,
-                ceType: CATEGORY_TO_CE_TYPE[newCat] ?? r.ceType,
-              };
+            let categoria = r.categoria;
+            if (categoria && CATEGORY_MIGRATION_MAP[categoria]) {
+              categoria = CATEGORY_MIGRATION_MAP[categoria];
             }
-            return r;
+            return {
+              ...r,
+              categoria,
+              ceType: CATEGORY_TO_CE_TYPE[categoria] ?? r.ceType,
+            };
           })
         };
       } else {
@@ -374,23 +372,22 @@ function migrateBackupData(data: BackupData): BackupData {
     migrated.budgetData = migratedBudget;
   }
 
-  // 4. Migrate tipologieCantiere
+  // 4. Migrate tipologieCantiere and align ceType
   if (data.tipologieCantiere) {
     migrated.tipologieCantiere = data.tipologieCantiere.map(t => {
       if (t && t.vociAttive) {
         return {
           ...t,
           vociAttive: t.vociAttive.map(v => {
-            const oldCat = v.categoria;
-            if (oldCat && CATEGORY_MIGRATION_MAP[oldCat]) {
-              const newCat = CATEGORY_MIGRATION_MAP[oldCat];
-              return {
-                ...v,
-                categoria: newCat,
-                ceType: CATEGORY_TO_CE_TYPE[newCat] ?? v.ceType,
-              };
+            let categoria = v.categoria;
+            if (categoria && CATEGORY_MIGRATION_MAP[categoria]) {
+              categoria = CATEGORY_MIGRATION_MAP[categoria];
             }
-            return v;
+            return {
+              ...v,
+              categoria,
+              ceType: CATEGORY_TO_CE_TYPE[categoria] ?? v.ceType,
+            };
           })
         };
       }
@@ -432,19 +429,18 @@ function migrateBackupData(data: BackupData): BackupData {
     migrated.supplierPresets = migratedPresets;
   }
 
-  // 7. Migrate regolePuntaNet
+  // 7. Migrate regolePuntaNet and align ceType
   if (data.regolePuntaNet) {
     migrated.regolePuntaNet = data.regolePuntaNet.map(r => {
-      const oldCat = r.categoria;
-      if (oldCat && CATEGORY_MIGRATION_MAP[oldCat]) {
-        const newCat = CATEGORY_MIGRATION_MAP[oldCat];
-        return {
-          ...r,
-          categoria: newCat,
-          ceType: CATEGORY_TO_CE_TYPE[newCat] ?? r.ceType
-        };
+      let categoria = r.categoria;
+      if (categoria && CATEGORY_MIGRATION_MAP[categoria]) {
+        categoria = CATEGORY_MIGRATION_MAP[categoria];
       }
-      return r;
+      return {
+        ...r,
+        categoria,
+        ceType: CATEGORY_TO_CE_TYPE[categoria] ?? r.ceType
+      };
     });
   }
 

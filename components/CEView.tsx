@@ -258,10 +258,15 @@ const CEView: React.FC<CEViewProps> = ({
     };
   };
 
-  const renderRow = (label: string, data: number[], type: 'auto' | 'manual' | 'calc' | 'kpi', field?: keyof CEData) => {
+  const renderRow = (label: string, data: number[], type: 'auto' | 'manual' | 'calc' | 'kpi', field?: keyof CEData, projOverride?: number) => {
     const sum = data.reduce((a, b) => a + b, 0);
     const pct = metrics.fatturato > 0 ? sum / metrics.fatturato : 0;
-    const projection = metrics.mesiTrascorsi > 0 ? (sum / metrics.mesiTrascorsi) * 12 : 0;
+    
+    // Check if there are forecasts in the current year
+    const hasForecasts = txAnno.some(tx => tx.isForecast);
+    const projection = (hasForecasts && projOverride !== undefined)
+      ? projOverride
+      : (metrics.mesiTrascorsi > 0 ? (sum / metrics.mesiTrascorsi) * 12 : 0);
 
     return (
       <tr className="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
@@ -566,9 +571,9 @@ const CEView: React.FC<CEViewProps> = ({
             <tbody>
               {/* RICAVI */}
               <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">① Ricavi di Struttura</td></tr>
-              {renderRow('Ricavi Core (SAL/Commesse)', ceData.ricaviCore, 'auto')}
-              {renderRow('Vendite Immobiliari', ceData.ricaviImmobiliare, 'auto')}
-              {renderRow('Altri Ricavi (Affitti/Sviluppo)', ceData.ricaviAltro, 'auto')}
+              {renderRow('Ricavi Core (SAL/Commesse)', ceData.ricaviCore, 'auto', undefined, metrics.proiezioneRicaviCore)}
+              {renderRow('Vendite Immobiliari', ceData.ricaviImmobiliare, 'auto', undefined, metrics.proiezioneRicaviImmobiliare)}
+              {renderRow('Altri Ricavi (Affitti/Sviluppo)', ceData.ricaviAltro, 'auto', undefined, metrics.proiezioneRicaviAltro)}
               <tr className="bg-slate-100 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALE RICAVI (A)</td>
                 {activeTab === 'monthly' && metrics.totRicavi.map((v, i) => <CalcCell key={i} value={v} />)}
@@ -579,13 +584,13 @@ const CEView: React.FC<CEViewProps> = ({
 
               {/* COSTI VARIABILI */}
               <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">② Costi Variabili</td></tr>
-              {renderRow('Costi Variabili (Materiali/Subappalti)', ceData.costiVariabili, 'auto')}
+              {renderRow('Costi Variabili (Materiali/Subappalti)', ceData.costiVariabili, 'auto', undefined, metrics.proiezioneCostiVariabili)}
               <tr className="bg-slate-50/30 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-50/30 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALE COSTI VARIABILI (B)</td>
                 {activeTab === 'monthly' && metrics.totCostiVar.map((v, i) => <CalcCell key={i} value={v} />)}
                 <CalcCell value={metrics.totCostiVar.reduce((a,b)=>a+b,0)} isKPI />
                 <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.totCostiVar.reduce((a,b)=>a+b,0)/metrics.fatturato : 0)}</td>
-                <ProjectionCell value={metrics.mesiTrascorsi > 0 ? (metrics.totCostiVar.reduce((a,b)=>a+b,0)/metrics.mesiTrascorsi)*12 : 0} />
+                <ProjectionCell value={metrics.proiezioneCostiVariabili} />
               </tr>
 
               <tr className="bg-[#222222] text-white font-black">
@@ -593,14 +598,14 @@ const CEView: React.FC<CEViewProps> = ({
                 {activeTab === 'monthly' && metrics.primoMargine.map((v, i) => <td key={i} className="text-right px-2 text-xs">{formatEuro(v)}</td>)}
                 <td className="text-right px-4 text-sm">{formatEuro(metrics.primoMargineTot)}</td>
                 <td className="text-right px-2 text-xs">{formatPercent(metrics.primoMarginePercent)}</td>
-                <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.mesiTrascorsi > 0 ? (metrics.primoMargineTot/metrics.mesiTrascorsi)*12 : 0)}</td>
+                <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezionePrimoMargine)}</td>
               </tr>
 
               {/* COSTI FISSI */}
               <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">③ Costi Fissi di Struttura</td></tr>
-              {renderRow('Costi Studio (Personale/Amm.)', ceData.costiStudio, 'auto')}
-              {renderRow('Altri Costi Fissi (Sedi/Marketing)', ceData.costiFissi, 'auto')}
-              {renderRow('Ammortamenti (Manuale)', ceData.ammortamenti, 'manual', 'ammortamenti')}
+              {renderRow('Costi Studio (Personale/Amm.)', ceData.costiStudio, 'auto', undefined, metrics.proiezioneCostiStudio)}
+              {renderRow('Altri Costi Fissi (Sedi/Marketing)', ceData.costiFissi, 'auto', undefined, metrics.proiezioneCostiFissi)}
+              {renderRow('Ammortamenti (Manuale)', ceData.ammortamenti, 'manual', 'ammortamenti', metrics.proiezioneAmmortamenti)}
               
               <tr className="bg-[#222222] text-white font-black">
                 <td className="py-4 px-4 text-sm sticky left-0 bg-[#222222] z-10">EBITDA</td>
@@ -621,13 +626,14 @@ const CEView: React.FC<CEViewProps> = ({
                 <td className="text-right px-2 text-xs text-slate-400">
                   {formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}
                 </td>
+                <ProjectionCell value={metrics.proiezioneEbit} />
               </tr>
 
               {/* ONERI E IMPOSTE */}
               <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">④ Oneri, Proventi e Imposte</td></tr>
-              {renderRow('Oneri Finanziari', ceData.oneriFin, 'auto')}
-              {renderRow('Proventi Finanziari', ceData.proventiFin, 'auto')}
-              {renderRow('Risultato Straordinario', ceData.straordinario, 'auto')}
+              {renderRow('Oneri Finanziari', ceData.oneriFin, 'auto', undefined, metrics.proiezioneOneriFin)}
+              {renderRow('Proventi Finanziari', ceData.proventiFin, 'auto', undefined, metrics.proiezioneProventiFin)}
+              {renderRow('Risultato Straordinario', ceData.straordinario, 'auto', undefined, metrics.proiezioneStraordinario)}
               
               <tr className="bg-slate-100 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-100 z-10">
@@ -644,10 +650,10 @@ const CEView: React.FC<CEViewProps> = ({
                 {activeTab === 'monthly' && metrics.ebt.map((v, i) => <CalcCell key={i} value={v} />)}
                 <CalcCell value={metrics.ebt.reduce((a,b)=>a+b,0)} isKPI />
                 <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.ebt.reduce((a,b)=>a+b,0)/metrics.fatturato : 0)}</td>
-                <ProjectionCell value={metrics.mesiTrascorsi > 0 ? (metrics.ebt.reduce((a,b)=>a+b,0)/metrics.mesiTrascorsi)*12 : 0} />
+                <ProjectionCell value={metrics.proiezioneEbt} />
               </tr>
 
-              {renderRow('Imposte Stimate (Manuale)', ceData.imposte, 'manual', 'imposte')}
+              {renderRow('Imposte Stimate (Manuale)', ceData.imposte, 'manual', 'imposte', ceData.imposte.reduce((a,b)=>a+b,0))}
 
               <tr className="bg-slate-900 text-white font-black">
                 <td className="py-4 px-4 text-sm sticky left-0 bg-slate-900 z-10">
@@ -669,7 +675,7 @@ const CEView: React.FC<CEViewProps> = ({
 
               {/* SOCI */}
               <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">⑤ Compenso Imprenditore</td></tr>
-              {renderRow('Prelievo Utile Soci', ceData.compensoImprenditore, 'auto')}
+              {renderRow('Prelievo Utile Soci', ceData.compensoImprenditore, 'auto', undefined, metrics.proiezioneCompensoImprenditore)}
             </tbody>
           </table>
         </div>
@@ -699,33 +705,38 @@ const CEView: React.FC<CEViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {[
-                  { label: 'Ricavi Totali', ytd: metrics.fatturato, proj: metrics.proiezioneFatturato, isBold: true },
-                  { label: 'Costi Variabili', ytd: metrics.totCostiVar.reduce((a,b)=>a+b,0), proj: (metrics.totCostiVar.reduce((a,b)=>a+b,0) / metrics.mesiTrascorsi) * 12 },
-                  { label: 'Primo Margine', ytd: metrics.primoMargineTot, proj: (metrics.primoMargineTot / metrics.mesiTrascorsi) * 12, isBold: true, color: 'text-slate-900' },
-                  { label: 'Costi di Struttura', ytd: metrics.costiFissiTot, proj: (metrics.costiFissiTot / metrics.mesiTrascorsi) * 12 },
-                  { label: 'EBITDA', ytd: metrics.ebitdaTot, proj: metrics.proiezioneEbitda, isBold: true, color: 'text-slate-900' },
-                  { label: 'EBIT', ytd: metrics.ebitTot, proj: (metrics.ebitTot / metrics.mesiTrascorsi) * 12 },
-                  { label: 'Utile Netto', ytd: metrics.utileNettoTot, proj: metrics.proiezioneUtile, isBold: true, color: 'text-slate-900' },
-                ].map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                    <td className={`py-4 px-4 text-xs ${row.isBold ? 'font-black uppercase' : 'font-medium text-slate-600'}`}>
-                      {row.label}
-                    </td>
-                    <td className="py-4 px-4 text-right text-xs font-mono text-slate-500">
-                      {formatEuro(row.ytd)}
-                    </td>
-                    <td className="py-4 px-4 text-right text-xs font-mono text-slate-400">
-                      {metrics.mesiTrascorsi} / 12
-                    </td>
-                    <td className={`py-4 px-4 text-right text-sm font-black font-mono ${row.color || 'text-slate-900'}`}>
-                      {formatEuro(row.proj)}
-                    </td>
-                    <td className="py-4 px-4 text-right text-xs font-mono text-slate-500">
-                      {formatPercent(metrics.proiezioneFatturato > 0 ? row.proj / metrics.proiezioneFatturato : 0)}
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const hasForecasts = txAnno.some(tx => tx.isForecast);
+                  const getProjVal = (forecastVal: number, linearVal: number) => hasForecasts ? forecastVal : linearVal;
+                  
+                  return [
+                    { label: 'Ricavi Totali', ytd: metrics.fatturato, proj: metrics.proiezioneFatturato, isBold: true },
+                    { label: 'Costi Variabili', ytd: metrics.totCostiVar.reduce((a,b)=>a+b,0), proj: getProjVal(metrics.proiezioneCostiVariabili, (metrics.totCostiVar.reduce((a,b)=>a+b,0) / metrics.mesiTrascorsi) * 12) },
+                    { label: 'Primo Margine', ytd: metrics.primoMargineTot, proj: getProjVal(metrics.proiezionePrimoMargine, (metrics.primoMargineTot / metrics.mesiTrascorsi) * 12), isBold: true, color: 'text-slate-900' },
+                    { label: 'Costi di Struttura', ytd: metrics.costiFissiTot, proj: getProjVal(metrics.proiezioneCostiFissi + metrics.proiezioneCostiStudio + metrics.proiezioneAmmortamenti, (metrics.costiFissiTot / metrics.mesiTrascorsi) * 12) },
+                    { label: 'EBITDA', ytd: metrics.ebitdaTot, proj: metrics.proiezioneEbitda, isBold: true, color: 'text-slate-900' },
+                    { label: 'EBIT', ytd: metrics.ebitTot, proj: getProjVal(metrics.proiezioneEbit, (metrics.ebitTot / metrics.mesiTrascorsi) * 12) },
+                    { label: 'Utile Netto', ytd: metrics.utileNettoTot, proj: metrics.proiezioneUtile, isBold: true, color: 'text-slate-900' },
+                  ].map((row, i) => (
+                    <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                      <td className={`py-4 px-4 text-xs ${row.isBold ? 'font-black uppercase' : 'font-medium text-slate-600'}`}>
+                        {row.label}
+                      </td>
+                      <td className="py-4 px-4 text-right text-xs font-mono text-slate-500">
+                        {formatEuro(row.ytd)}
+                      </td>
+                      <td className="py-4 px-4 text-right text-xs font-mono text-slate-400">
+                        {metrics.mesiTrascorsi} / 12
+                      </td>
+                      <td className={`py-4 px-4 text-right text-sm font-black font-mono ${row.color || 'text-slate-900'}`}>
+                        {formatEuro(row.proj)}
+                      </td>
+                      <td className="py-4 px-4 text-right text-xs font-mono text-slate-500">
+                        {formatPercent(metrics.proiezioneFatturato > 0 ? row.proj / metrics.proiezioneFatturato : 0)}
+                      </td>
+                    </tr>
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
