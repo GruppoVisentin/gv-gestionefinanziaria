@@ -138,7 +138,6 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
       .filter(tx => 
         tx.isForecast && 
         new Date(tx.date).getFullYear() === ce.anno && 
-        new Date(tx.date).getMonth() >= oggi.getMonth() &&
         tx.ceType && types.includes(tx.ceType)
       )
       .reduce((s, tx) => {
