@@ -317,6 +317,10 @@ export const CATEGORY_MIGRATION_MAP: Record<string, string> = {
   "PROFESSIONISTI ESTERNI":                "[CONSULENZE] Professionisti Esterni di Cantiere",
   "ACQUISIZIONE TERRENI o IMMOBILI":       "[INVESTIMENTI] Acquisto Terreni per Sviluppo",
   "NUOVA SOCIETA'":                        "[INVESTIMENTI] Investimento in Nuova Società",
+  // Ridenominazioni categorie vecchie o incongruenti
+  "[CANTIERE] Subappalti Manodopera":      "[PERSONALE] Subappalti Manodopera",
+  "[CANTIERE] Fornitori Materiali":        "[FORNITORI] Fornitori Materiali",
+  "[SOCI] Prelievo Utile / Dividendi":     "[SOCI] Prelievo Utile Soci",
 };
 
 // Mapping Category -> Suppliers/Subcategories
