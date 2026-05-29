@@ -101,6 +101,11 @@ const CEView: React.FC<CEViewProps> = ({
 
   const metrics = useMemo(() => calcCEMetrics(ceData, transactions), [ceData, transactions]);
 
+  const txAnno = useMemo(() => 
+    (transactions || []).filter(tx => new Date(tx.date).getFullYear() === selectedYear),
+    [transactions, selectedYear]
+  );
+
   const scostamenti = useMemo(() => {
     return calcScostamenti(
       transactions,
@@ -153,7 +158,7 @@ const CEView: React.FC<CEViewProps> = ({
     const ebt  = metrics.ebt.reduce((a, b) => a + b, 0);
     const utile = metrics.utileNettoTot;
 
-    const txAnno = transactions.filter(tx =>
+    const txAnnoContribuenti = transactions.filter(tx =>
       new Date(tx.date).getFullYear() === selectedYear &&
       !tx.isForecast && tx.ceType
     );
@@ -252,7 +257,7 @@ const CEView: React.FC<CEViewProps> = ({
       kpiValore: cfg.valore,
       kpiPercentuale: cfg.percentuale,
       formulaSteps: cfg.steps,
-      transazioniContribuenti: txAnno.filter(tx => cfg.ceTypes.includes(tx.ceType ?? '')),
+      transazioniContribuenti: txAnnoContribuenti.filter(tx => cfg.ceTypes.includes(tx.ceType ?? '')),
       anno: selectedYear,
       onClose: () => setDrawerKpi(null),
     };
