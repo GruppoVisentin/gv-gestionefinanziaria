@@ -342,7 +342,8 @@ function migrateBackupData(data: BackupData): BackupData {
       'ACQUISIZIONE TERRENI', 'NUOVA SOCIETA\'', 'CORSI DIPENDENTI', 'VISITE MEDICHE DIPENDENTI',
       "PUBBLICITA' E MARKETING", 'VOLONTARIATO', 'TASSE', 'VERSAMENTO IVA', 'RITENUTE SU BONIFICI',
       "RITENUTE D'ACCONTO SU PROFESSIONISTI", 'SANZIONI', 'IMPREVISTI', 'SPESE BANCARIE',
-      'RATE E INTERESSI FINANZIAMENTI', 'PRELIEVO UTILE SOCI', 'DE FILIPPO GIOVANNI', 'SELMEDIN NESIMOSKI'
+      'RATE E INTERESSI FINANZIAMENTI', 'PRELIEVO UTILE SOCI', 'DE FILIPPO GIOVANNI', 'SELMEDIN NESIMOSKI',
+      'DE FILIPPO', 'SELMEDIN', 'NESIMOSKI'
     ].map(s => s.toLowerCase());
 
     // 1. Etichetta retroattivamente i previsionali generati da storico con sourceRef: 'Wizard Inizio Anno'
@@ -357,13 +358,26 @@ function migrateBackupData(data: BackupData): BackupData {
       return t;
     });
 
-    // 2. Se esiste una sessione storica già annullata, rimuove a monte le transazioni storiche e i previsionali associati
-    const cancelledStoricoSessions = data.importSessions?.filter(s => s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel")) || [];
+    // 2. Rileva se ci sono consuntivi storici attivi nel database
+    const hasActiveStoricoActuals = taggedTxs.some(t => !t.isForecast && t.sourceRef && t.sourceRef.startsWith("Storico Excel"));
+
+    // 3. Rileva se esiste una sessione storica esplicitamente annullata
+    const hasCancelledSession = data.importSessions?.some(s => s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel"));
+
+    // 4. Se NON ci sono consuntivi storici attivi nel database, oppure se c'è una sessione annullata, rimuove i previsionali dello storico
+    const shouldCleanForecasts = !hasActiveStoricoActuals || hasCancelledSession;
+
     let filteredTxs = taggedTxs;
-    if (cancelledStoricoSessions.length > 0) {
+    
+    // Rimuove in ogni caso i consuntivi se c'è una sessione annullata
+    if (hasCancelledSession) {
+      filteredTxs = filteredTxs.filter(t => !(t.sourceRef && t.sourceRef.startsWith("Storico Excel")));
+    }
+
+    if (shouldCleanForecasts) {
       const storicoDescriptions = new Set<string>();
       
-      // Raccoglie le descrizioni dei consuntivi storici presenti prima di filtrarli
+      // Raccoglie le descrizioni dei consuntivi storici presenti prima di filtrarli (se ce ne fossero rimasti)
       taggedTxs.forEach(t => {
         if (!t.isForecast && t.sourceRef && t.sourceRef.startsWith("Storico Excel") && t.description) {
           storicoDescriptions.add(t.description.trim().toLowerCase());
@@ -371,10 +385,6 @@ function migrateBackupData(data: BackupData): BackupData {
       });
 
       filteredTxs = filteredTxs.filter(t => {
-        // Rimuove i consuntivi
-        if (t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
-          return false;
-        }
         // Rimuove i previsionali generati da storico (tramite tag o descrizione)
         if (t.isForecast) {
           if (t.sourceRef === 'Wizard Inizio Anno') {
