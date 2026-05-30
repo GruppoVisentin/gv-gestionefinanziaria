@@ -214,15 +214,14 @@ const parseExcelStorico = async (file: File, anniSelezionati: Set<number>): Prom
 
 interface ImportStoricoModalProps {
   storicoGiaImportato: boolean;
-  onImport: (transactions: Transaction[]) => void;
-  onSalvaSessione: (session: ImportSession) => void;
+  onImport: (transactions: Transaction[], session: ImportSession) => void;
   onClose: () => void;
 }
 
 // ─── COMPONENTE ──────────────────────────────────────────────────
 
 const ImportStoricoModal: React.FC<ImportStoricoModalProps> = ({
-  storicoGiaImportato, onImport, onSalvaSessione, onClose
+  storicoGiaImportato, onImport, onClose
 }) => {
   type Step = 'upload' | 'anteprima' | 'completato';
 
@@ -308,8 +307,7 @@ const ImportStoricoModal: React.FC<ImportStoricoModalProps> = ({
       periodoFine: `${anni[anni.length - 1]}-12-31`,
     };
 
-    onImport(transactions);
-    onSalvaSessione(session);
+    onImport(transactions, session);
     setImportate(transactions.length);
     setStep('completato');
   };

@@ -16,7 +16,8 @@ import {
   RimanenzeAnno,
   RimanenzeData,
   SaldoInizialeCashFlow,
-  BankAccount
+  BankAccount,
+  ImportSession
 } from './types';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
@@ -856,6 +857,59 @@ const App: React.FC = () => {
     }
   }, []); // ← array vuoto: saveToFile non cambia mai → interval non si resetta mai
 
+  const triggerImmediateSave = useCallback(async (updatedTxs?: Transaction[], updatedSessions?: ImportSession[]) => {
+    if (!fileHandle) return;
+    try {
+      setSaveStatus('saving');
+      const data: BackupData = {
+        version: '4.0',
+        timestamp: new Date().toISOString(),
+        transactions: updatedTxs || transactions,
+        projects,
+        fixedCategories,
+        variableCategories,
+        incomeCategories,
+        supplierPresets,
+        initialData,
+        saldoInizialeCF,
+        operators: responsiblesList,
+        ceManualData,
+        spSnapshots,
+        budgetData,
+        oreCantiereStorico: oreStorico,
+        tipologieCantiere,
+        cantieriPrev,
+        rimanenze,
+        regolePuntaNet,
+        mappingContiPuntaNet,
+        bozzaImportPuntaNet,
+        importSessions: updatedSessions || importSessions,
+        storicoExcelImportato: storicoImportato,
+        aliquoteFiscali: { ires: aliquotaIRES, irap: aliquotaIRAP },
+      };
+
+      await writeFile(fileHandle, data);
+      if (backupFileHandle) {
+        try {
+          await writeFile(backupFileHandle, data);
+        } catch (e) {
+          console.error('Backup write failed', e);
+        }
+      }
+      setLastSaved(new Date());
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (e) {
+      console.error('Immediate save failed', e);
+      setSaveStatus('error');
+    }
+  }, [
+    fileHandle, backupFileHandle, transactions, projects, fixedCategories, variableCategories,
+    incomeCategories, supplierPresets, initialData, saldoInizialeCF, responsiblesList, ceManualData,
+    spSnapshots, budgetData, oreStorico, tipologieCantiere, cantieriPrev, rimanenze, regolePuntaNet,
+    mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP
+  ]);
+
   // --- INITIALIZATION ---
   useEffect(() => {
     const init = async () => {
@@ -1346,35 +1400,41 @@ const App: React.FC = () => {
     const session = importSessions.find(s => s.id === sessionId);
     const isStorico = session && session.nomeFile && session.nomeFile.startsWith("Storico Excel");
 
-    setTransactions(prev => {
-      // Raccoglie le descrizioni dei consuntivi storici collegati a questa sessione prima di eliminarli
-      const storicoTxs = prev.filter(t => (t.importSessionId === sessionId) || (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")));
-      const storicoDescSet = new Set(storicoTxs.map(t => t.description?.trim().toLowerCase()).filter(Boolean));
+    setImportSessions(prevSessions => {
+      const newSessions = prevSessions.map(s => s.id === sessionId ? { ...s, annullata: true } : s);
+      setTransactions(prevTxs => {
+        // Raccoglie le descrizioni dei consuntivi storici collegati a questa sessione prima di eliminarli
+        const storicoTxs = prevTxs.filter(t => (t.importSessionId === sessionId) || (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")));
+        const storicoDescSet = new Set(storicoTxs.map(t => t.description?.trim().toLowerCase()).filter(Boolean));
 
-      return prev.filter(t => {
-        if (t.importSessionId === sessionId) return false;
-        if (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
-          // Se la transazione ha un ID sessione ed è diversa da quella che stiamo annullando, mantienila attiva!
-          if (t.importSessionId && t.importSessionId !== sessionId) {
-            return true;
-          }
-          return false;
-        }
-        
-        // Se stiamo annullando lo storico, rimuoviamo anche TUTTI i previsionali generati dal Wizard Inizio Anno
-        if (isStorico && t.isForecast && t.sourceRef === 'Wizard Inizio Anno') return false;
-
-        // Se è storico ed è un previsionale copiato da una delle transazioni eliminate, rimuovilo
-        if (t.isForecast && isStorico && t.description) {
-          const descLower = t.description.trim().toLowerCase();
-          if (storicoDescSet.has(descLower)) {
+        const filtered = prevTxs.filter(t => {
+          if (t.importSessionId === sessionId) return false;
+          if (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
+            // Se la transazione ha un ID sessione ed è diversa da quella che stiamo annullando, mantienila attiva!
+            if (t.importSessionId && t.importSessionId !== sessionId) {
+              return true;
+            }
             return false;
           }
-        }
-        return true;
+          
+          // Se stiamo annullando lo storico, rimuoviamo anche TUTTI i previsionali generati dal Wizard Inizio Anno
+          if (isStorico && t.isForecast && t.sourceRef === 'Wizard Inizio Anno') return false;
+
+          // Se è storico ed è un previsionale copiato da una delle transazioni eliminate, rimuovilo
+          if (t.isForecast && isStorico && t.description) {
+            const descLower = t.description.trim().toLowerCase();
+            if (storicoDescSet.has(descLower)) {
+              return false;
+            }
+          }
+          return true;
+        });
+
+        triggerImmediateSave(filtered, newSessions);
+        return filtered;
       });
+      return newSessions;
     });
-    setImportSessions(prev => prev.map(s => s.id === sessionId ? { ...s, annullata: true } : s));
   };
 
   const handleSaveProject = (data: Omit<Project, 'id'>) => {
@@ -2130,13 +2190,18 @@ const App: React.FC = () => {
         {showImportStorico && (
           <ImportStoricoModal
             storicoGiaImportato={storicoImportato}
-            onImport={(txs) => {
-              setTransactions(prev => [...prev, ...txs]);
+            onImport={(txs, session) => {
+              setTransactions(prev => {
+                const newTxs = [...prev, ...txs];
+                setImportSessions(prevSessions => {
+                  const newSessions = [session, ...prevSessions];
+                  triggerImmediateSave(newTxs, newSessions);
+                  return newSessions;
+                });
+                return newTxs;
+              });
               setStoricoImportato(true);
             }}
-            onSalvaSessione={(session) =>
-              setImportSessions(prev => [session, ...prev])
-            }
             onClose={() => setShowImportStorico(false)}
           />
         )}
