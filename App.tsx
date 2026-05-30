@@ -359,6 +359,39 @@ function migrateBackupData(data: BackupData): BackupData {
       return t;
     });
 
+    // Rileva se ci sono previsionali da Wizard che non hanno una sessione associata nel registro e le crea retroattivamente
+    const wizardTxs = taggedTxs.filter(t => t.isForecast && t.sourceRef === 'Wizard Inizio Anno');
+    const wizardYears = Array.from(new Set(wizardTxs.map(t => new Date(t.date).getFullYear())));
+    
+    let updatedSessions = data.importSessions ? [...data.importSessions] : [];
+    
+    wizardYears.forEach(year => {
+      const sessionName = `Wizard Inizio Anno ${year}`;
+      const sessionExists = updatedSessions.some(s => s.nomeFile === sessionName);
+      if (!sessionExists) {
+        const sessionId = `wizard-retro-${year}`;
+        const count = wizardTxs.filter(t => new Date(t.date).getFullYear() === year).length;
+        
+        updatedSessions.push({
+          id: sessionId,
+          timestamp: new Date().toISOString(),
+          nomeFile: sessionName,
+          transazioniImportate: count,
+          periodoInizio: `${year}-01-01`,
+          periodoFine: `${year}-12-31`
+        });
+        
+        taggedTxs = taggedTxs.map(t => {
+          if (t.isForecast && t.sourceRef === 'Wizard Inizio Anno' && new Date(t.date).getFullYear() === year) {
+            return { ...t, importSessionId: sessionId };
+          }
+          return t;
+        });
+      }
+    });
+
+    migrated.importSessions = updatedSessions;
+
     // 2. Raccoglie gli ID delle sessioni storiche annullate e attive
     const cancelledStoricoSessionIds = new Set(
       data.importSessions?.filter(s => s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel")).map(s => s.id) || []
@@ -2147,9 +2180,31 @@ const App: React.FC = () => {
           <YearStartWizard 
             transactions={transactions}
             onSave={(newTxs) => {
-              const updatedTxs = [...transactions, ...newTxs];
+              const sessionId = crypto.randomUUID();
+              const targetYear = newTxs.length > 0 ? new Date(newTxs[0].date).getFullYear() : new Date().getFullYear();
+              
+              // Tagga le transazioni con il sessionId del wizard e sourceRef
+              const taggedTxs = newTxs.map(tx => ({
+                ...tx,
+                importSessionId: sessionId,
+                sourceRef: 'Wizard Inizio Anno'
+              }));
+
+              const session: ImportSession = {
+                id: sessionId,
+                timestamp: new Date().toISOString(),
+                nomeFile: `Wizard Inizio Anno ${targetYear}`,
+                transazioniImportate: newTxs.length,
+                periodoInizio: `${targetYear}-01-01`,
+                periodoFine: `${targetYear}-12-31`
+              };
+
+              const updatedTxs = [...transactions, ...taggedTxs];
+              const updatedSessions = [session, ...importSessions];
+
               setTransactions(updatedTxs);
-              triggerImmediateSave(updatedTxs);
+              setImportSessions(updatedSessions);
+              triggerImmediateSave(updatedTxs, updatedSessions);
             }}
             onClose={() => setShowYearStartWizard(false)}
           />
