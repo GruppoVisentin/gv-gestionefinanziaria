@@ -857,7 +857,11 @@ const App: React.FC = () => {
     }
   }, []); // ← array vuoto: saveToFile non cambia mai → interval non si resetta mai
 
-  const triggerImmediateSave = useCallback(async (updatedTxs?: Transaction[], updatedSessions?: ImportSession[]) => {
+  const triggerImmediateSave = useCallback(async (
+    updatedTxs?: Transaction[], 
+    updatedSessions?: ImportSession[],
+    updatedStoricoImportato?: boolean
+  ) => {
     if (!fileHandle) return;
     try {
       setSaveStatus('saving');
@@ -884,7 +888,7 @@ const App: React.FC = () => {
         mappingContiPuntaNet,
         bozzaImportPuntaNet,
         importSessions: updatedSessions || importSessions,
-        storicoExcelImportato: storicoImportato,
+        storicoExcelImportato: updatedStoricoImportato !== undefined ? updatedStoricoImportato : storicoImportato,
         aliquoteFiscali: { ires: aliquotaIRES, irap: aliquotaIRAP },
       };
 
@@ -1400,41 +1404,44 @@ const App: React.FC = () => {
     const session = importSessions.find(s => s.id === sessionId);
     const isStorico = session && session.nomeFile && session.nomeFile.startsWith("Storico Excel");
 
-    setImportSessions(prevSessions => {
-      const newSessions = prevSessions.map(s => s.id === sessionId ? { ...s, annullata: true } : s);
-      setTransactions(prevTxs => {
-        // Raccoglie le descrizioni dei consuntivi storici collegati a questa sessione prima di eliminarli
-        const storicoTxs = prevTxs.filter(t => (t.importSessionId === sessionId) || (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")));
-        const storicoDescSet = new Set(storicoTxs.map(t => t.description?.trim().toLowerCase()).filter(Boolean));
+    // 1. Calcola i nuovi stati usando i valori correnti
+    const newSessions = importSessions.map(s => s.id === sessionId ? { ...s, annullata: true } : s);
+    
+    const storicoTxs = transactions.filter(t => (t.importSessionId === sessionId) || (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")));
+    const storicoDescSet = new Set(storicoTxs.map(t => t.description?.trim().toLowerCase()).filter(Boolean));
 
-        const filtered = prevTxs.filter(t => {
-          if (t.importSessionId === sessionId) return false;
-          if (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
-            // Se la transazione ha un ID sessione ed è diversa da quella che stiamo annullando, mantienila attiva!
-            if (t.importSessionId && t.importSessionId !== sessionId) {
-              return true;
-            }
-            return false;
-          }
-          
-          // Se stiamo annullando lo storico, rimuoviamo anche TUTTI i previsionali generati dal Wizard Inizio Anno
-          if (isStorico && t.isForecast && t.sourceRef === 'Wizard Inizio Anno') return false;
-
-          // Se è storico ed è un previsionale copiato da una delle transazioni eliminate, rimuovilo
-          if (t.isForecast && isStorico && t.description) {
-            const descLower = t.description.trim().toLowerCase();
-            if (storicoDescSet.has(descLower)) {
-              return false;
-            }
-          }
+    const newTxs = transactions.filter(t => {
+      if (t.importSessionId === sessionId) return false;
+      if (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
+        // Se la transazione ha un ID sessione ed è diversa da quella che stiamo annullando, mantienila attiva!
+        if (t.importSessionId && t.importSessionId !== sessionId) {
           return true;
-        });
+        }
+        return false;
+      }
+      
+      // Se stiamo annullando lo storico, rimuoviamo anche TUTTI i previsionali generati dal Wizard Inizio Anno
+      if (isStorico && t.isForecast && t.sourceRef === 'Wizard Inizio Anno') return false;
 
-        triggerImmediateSave(filtered, newSessions);
-        return filtered;
-      });
-      return newSessions;
+      // Se è storico ed è un previsionale copiato da una delle transazioni eliminate, rimuovilo
+      if (t.isForecast && isStorico && t.description) {
+        const descLower = t.description.trim().toLowerCase();
+        if (storicoDescSet.has(descLower)) {
+          return false;
+        }
+      }
+      return true;
     });
+
+    // 2. Aggiorna lo stato in modo pulito
+    setImportSessions(newSessions);
+    setTransactions(newTxs);
+    if (isStorico) {
+      setStoricoImportato(false);
+    }
+
+    // 3. Salva immediatamente su disco
+    triggerImmediateSave(newTxs, newSessions, isStorico ? false : undefined);
   };
 
   const handleSaveProject = (data: Omit<Project, 'id'>) => {
@@ -2139,7 +2146,11 @@ const App: React.FC = () => {
         {showYearStartWizard && (
           <YearStartWizard 
             transactions={transactions}
-            onSave={(newTxs) => setTransactions(prev => [...prev, ...newTxs])}
+            onSave={(newTxs) => {
+              const updatedTxs = [...transactions, ...newTxs];
+              setTransactions(updatedTxs);
+              triggerImmediateSave(updatedTxs);
+            }}
             onClose={() => setShowYearStartWizard(false)}
           />
         )}
@@ -2191,16 +2202,12 @@ const App: React.FC = () => {
           <ImportStoricoModal
             storicoGiaImportato={storicoImportato}
             onImport={(txs, session) => {
-              setTransactions(prev => {
-                const newTxs = [...prev, ...txs];
-                setImportSessions(prevSessions => {
-                  const newSessions = [session, ...prevSessions];
-                  triggerImmediateSave(newTxs, newSessions);
-                  return newSessions;
-                });
-                return newTxs;
-              });
+              const newTxs = [...transactions, ...txs];
+              const newSessions = [session, ...importSessions];
+              setTransactions(newTxs);
+              setImportSessions(newSessions);
               setStoricoImportato(true);
+              triggerImmediateSave(newTxs, newSessions, true);
             }}
             onClose={() => setShowImportStorico(false)}
           />
