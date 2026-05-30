@@ -358,20 +358,35 @@ function migrateBackupData(data: BackupData): BackupData {
       return t;
     });
 
-    // 2. Rileva se ci sono consuntivi storici attivi nel database
+    // 2. Raccoglie gli ID delle sessioni storiche annullate e attive
+    const cancelledStoricoSessionIds = new Set(
+      data.importSessions?.filter(s => s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel")).map(s => s.id) || []
+    );
+    const hasActiveStoricoSession = data.importSessions?.some(s => !s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel"));
+
+    // 3. Rileva se ci sono consuntivi storici attivi nel database (inclusi quelli non tracciati da vecchi import)
     const hasActiveStoricoActuals = taggedTxs.some(t => !t.isForecast && t.sourceRef && t.sourceRef.startsWith("Storico Excel"));
 
-    // 3. Rileva se esiste una sessione storica esplicitamente annullata
-    const hasCancelledSession = data.importSessions?.some(s => s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel"));
-
-    // 4. Se NON ci sono consuntivi storici attivi nel database, oppure se c'è una sessione annullata, rimuove i previsionali dello storico
-    const shouldCleanForecasts = !hasActiveStoricoActuals || hasCancelledSession;
+    // 4. Determina se ripulire i previsionali storici: solo se non ci sono consuntivi attivi e non c'è una sessione attiva
+    const shouldCleanForecasts = !hasActiveStoricoActuals && !hasActiveStoricoSession;
 
     let filteredTxs = taggedTxs;
     
-    // Rimuove in ogni caso i consuntivi se c'è una sessione annullata
-    if (hasCancelledSession) {
-      filteredTxs = filteredTxs.filter(t => !(t.sourceRef && t.sourceRef.startsWith("Storico Excel")));
+    // Rimuove i consuntivi appartenenti SOLO alle sessioni storiche annullate
+    if (cancelledStoricoSessionIds.size > 0) {
+      filteredTxs = filteredTxs.filter(t => {
+        if (t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
+          // Se la transazione appartiene a una sessione annullata, eliminala
+          if (t.importSessionId && cancelledStoricoSessionIds.has(t.importSessionId)) {
+            return false;
+          }
+          // Se non ha ID sessione (vecchio import), eliminala solo se non ci sono sessioni attive
+          if (!t.importSessionId && !hasActiveStoricoSession) {
+            return false;
+          }
+        }
+        return true;
+      });
     }
 
     if (shouldCleanForecasts) {
@@ -1338,7 +1353,13 @@ const App: React.FC = () => {
 
       return prev.filter(t => {
         if (t.importSessionId === sessionId) return false;
-        if (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")) return false;
+        if (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
+          // Se la transazione ha un ID sessione ed è diversa da quella che stiamo annullando, mantienila attiva!
+          if (t.importSessionId && t.importSessionId !== sessionId) {
+            return true;
+          }
+          return false;
+        }
         
         // Se stiamo annullando lo storico, rimuoviamo anche TUTTI i previsionali generati dal Wizard Inizio Anno
         if (isStorico && t.isForecast && t.sourceRef === 'Wizard Inizio Anno') return false;
