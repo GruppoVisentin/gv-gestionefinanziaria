@@ -331,45 +331,61 @@ function migrateBackupData(data: BackupData): BackupData {
       'Pizzolato Jody', 'Edillux di Abo Ghazalah', 'Visentin Costruzioni Srl', 'Storgato'
     ].map(s => s.toLowerCase());
 
-    // Se esiste una sessione storica già annullata, rimuove a monte le transazioni storiche e i previsionali associati
+    const historicalRowNames = [
+      'SUBAPPALTI MANODOPERA', 'SUBAPPALTI SU CANTIERI', 'FORNITORI MATERIALI', 'PROFESSIONISTI ESTERNI',
+      'NOLEGGI', 'CARBURANTI', 'RIFIUTI E MACERIE', 'PRANZI', 'ASSICURAZIONE CANTIERI',
+      'STIPENDI DIPENDENTI OPERATIVI', 'CONTRIBUTI DIPENDENTI OPERATIVI', 'STIPENDI DIPENDENTI UFFICIO',
+      'CONTRIBUTI DIPENDENTI UFFICIO', 'COLLABORATORI FISSI', 'COMPENSO AMMINISTRATORI', 'CONSULENTI OPEX20',
+      'CONSULENTI', 'SOA E ISO', 'COMMERCIALISTA', 'AFFITTI SEDI', 'UTENZE SEDI', 'SOFTWARE', 'CANCELLERIA',
+      'ASSICURAZIONE MEZZI E BOLLI', 'ASSICURAZIONI GENERALI', 'REVISIONE MACCHINARI',
+      'RIPARAZIONI MACCHINARI E ATTREZZATURE', 'NUOVE ATTREZZATURE', 'ACQUISIZIONE TERRENI o IMMOBILI',
+      'ACQUISIZIONE TERRENI', 'NUOVA SOCIETA\'', 'CORSI DIPENDENTI', 'VISITE MEDICHE DIPENDENTI',
+      "PUBBLICITA' E MARKETING", 'VOLONTARIATO', 'TASSE', 'VERSAMENTO IVA', 'RITENUTE SU BONIFICI',
+      "RITENUTE D'ACCONTO SU PROFESSIONISTI", 'SANZIONI', 'IMPREVISTI', 'SPESE BANCARIE',
+      'RATE E INTERESSI FINANZIAMENTI', 'PRELIEVO UTILE SOCI', 'DE FILIPPO GIOVANNI', 'SELMEDIN NESIMOSKI'
+    ].map(s => s.toLowerCase());
+
+    // 1. Etichetta retroattivamente i previsionali generati da storico con sourceRef: 'Wizard Inizio Anno'
+    let taggedTxs = data.transactions.map(t => {
+      if (t.isForecast && !t.sourceRef && t.description) {
+        const descLower = t.description.toLowerCase();
+        const matchesHist = historicalRowNames.some(name => descLower.includes(name));
+        if (matchesHist) {
+          return { ...t, sourceRef: 'Wizard Inizio Anno' };
+        }
+      }
+      return t;
+    });
+
+    // 2. Se esiste una sessione storica già annullata, rimuove a monte le transazioni storiche e i previsionali associati
     const cancelledStoricoSessions = data.importSessions?.filter(s => s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel")) || [];
-    let filteredTxs = data.transactions;
+    let filteredTxs = taggedTxs;
     if (cancelledStoricoSessions.length > 0) {
       const storicoDescriptions = new Set<string>();
       
-      // 1. Raccoglie le descrizioni dei consuntivi storici presenti prima di filtrarli
-      data.transactions.forEach(t => {
+      // Raccoglie le descrizioni dei consuntivi storici presenti prima di filtrarli
+      taggedTxs.forEach(t => {
         if (!t.isForecast && t.sourceRef && t.sourceRef.startsWith("Storico Excel") && t.description) {
           storicoDescriptions.add(t.description.trim().toLowerCase());
         }
       });
-      
-      // 2. Aggiunge le chiavi standard delle voci di spesa dell'Excel Storico come fallback per quando sono già state rimosse
-      const HISTORICAL_EXCEL_ROW_NAMES = [
-        'SUBAPPALTI MANODOPERA', 'SUBAPPALTI SU CANTIERI', 'FORNITORI MATERIALI', 'PROFESSIONISTI ESTERNI',
-        'NOLEGGI', 'CARBURANTI', 'RIFIUTI E MACERIE', 'PRANZI', 'ASSICURAZIONE CANTIERI',
-        'STIPENDI DIPENDENTI OPERATIVI', 'CONTRIBUTI DIPENDENTI OPERATIVI', 'STIPENDI DIPENDENTI UFFICIO',
-        'CONTRIBUTI DIPENDENTI UFFICIO', 'COLLABORATORI FISSI', 'COMPENSO AMMINISTRATORI', 'CONSULENTI OPEX20',
-        'CONSULENTI', 'SOA E ISO', 'COMMERCIALISTA', 'AFFITTI SEDI', 'UTENZE SEDI', 'SOFTWARE', 'CANCELLERIA',
-        'ASSICURAZIONE MEZZI E BOLLI', 'ASSICURAZIONI GENERALI', 'REVISIONE MACCHINARI',
-        'RIPARAZIONI MACCHINARI E ATTREZZATURE', 'NUOVE ATTREZZATURE', 'ACQUISIZIONE TERRENI o IMMOBILI',
-        'ACQUISIZIONE TERRENI', 'NUOVA SOCIETA\'', 'CORSI DIPENDENTI', 'VISITE MEDICHE DIPENDENTI',
-        "PUBBLICITA' E MARKETING", 'VOLONTARIATO', 'TASSE', 'VERSAMENTO IVA', 'RITENUTE SU BONIFICI',
-        "RITENUTE D'ACCONTO SU PROFESSIONISTI", 'SANZIONI', 'IMPREVISTI', 'SPESE BANCARIE',
-        'RATE E INTERESSI FINANZIAMENTI', 'PRELIEVO UTILE SOCI', 'DE FILIPPO GIOVANNI', 'SELMEDIN NESIMOSKI'
-      ];
-      HISTORICAL_EXCEL_ROW_NAMES.forEach(name => storicoDescriptions.add(name.toLowerCase()));
 
       filteredTxs = filteredTxs.filter(t => {
         // Rimuove i consuntivi
         if (t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
           return false;
         }
-        // Rimuove i previsionali generati da storico
-        if (t.isForecast && t.description) {
-          const descLower = t.description.trim().toLowerCase();
-          if (storicoDescriptions.has(descLower)) {
+        // Rimuove i previsionali generati da storico (tramite tag o descrizione)
+        if (t.isForecast) {
+          if (t.sourceRef === 'Wizard Inizio Anno') {
             return false;
+          }
+          if (t.description) {
+            const descLower = t.description.trim().toLowerCase();
+            const matchesHist = historicalRowNames.some(name => descLower.includes(name)) || storicoDescriptions.has(descLower);
+            if (matchesHist) {
+              return false;
+            }
           }
         }
         return true;
@@ -1314,6 +1330,9 @@ const App: React.FC = () => {
         if (t.importSessionId === sessionId) return false;
         if (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")) return false;
         
+        // Se stiamo annullando lo storico, rimuoviamo anche TUTTI i previsionali generati dal Wizard Inizio Anno
+        if (isStorico && t.isForecast && t.sourceRef === 'Wizard Inizio Anno') return false;
+
         // Se è storico ed è un previsionale copiato da una delle transazioni eliminate, rimuovilo
         if (t.isForecast && isStorico && t.description) {
           const descLower = t.description.trim().toLowerCase();

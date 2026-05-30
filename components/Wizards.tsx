@@ -92,7 +92,8 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
         category: tx.category,
         description: tx.description,
         ceType: tx.ceType,
-        isForecast: true
+        isForecast: true,
+        sourceRef: 'Wizard Inizio Anno'
       };
     });
 
