@@ -807,6 +807,9 @@ export const mappaTipologiaACategoriaApp = (
 ): string | null => {
   if (tipo === 'FEA') return null;
   const t = tipologia.toLowerCase();
+  if (t.includes('sub appalti su cantier') || t.includes('subappalti su cantier') || t.includes('subappalto su cantier') || t.includes('sub app alto su cantier') || t.includes('subappalti cantier')) {
+    return '[FORNITORI] Subappalti su Cantieri';
+  }
   if (t.includes('sub appalti') || t.includes('subappalto')) return '[PERSONALE] Subappalti Manodopera';
   if (t.includes('fornitore materiale') || t.includes('materiale edile') || t.includes('fornitura ferro')) return '[FORNITORI] Fornitori Materiali';
   if (t.includes('smaltimento') || t.includes('rifiuti') || t.includes('wc') || t.includes('box')) return '[CANTIERE] Rifiuti e Macerie';

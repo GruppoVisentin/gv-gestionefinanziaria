@@ -316,8 +316,87 @@ function migrateBackupData(data: BackupData): BackupData {
 
   // 1. Migrate transactions and ensure they map to the correct ceType dynamically
   if (data.transactions) {
-    migrated.transactions = data.transactions.map(tx => {
+    const subCantieriSuppliers = [
+      'Munaretto', 'Solar system', 'Lattoneria Rossanese', 'Asolo Pavimenti', 'il fabbro srl', 'Nart Sonia',
+      'Decorgesso srls', 'Galliazzo Ivano', 'Visentin & Gasparetto', 'Geosolar', 'Agostini Sergio',
+      'Aeerre costruzioni', 'Conte Ambienti Esterni', 'Falegnameria Trentin', 'Visentin Francesco',
+      'Dkh srls', 'Masaro Fabio', 'Roccon Silvio', 'Pozzobon Serramenti', 'M.N. costruzioni srls',
+      'Edilmuli di zogaj', 'Timexpert', 'Termoidraulica G.sc.', 'Cbm martignago', 'Tm toniolo',
+      'Ganeo adriano', 'Bs impianti', 'Colordesign', 'E.p. ponteggi', 'Az. Florovivaistica Giandino',
+      'Bonetto', 'Miftaroski Fikmet', 'Metope', 'Tm toniolo massimo', 'Serramenti Ruffato',
+      'Ikon tecnology', 'Edilmonastier', 'Pedemontana Serramenti', 'Guritenco Igor', 'Soligo Damiano',
+      'Contarin', 'Dametto Simone', 'Dm Posa srls', 'Moro serrande', 'Cetos srl', 'Eurocostruzioni srls',
+      'Giuliano coperture srls', 'Nicola metal design', 'Libra serramenti', 'Paesaggi umbri consorzio',
+      'Sbrissa sebastiano giardini', 'Moretto scavi', 'Lillo Coperture', 'Alpac', 'Edile coperture',
+      'Pizzolato Jody', 'Edillux di Abo Ghazalah', 'Visentin Costruzioni Srl', 'Storgato'
+    ].map(s => s.toLowerCase());
+
+    // Se esiste una sessione storica già annullata, rimuove a monte le transazioni storiche e i previsionali associati
+    const cancelledStoricoSessions = data.importSessions?.filter(s => s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel")) || [];
+    let filteredTxs = data.transactions;
+    if (cancelledStoricoSessions.length > 0) {
+      const storicoDescriptions = new Set<string>();
+      
+      // 1. Raccoglie le descrizioni dei consuntivi storici presenti prima di filtrarli
+      data.transactions.forEach(t => {
+        if (!t.isForecast && t.sourceRef && t.sourceRef.startsWith("Storico Excel") && t.description) {
+          storicoDescriptions.add(t.description.trim().toLowerCase());
+        }
+      });
+      
+      // 2. Aggiunge le chiavi standard delle voci di spesa dell'Excel Storico come fallback per quando sono già state rimosse
+      const HISTORICAL_EXCEL_ROW_NAMES = [
+        'SUBAPPALTI MANODOPERA', 'SUBAPPALTI SU CANTIERI', 'FORNITORI MATERIALI', 'PROFESSIONISTI ESTERNI',
+        'NOLEGGI', 'CARBURANTI', 'RIFIUTI E MACERIE', 'PRANZI', 'ASSICURAZIONE CANTIERI',
+        'STIPENDI DIPENDENTI OPERATIVI', 'CONTRIBUTI DIPENDENTI OPERATIVI', 'STIPENDI DIPENDENTI UFFICIO',
+        'CONTRIBUTI DIPENDENTI UFFICIO', 'COLLABORATORI FISSI', 'COMPENSO AMMINISTRATORI', 'CONSULENTI OPEX20',
+        'CONSULENTI', 'SOA E ISO', 'COMMERCIALISTA', 'AFFITTI SEDI', 'UTENZE SEDI', 'SOFTWARE', 'CANCELLERIA',
+        'ASSICURAZIONE MEZZI E BOLLI', 'ASSICURAZIONI GENERALI', 'REVISIONE MACCHINARI',
+        'RIPARAZIONI MACCHINARI E ATTREZZATURE', 'NUOVE ATTREZZATURE', 'ACQUISIZIONE TERRENI o IMMOBILI',
+        'ACQUISIZIONE TERRENI', 'NUOVA SOCIETA\'', 'CORSI DIPENDENTI', 'VISITE MEDICHE DIPENDENTI',
+        "PUBBLICITA' E MARKETING", 'VOLONTARIATO', 'TASSE', 'VERSAMENTO IVA', 'RITENUTE SU BONIFICI',
+        "RITENUTE D'ACCONTO SU PROFESSIONISTI", 'SANZIONI', 'IMPREVISTI', 'SPESE BANCARIE',
+        'RATE E INTERESSI FINANZIAMENTI', 'PRELIEVO UTILE SOCI'
+      ];
+      HISTORICAL_EXCEL_ROW_NAMES.forEach(name => storicoDescriptions.add(name.toLowerCase()));
+
+      filteredTxs = filteredTxs.filter(t => {
+        // Rimuove i consuntivi
+        if (t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
+          return false;
+        }
+        // Rimuove i previsionali generati da storico
+        if (t.isForecast && t.description) {
+          const descLower = t.description.trim().toLowerCase();
+          if (storicoDescriptions.has(descLower)) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    migrated.transactions = filteredTxs.map(tx => {
       let category = tx.category;
+      let description = tx.description || '';
+      const descLower = description.toLowerCase();
+
+      // Correzione retroattiva subappalti su cantieri finiti in subappalti manodopera
+      if (category === '[PERSONALE] Subappalti Manodopera' || category === '[CANTIERE] Subappalti Manodopera' || category === 'SUBAPPALTI MANODOPERA') {
+        const matchesSupplier = subCantieriSuppliers.some(sup => descLower.includes(sup));
+        const matchesPhrase = /sub.*cantier/i.test(descLower) || descLower.includes('sub appalti su cantieri') || descLower.includes('subappalti su cantieri');
+        if (matchesSupplier || matchesPhrase) {
+          category = '[FORNITORI] Subappalti su Cantieri';
+        }
+      }
+
+      // Correzione retroattiva terreni finiti in fornitori materiali
+      if (category === '[FORNITORI] Fornitori Materiali' || category === '[CANTIERE] Fornitori Materiali' || category === 'FORNITORI MATERIALI') {
+        if (/terreno|terreni/i.test(descLower) || /acquisizione.*terren/i.test(descLower) || /acquisto.*terren/i.test(descLower)) {
+          category = '[INVESTIMENTI] Acquisto Terreni per Sviluppo';
+        }
+      }
+
       if (category && CATEGORY_MIGRATION_MAP[category]) {
         category = CATEGORY_MIGRATION_MAP[category];
       }
@@ -1223,7 +1302,28 @@ const App: React.FC = () => {
   const handleAnnullaSessioneImport = (sessionId: string) => {
     if (!window.confirm("Sei sicuro di voler annullare questo import? Tutte le transazioni collegate verranno rimosse.")) return;
     
-    setTransactions(prev => prev.filter(t => t.importSessionId !== sessionId));
+    const session = importSessions.find(s => s.id === sessionId);
+    const isStorico = session && session.nomeFile && session.nomeFile.startsWith("Storico Excel");
+
+    setTransactions(prev => {
+      // Raccoglie le descrizioni dei consuntivi storici collegati a questa sessione prima di eliminarli
+      const storicoTxs = prev.filter(t => (t.importSessionId === sessionId) || (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")));
+      const storicoDescSet = new Set(storicoTxs.map(t => t.description?.trim().toLowerCase()).filter(Boolean));
+
+      return prev.filter(t => {
+        if (t.importSessionId === sessionId) return false;
+        if (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")) return false;
+        
+        // Se è storico ed è un previsionale copiato da una delle transazioni eliminate, rimuovilo
+        if (t.isForecast && isStorico && t.description) {
+          const descLower = t.description.trim().toLowerCase();
+          if (storicoDescSet.has(descLower)) {
+            return false;
+          }
+        }
+        return true;
+      });
+    });
     setImportSessions(prev => prev.map(s => s.id === sessionId ? { ...s, annullata: true } : s));
   };
 

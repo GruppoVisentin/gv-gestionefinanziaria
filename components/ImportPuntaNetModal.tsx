@@ -274,7 +274,11 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
             const descLower = mov.descrizione.toLowerCase();
             const entLower = mov.entity.toLowerCase();
             
-            if (/subappalto|sub-appalto|sub appalto/i.test(descLower) || /subappalto|sub-appalto|sub appalto/i.test(entLower)) {
+            if (/sub.*cantier/i.test(descLower) || /sub.*cantier/i.test(entLower)) {
+              categoria = '[FORNITORI] Subappalti su Cantieri';
+              ceType = 'costo_variabile';
+              confidenza = 'media';
+            } else if (/subappalto|sub-appalto|sub appalto/i.test(descLower) || /subappalto|sub-appalto|sub appalto/i.test(entLower)) {
               categoria = '[PERSONALE] Subappalti Manodopera';
               ceType = 'costo_variabile';
               confidenza = 'media';

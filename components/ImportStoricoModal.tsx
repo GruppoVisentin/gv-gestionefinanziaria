@@ -25,7 +25,7 @@ const colUscitaCons  = (m: number) => 6 + m * 5;
 const MAPPA_USCITE: Record<string, { categoria: string; ceType: string }> = {
   // Costi variabili cantiere
   'SUBAPPALTI MANODOPERA':        { categoria: '[CANTIERE] Subappalti Manodopera',           ceType: 'costo_variabile' },
-  'SUBAPPALTI SU CANTIERI':       { categoria: '[CANTIERE] Subappalti Manodopera',           ceType: 'costo_variabile' },
+  'SUBAPPALTI SU CANTIERI':       { categoria: '[FORNITORI] Subappalti su Cantieri',         ceType: 'costo_variabile' },
   'FORNITORI MATERIALI':          { categoria: '[CANTIERE] Fornitori Materiali',             ceType: 'costo_variabile' },
   'PROFESSIONISTI ESTERNI':       { categoria: '[CONSULENZE] Professionisti Esterni di Cantiere', ceType: 'costo_variabile' },
   'NOLEGGI':                      { categoria: '[CANTIERE] Noleggi Attrezzature e Mezzi',   ceType: 'costo_variabile' },
@@ -53,7 +53,10 @@ const MAPPA_USCITE: Record<string, { categoria: string; ceType: string }> = {
   'ASSICURAZIONI GENERALI':           { categoria: '[COMPLIANCE] Assicurazioni Generali',       ceType: 'costo_fisso' },
   'REVISIONE MACCHINARI':             { categoria: '[MEZZI] Revisione Macchinari',              ceType: 'costo_fisso' },
   'RIPARAZIONI MACCHINARI E ATTREZZATURE': { categoria: '[MEZZI] Riparazioni Macchinari Programmate', ceType: 'costo_fisso' },
-  'NUOVE ATTREZZATURE':               { categoria: '[STRUTTURA] Ammortamenti',                  ceType: 'capex' },
+  'NUOVE ATTREZZATURE':               { categoria: '[INVESTIMENTI] Acquisto Attrezzature e Macchinari', ceType: 'capex' },
+  'ACQUISIZIONE TERRENI o IMMOBILI':  { categoria: '[INVESTIMENTI] Acquisto Terreni per Sviluppo', ceType: 'capex' },
+  'ACQUISIZIONE TERRENI':             { categoria: '[INVESTIMENTI] Acquisto Terreni per Sviluppo', ceType: 'capex' },
+  'NUOVA SOCIETA\'':                  { categoria: '[INVESTIMENTI] Investimento in Nuova Società', ceType: 'capex' },
   'CORSI DIPENDENTI':                 { categoria: '[COMPLIANCE] Corsi Dipendenti',             ceType: 'costo_fisso' },
   'VISITE MEDICHE DIPENDENTI':        { categoria: '[COMPLIANCE] Visite Mediche Dipendenti',    ceType: 'costo_fisso' },
   "PUBBLICITA' E MARKETING":          { categoria: '[MARKETING] Pubblicità e Marketing',        ceType: 'costo_fisso' },
