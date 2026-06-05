@@ -389,12 +389,27 @@ Rispondi in italiano, preciso e conciso. Non inventare dati non presenti.`;
                     {txFiltrate.map((tx, i) => {
                       const ceInfo = CE_TYPE_LABEL[tx.ceType ?? ''];
                       return (
-                        <tr key={tx.id} className={`border-b border-slate-50 hover:bg-slate-50/50 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                        <tr key={tx.id} className={`border-b border-slate-50 hover:bg-slate-50/50 ${
+                          tx.isForecast 
+                            ? 'bg-amber-50/35 hover:bg-amber-100/40' 
+                            : i % 2 === 0 ? '' : 'bg-slate-50/30'
+                        }`}>
                           <td className="py-2.5 px-4 text-[10px] font-mono text-slate-400 whitespace-nowrap">
                             {new Date(tx.date).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })}
                           </td>
                           <td className="py-2.5 px-4 min-w-0">
-                            <p className="text-xs font-bold text-slate-700 truncate max-w-[180px]">{tx.description}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-xs font-bold text-slate-700 truncate max-w-[180px]">{tx.description}</p>
+                              {tx.isForecast ? (
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-amber-100 text-amber-800 uppercase tracking-wide">
+                                  Previsionale
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-100 text-emerald-800 uppercase tracking-wide">
+                                  Consuntivo
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[10px] text-slate-400 truncate max-w-[180px]">{tx.category}</p>
                           </td>
                           <td className="py-2.5 px-4">
