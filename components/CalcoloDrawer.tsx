@@ -26,6 +26,14 @@ export interface CalcoloDrawerProps {
   transazioniContribuenti: Transaction[];
   anno: number;
   onClose: () => void;
+  proiezioneKpiValore?: number;
+  proiezionePercentuale?: number;
+  proiezioneFormulaSteps?: FormulaStep[];
+  proiezioneTransazioniContribuenti?: Transaction[];
+  soloPrevisionaleKpiValore?: number;
+  soloPrevisionalePercentuale?: number;
+  soloPrevisionaleFormulaSteps?: FormulaStep[];
+  soloPrevisionaleTransazioniContribuenti?: Transaction[];
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────
@@ -64,7 +72,16 @@ const CalcoloDrawer: React.FC<CalcoloDrawerProps> = ({
   transazioniContribuenti,
   anno,
   onClose,
+  proiezioneKpiValore,
+  proiezionePercentuale,
+  proiezioneFormulaSteps,
+  proiezioneTransazioniContribuenti,
+  soloPrevisionaleKpiValore,
+  soloPrevisionalePercentuale,
+  soloPrevisionaleFormulaSteps,
+  soloPrevisionaleTransazioniContribuenti,
 }) => {
+  const [viewMode, setViewMode] = useState<'consuntivo' | 'misto' | 'previsionale'>('consuntivo');
   const [activeTab, setActiveTab] = useState<'formula' | 'transazioni' | 'ai'>('formula');
   const [filtroTipo, setFiltroTipo] = useState<'tutti' | 'income' | 'expense'>('tutti');
   const [cercaTx, setCercaTx] = useState('');
@@ -73,6 +90,28 @@ const CalcoloDrawer: React.FC<CalcoloDrawerProps> = ({
   const [aiLoading, setAiLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const showToggle = proiezioneKpiValore !== undefined || soloPrevisionaleKpiValore !== undefined;
+  
+  const currentValore = 
+    viewMode === 'previsionale' && soloPrevisionaleKpiValore !== undefined ? soloPrevisionaleKpiValore :
+    viewMode === 'misto' && proiezioneKpiValore !== undefined ? proiezioneKpiValore : 
+    kpiValore;
+
+  const currentPercentuale = 
+    viewMode === 'previsionale' && soloPrevisionalePercentuale !== undefined ? soloPrevisionalePercentuale :
+    viewMode === 'misto' && proiezionePercentuale !== undefined ? proiezionePercentuale : 
+    kpiPercentuale;
+
+  const currentSteps = 
+    viewMode === 'previsionale' && soloPrevisionaleFormulaSteps ? soloPrevisionaleFormulaSteps :
+    viewMode === 'misto' && proiezioneFormulaSteps ? proiezioneFormulaSteps : 
+    formulaSteps;
+
+  const currentTransazioni = 
+    viewMode === 'previsionale' && soloPrevisionaleTransazioniContribuenti ? soloPrevisionaleTransazioniContribuenti :
+    viewMode === 'misto' && proiezioneTransazioniContribuenti ? proiezioneTransazioniContribuenti : 
+    transazioniContribuenti;
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -84,7 +123,7 @@ const CalcoloDrawer: React.FC<CalcoloDrawerProps> = ({
     return () => document.removeEventListener('keydown', h);
   }, [onClose]);
 
-  const txFiltrate = transazioniContribuenti
+  const txFiltrate = currentTransazioni
     .filter(tx => {
       if (filtroTipo === 'income' && tx.type !== 'INCOME') return false;
       if (filtroTipo === 'expense' && tx.type !== 'EXPENSE') return false;
@@ -94,27 +133,28 @@ const CalcoloDrawer: React.FC<CalcoloDrawerProps> = ({
     })
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
-  const totaleIncome  = transazioniContribuenti.filter(t => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0);
-  const totaleExpense = transazioniContribuenti.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
+  const totaleIncome  = currentTransazioni.filter(t => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0);
+  const totaleExpense = currentTransazioni.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
 
   const buildAiContext = () => {
-    const topTx = [...transazioniContribuenti]
+    const topTx = [...currentTransazioni]
       .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
       .slice(0, 20);
     return `Sei un esperto di controllo di gestione per imprese edili italiane.
 Stai analizzando il KPI "${kpiNome}" dell'anno ${anno} di Gruppo Visentin SRL.
+MODALITA: ${viewMode === 'previsionale' ? 'Solo Previsionale (12 mesi)' : viewMode === 'misto' ? 'Consuntivo + Previsionali residui' : 'Consuntivo YTD'}
 
-VALORE ATTUALE: ${fmt(kpiValore)}${kpiPercentuale ? ` (${fmtPct(kpiPercentuale)} ${kpiPercentualeLabel})` : ''}
+VALORE ATTUALE: ${fmt(currentValore)}${currentPercentuale ? ` (${fmtPct(currentPercentuale)} ${kpiPercentualeLabel})` : ''}
 
 FORMULA DI CALCOLO:
-${formulaSteps.map(s => `${s.isRisultato ? '= ' : s.isPositivo ? '+ ' : '- '}${s.label}: ${fmt(Math.abs(s.valore))}`).join('\n')}
+${currentSteps.map(s => `${s.isRisultato ? '= ' : s.isPositivo ? '+ ' : '- '}${s.label}: ${fmt(Math.abs(s.valore))}`).join('\n')}
 
 LE 20 TRANSAZIONI CON MAGGIOR IMPATTO:
 ${topTx.map(tx =>
-  `${tx.type === 'INCOME' ? '+' : '-'}${fmt(tx.amount)} | ${tx.date} | ${tx.description} | ${tx.category} | ceType: ${tx.ceType ?? 'n/d'}`
+  `${tx.type === 'INCOME' ? '+' : '-'}${fmt(tx.amount)} | ${tx.date} | ${tx.description} | ${tx.category} | ceType: ${tx.ceType ?? 'n/d'}${tx.isForecast ? ' (Previsionale)' : ''}`
 ).join('\n')}
 
-Totale transazioni: ${transazioniContribuenti.length} | Entrate: ${fmt(totaleIncome)} | Uscite: ${fmt(totaleExpense)}
+Totale transazioni: ${currentTransazioni.length} | Entrate: ${fmt(totaleIncome)} | Uscite: ${fmt(totaleExpense)}
 
 Rispondi in italiano, preciso e conciso. Non inventare dati non presenti.`;
   };
@@ -168,29 +208,66 @@ Rispondi in italiano, preciso e conciso. Non inventare dati non presenti.`;
       <div className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl bg-white shadow-2xl flex flex-col">
 
         {/* Header */}
-        <div className="flex items-start justify-between px-8 py-6 border-b border-slate-100 bg-slate-50 shrink-0">
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Come è stato calcolato</p>
-            <h2 className="text-2xl font-black text-slate-900">{kpiNome}</h2>
-            <div className="flex items-center gap-3 mt-1">
-              <span className="font-mono text-lg font-black text-slate-800">{fmt(kpiValore)}</span>
-              {kpiPercentuale !== undefined && (
-                <span className="px-2 py-0.5 bg-slate-200 text-slate-600 text-xs font-black rounded-full">
-                  {fmtPct(kpiPercentuale)} {kpiPercentualeLabel}
-                </span>
-              )}
+        <div className="flex flex-col border-b border-slate-100 bg-slate-50 shrink-0">
+          <div className="flex items-start justify-between px-8 pt-6 pb-4">
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Come è stato calcolato</p>
+              <h2 className="text-2xl font-black text-slate-900">{kpiNome}</h2>
+              <div className="flex items-center gap-3 mt-1">
+                <span className="font-mono text-lg font-black text-slate-800">{fmt(currentValore)}</span>
+                {currentPercentuale !== undefined && (
+                  <span className="px-2 py-0.5 bg-slate-200 text-slate-600 text-xs font-black rounded-full">
+                    {fmtPct(currentPercentuale)} {kpiPercentualeLabel}
+                  </span>
+                )}
+              </div>
             </div>
+            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
+              <X size={18} className="text-slate-500" />
+            </button>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
-            <X size={18} className="text-slate-500" />
-          </button>
+          
+          {showToggle && (
+            <div className="px-8 pb-4 flex gap-2 flex-wrap">
+              <button
+                onClick={() => setViewMode('consuntivo')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  viewMode === 'consuntivo'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Consuntivo YTD
+              </button>
+              <button
+                onClick={() => setViewMode('misto')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  viewMode === 'misto'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Consuntivo + Previsionali
+              </button>
+              <button
+                onClick={() => setViewMode('previsionale')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  viewMode === 'previsionale'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Solo Previsionali (12 mesi)
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Tab navigation */}
         <div className="flex border-b border-slate-100 px-4 pt-2 gap-1 shrink-0">
           {[
             { id: 'formula',     icon: ChevronRight,    label: 'Formula' },
-            { id: 'transazioni', icon: TableProperties, label: `Transazioni (${transazioniContribuenti.length})` },
+            { id: 'transazioni', icon: TableProperties, label: `Transazioni (${currentTransazioni.length})` },
             { id: 'ai',          icon: MessageSquare,   label: "Chiedi all'AI" },
           ].map(tab => (
             <button
@@ -215,7 +292,7 @@ Rispondi in italiano, preciso e conciso. Non inventare dati non presenti.`;
           {activeTab === 'formula' && (
             <div className="px-8 py-6">
               <div className="space-y-1">
-                {formulaSteps.map((step, i) => (
+                {currentSteps.map((step, i) => (
                   <div key={i} className={`flex items-center justify-between py-3 px-4 rounded-xl ${
                     step.isRisultato ? 'bg-slate-900 text-white font-black' :
                     step.indent ? 'bg-slate-50 border border-slate-100' : 'border-b border-slate-100'
@@ -250,7 +327,13 @@ Rispondi in italiano, preciso e conciso. Non inventare dati non presenti.`;
                 <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Regola di classificazione</p>
                 <p className="text-xs text-blue-800 leading-relaxed">
                   Ogni transazione contribuisce in base al suo <span className="font-black">ceType</span>.
-                  Valori riferiti all'anno {anno}, solo consuntivi (<span className="font-mono">isForecast = false</span>).
+                  {viewMode === 'consuntivo' ? (
+                    <>Valori riferiti all'anno {anno}, solo consuntivi (<span className="font-mono">isForecast = false</span>).</>
+                  ) : viewMode === 'misto' ? (
+                    <>Valori proiettati a fine anno {anno}, inclusi consuntivi YTD e previsionali residui non ancora saldati.</>
+                  ) : (
+                    <>Valori previsionali puri dell'anno {anno} (<span className="font-mono">isForecast = true</span> per tutto l'anno, ignorando i consuntivi).</>
+                  )}
                 </p>
               </div>
             </div>

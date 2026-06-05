@@ -101,7 +101,7 @@ export const VARIABLE_COST_CATEGORIES: string[] = [
 
   // ─── COSTI DIRETTI DI CANTIERE ────────────────────────────────
   "[CANTIERE] Assicurazione Cantieri",
-  "[CANTIERE] Oneri Comunali",
+  "[CANTIERE] Oneri Comunali, Abaco e Occupazioni",
   "[CANTIERE] Rifiuti e Macerie",
   "[CANTIERE] Pranzi e Trasferte Cantiere",           // era: PRANZI
 
@@ -205,7 +205,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
   "[FORNITORI] Subappalti su Cantieri":                'costo_variabile',
   "[CONSULENZE] Professionisti Esterni di Cantiere":   'costo_variabile',
   "[CANTIERE] Assicurazione Cantieri":                 'costo_variabile',
-  "[CANTIERE] Oneri Comunali":                         'costo_variabile',
+  "[CANTIERE] Oneri Comunali, Abaco e Occupazioni":    'costo_variabile',
   "[CANTIERE] Rifiuti e Macerie":                      'costo_variabile',
   "[CANTIERE] Pranzi e Trasferte Cantiere":            'costo_variabile',
   "[MEZZI] Riparazioni Macchinari Urgenti":            'costo_variabile',
@@ -321,6 +321,7 @@ export const CATEGORY_MIGRATION_MAP: Record<string, string> = {
   "[CANTIERE] Subappalti Manodopera":      "[PERSONALE] Subappalti Manodopera",
   "[CANTIERE] Fornitori Materiali":        "[FORNITORI] Fornitori Materiali",
   "[SOCI] Prelievo Utile / Dividendi":     "[SOCI] Prelievo Utile Soci",
+  "[CANTIERE] Oneri Comunali":             "[CANTIERE] Oneri Comunali, Abaco e Occupazioni",
 };
 
 // Mapping Category -> Suppliers/Subcategories

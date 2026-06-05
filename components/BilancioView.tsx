@@ -6,7 +6,8 @@ import {
   SPSnapshot, 
   RimanenzeData, 
   InitialBalanceBreakdown,
-  AppView
+  AppView,
+  Project
 } from '../types';
 import CEView from './CEView';
 import SPView from './SPView';
@@ -45,6 +46,7 @@ interface BilancioViewProps {
   onChangeAliquotaIRES: (v: number) => void;
   onChangeAliquotaIRAP: (v: number) => void;
   initialTab?: 'summary' | 'pl' | 'sp' | 'budget' | 'rating' | 'analisi' | 'iva';
+  projects?: Project[];
 }
 
 const BilancioView: React.FC<BilancioViewProps> = (props) => {
@@ -194,6 +196,8 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             rimanenze={props.rimanenze}
             onRimanenzeChange={props.onRimanenzeChange}
             onGoToManuale={props.onGoToManuale}
+            projects={props.projects}
+            initialData={props.initialData}
           />
         )}
         {activeTab === 'sp' && (

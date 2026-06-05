@@ -140,8 +140,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   const getTabColor = () => {
     switch (activeTab) {
-      case 'fixed': return 'indigo';
-      case 'variable': return 'rose';
+      case 'fixed': return 'rose';
+      case 'variable': return 'indigo';
       case 'income': return 'emerald';
       case 'tipologie': return 'amber';
       case 'data': return 'violet';
@@ -175,7 +175,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             onClick={() => { setActiveTab('fixed'); setEditingIndex(null); }}
             className={`flex-1 min-w-[100px] py-4 text-xs md:text-sm font-bold uppercase tracking-wide transition-all border-b-2 ${
               activeTab === 'fixed' 
-                ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50' 
+                ? 'border-rose-600 text-rose-700 bg-rose-50/50' 
                 : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
             }`}
           >
@@ -185,7 +185,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             onClick={() => { setActiveTab('variable'); setEditingIndex(null); }}
             className={`flex-1 min-w-[100px] py-4 text-xs md:text-sm font-bold uppercase tracking-wide transition-all border-b-2 ${
               activeTab === 'variable' 
-                ? 'border-rose-600 text-rose-700 bg-rose-50/50' 
+                ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50' 
                 : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
             }`}
           >

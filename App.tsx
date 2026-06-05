@@ -392,59 +392,27 @@ function migrateBackupData(data: BackupData): BackupData {
 
     migrated.importSessions = updatedSessions;
 
-    // 2. Raccoglie gli ID delle sessioni storiche annullate e attive
+    // 2. Raccoglie gli ID di tutte le sessioni annullate
+    const cancelledSessionIds = new Set(
+      data.importSessions?.filter(s => s.annullata).map(s => s.id) || []
+    );
     const cancelledStoricoSessionIds = new Set(
       data.importSessions?.filter(s => s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel")).map(s => s.id) || []
     );
     const hasActiveStoricoSession = data.importSessions?.some(s => !s.annullata && s.nomeFile && s.nomeFile.startsWith("Storico Excel"));
 
-    // 3. Rileva se ci sono consuntivi storici attivi nel database (inclusi quelli non tracciati da vecchi import)
-    const hasActiveStoricoActuals = taggedTxs.some(t => !t.isForecast && t.sourceRef && t.sourceRef.startsWith("Storico Excel"));
-
-    // 4. Determina se ripulire i previsionali storici: solo se non ci sono consuntivi attivi e non c'è una sessione attiva
-    const shouldCleanForecasts = !hasActiveStoricoActuals && !hasActiveStoricoSession;
-
     let filteredTxs = taggedTxs;
     
-    // Rimuove i consuntivi appartenenti SOLO alle sessioni storiche annullate
-    if (cancelledStoricoSessionIds.size > 0) {
+    // Rimuove i consuntivi appartenenti a QUALSIASI sessione annullata
+    if (cancelledSessionIds.size > 0) {
       filteredTxs = filteredTxs.filter(t => {
+        if (t.importSessionId && cancelledSessionIds.has(t.importSessionId)) {
+          return false;
+        }
         if (t.sourceRef && t.sourceRef.startsWith("Storico Excel")) {
-          // Se la transazione appartiene a una sessione annullata, eliminala
-          if (t.importSessionId && cancelledStoricoSessionIds.has(t.importSessionId)) {
-            return false;
-          }
           // Se non ha ID sessione (vecchio import), eliminala solo se non ci sono sessioni attive
           if (!t.importSessionId && !hasActiveStoricoSession) {
             return false;
-          }
-        }
-        return true;
-      });
-    }
-
-    if (shouldCleanForecasts) {
-      const storicoDescriptions = new Set<string>();
-      
-      // Raccoglie le descrizioni dei consuntivi storici presenti prima di filtrarli (se ce ne fossero rimasti)
-      taggedTxs.forEach(t => {
-        if (!t.isForecast && t.sourceRef && t.sourceRef.startsWith("Storico Excel") && t.description) {
-          storicoDescriptions.add(t.description.trim().toLowerCase());
-        }
-      });
-
-      filteredTxs = filteredTxs.filter(t => {
-        // Rimuove i previsionali generati da storico (tramite tag o descrizione)
-        if (t.isForecast) {
-          if (t.sourceRef === 'Wizard Inizio Anno') {
-            return false;
-          }
-          if (t.description) {
-            const descLower = t.description.trim().toLowerCase();
-            const matchesHist = historicalRowNames.some(name => descLower.includes(name)) || storicoDescriptions.has(descLower);
-            if (matchesHist) {
-              return false;
-            }
           }
         }
         return true;
@@ -821,10 +789,23 @@ const App: React.FC = () => {
       loadedVar = loadedVar.filter(c => c !== quotaCapitaleCat);
     }
     if (!loadedFixed.includes(quotaCapitaleCat)) {
-      // Find the financial category index or append it
       loadedFixed = [...loadedFixed, quotaCapitaleCat];
     }
-    
+
+    // Migrazione forzata: rinomina [CANTIERE] Oneri Comunali → [CANTIERE] Oneri Comunali, Abaco e Occupazioni
+    const oldOneri = "[CANTIERE] Oneri Comunali";
+    const newOneri = "[CANTIERE] Oneri Comunali, Abaco e Occupazioni";
+    if (loadedVar.includes(oldOneri) && !loadedVar.includes(newOneri)) {
+      loadedVar = loadedVar.map(c => c === oldOneri ? newOneri : c);
+    } else if (!loadedVar.includes(newOneri)) {
+      const idx = loadedVar.indexOf("[CANTIERE] Rifiuti e Macerie");
+      if (idx !== -1) {
+        loadedVar = [...loadedVar.slice(0, idx), newOneri, ...loadedVar.slice(idx)];
+      } else {
+        loadedVar = [...loadedVar, newOneri];
+      }
+    }
+
     setFixedCategories(loadedFixed);
     setVariableCategories(loadedVar);
     if (data.incomeCategories) setIncomeCategories(data.incomeCategories);
@@ -858,7 +839,9 @@ const App: React.FC = () => {
     }
     if (data.mappingContiPuntaNet) setMappingContiPuntaNet(data.mappingContiPuntaNet);
     if (data.bozzaImportPuntaNet) setBozzaImportPuntaNet(data.bozzaImportPuntaNet);
-    if (data.importSessions) setImportSessions(data.importSessions);
+    if (data.importSessions) {
+      setImportSessions(data.importSessions);
+    }
     if (data.storicoExcelImportato) setStoricoImportato(data.storicoExcelImportato);
     if (data.aliquoteFiscali) {
       setAliquotaIRES(data.aliquoteFiscali.ires);
@@ -1935,6 +1918,7 @@ const App: React.FC = () => {
             aliquotaIRAP={aliquotaIRAP}
             onChangeAliquotaIRES={setAliquotaIRES}
             onChangeAliquotaIRAP={setAliquotaIRAP}
+            projects={projects}
             initialTab={
               view === AppView.CE_RICLASSIFICATO ? 'pl' :
               view === AppView.STATO_PATRIMONIALE ? 'summary' :

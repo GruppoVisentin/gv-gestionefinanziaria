@@ -50,9 +50,15 @@ interface YearStartWizardProps {
 export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, onSave, onClose }) => {
   const [step, setStep] = useState(1);
   const [targetYear, setTargetYear] = useState(new Date().getFullYear());
+  const [sourceYear, setSourceYear] = useState(new Date().getFullYear() - 1);
   const [proposedTransactions, setProposedTransactions] = useState<Partial<Transaction>[]>([]);
 
-  // Step 1: Check existing forecasts
+  // Sync sourceYear when targetYear changes (default: anno precedente)
+  useEffect(() => {
+    setSourceYear(targetYear - 1);
+  }, [targetYear]);
+
+  // Step 1: Check existing forecasts for target year
   const categorieGiaImportate = useMemo(() => 
     new Set(
       transactions
@@ -67,18 +73,60 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
     [transactions, targetYear]
   );
 
-  const handleStart = () => {
-    const prevYear = targetYear - 1;
+  // Diagnostics: check what data is available for the source year
+  const diagnostics = useMemo(() => {
     const esclusi: CEType[] = ['onere_finanziario', 'ammortamento', 'solo_cashflow', 'capex', 'distribuzione_utile'];
     
-    const historical = transactions.filter(tx => {
+    // All transactions in source year (consuntivi + previsionali)
+    const allSourceYear = transactions.filter(tx => new Date(tx.date).getFullYear() === sourceYear);
+    const consuntivi = allSourceYear.filter(tx => !tx.isForecast && tx.ceType && !esclusi.includes(tx.ceType));
+    const previsionali = allSourceYear.filter(tx => tx.isForecast && tx.ceType && !esclusi.includes(tx.ceType));
+    
+    // What would be imported (excluding already imported categories)
+    const disponibili = [...consuntivi, ...previsionali].filter(tx => !categorieGiaImportate.has(tx.category));
+    
+    return {
+      totaleAnno: allSourceYear.length,
+      consuntivi: consuntivi.length,
+      previsionali: previsionali.length,
+      disponibili: disponibili.length,
+      categorieDisponibili: new Set(disponibili.map(tx => tx.category)).size
+    };
+  }, [transactions, sourceYear, categorieGiaImportate]);
+
+  const handleStart = () => {
+    const esclusi: CEType[] = ['onere_finanziario', 'ammortamento', 'solo_cashflow', 'capex', 'distribuzione_utile'];
+    
+    // Cerca PRIMA i consuntivi, poi i previsionali (i consuntivi hanno priorità)
+    const consuntivi = transactions.filter(tx => {
       const d = new Date(tx.date);
       return !tx.isForecast && 
-             d.getFullYear() === prevYear && 
+             d.getFullYear() === sourceYear && 
              tx.ceType && 
              !esclusi.includes(tx.ceType) &&
              !categorieGiaImportate.has(tx.category);
     });
+
+    const previsionali = transactions.filter(tx => {
+      const d = new Date(tx.date);
+      return tx.isForecast && 
+             d.getFullYear() === sourceYear && 
+             tx.ceType && 
+             !esclusi.includes(tx.ceType) &&
+             !categorieGiaImportate.has(tx.category);
+    });
+
+    // Merge: per ogni categoria usa il consuntivo se disponibile, altrimenti il previsionale
+    const categorieConConsuntivo = new Set(consuntivi.map(tx => tx.category));
+    const previsionaliNonCoperti = previsionali.filter(tx => !categorieConConsuntivo.has(tx.category));
+    
+    // Deduplicate: prendi l'ultimo elemento per ogni categoria
+    const map = new Map<string, Transaction>();
+    [...consuntivi, ...previsionaliNonCoperti].forEach(tx => {
+        map.set(tx.category, tx);
+    });
+    
+    const historical = Array.from(map.values());
 
     const proposed = historical.map(tx => {
       const d = new Date(tx.date);
@@ -166,26 +214,72 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
 
         <div className="flex-1 overflow-y-auto p-6">
           {step === 1 && (
-            <div className="max-w-md mx-auto space-y-6 py-8">
+            <div className="max-w-lg mx-auto space-y-6 py-8">
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex gap-3">
                 <Info className="text-slate-500 shrink-0" size={20} />
                 <p className="text-sm text-slate-700">
                   Questo wizard copierà tutti i costi fissi (stipendi ufficio, affitti, utenze) 
-                  dall'anno precedente come previsionali per l'anno selezionato.
+                  dall'anno selezionato come previsionali per l'anno target.
                   <br /><br />
                   <strong className="text-slate-900">Nota:</strong> Oneri finanziari (rate) e ammortamenti sono esclusi poiché calcolati automaticamente dai finanziamenti registrati in Gestisci.
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Anno Target</label>
-                <select 
-                  value={targetYear} 
-                  onChange={e => setTargetYear(parseInt(e.target.value))}
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-slate-500"
-                >
-                  {[targetYear - 1, targetYear, targetYear + 1].map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase ml-1">Anno Fonte (Storico)</label>
+                  <select 
+                    value={sourceYear} 
+                    onChange={e => setSourceYear(parseInt(e.target.value))}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-slate-500"
+                  >
+                    {[targetYear - 3, targetYear - 2, targetYear - 1].map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase ml-1">Anno Target</label>
+                  <select 
+                    value={targetYear} 
+                    onChange={e => setTargetYear(parseInt(e.target.value))}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-slate-500"
+                  >
+                    {[targetYear - 1, targetYear, targetYear + 1].map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Diagnostics Panel */}
+              <div className="bg-slate-900 p-4 rounded-2xl text-white space-y-3">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Analisi Dati Anno {sourceYear}</div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <div className="text-2xl font-black">{diagnostics.totaleAnno}</div>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Totale Transazioni</div>
+                  </div>
+                  <div className="text-center border-x border-slate-700">
+                    <div className="text-2xl font-black text-emerald-400">{diagnostics.consuntivi}</div>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Consuntivi Utili</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-black text-amber-400">{diagnostics.previsionali}</div>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Previsionali</div>
+                  </div>
+                </div>
+                {diagnostics.disponibili > 0 ? (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex items-center gap-2">
+                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                    <span className="text-xs font-bold text-emerald-300">
+                      {diagnostics.disponibili} transazioni in {diagnostics.categorieDisponibili} categorie pronte per l'importazione
+                    </span>
+                  </div>
+                ) : (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-amber-400 shrink-0" />
+                    <span className="text-xs font-bold text-amber-300">
+                      Nessun dato trovato per il {sourceYear}. Prova a selezionare un anno diverso o aggiungi voci manualmente.
+                    </span>
+                  </div>
+                )}
               </div>
 
               {existingForecastsCount > 0 && (
@@ -202,7 +296,10 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
                 onClick={handleStart}
                 className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg"
               >
-                Analizza Storico {targetYear - 1}
+                {diagnostics.disponibili > 0 
+                  ? `Importa ${diagnostics.disponibili} Voci da ${sourceYear}`
+                  : 'Procedi (aggiungi voci manualmente)'
+                }
                 <ArrowRight size={18} />
               </button>
             </div>
@@ -213,7 +310,7 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
               <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex gap-3 text-amber-800 text-[11px] font-medium leading-relaxed">
                 <Info size={16} className="shrink-0 mt-0.5" />
                 <p>
-                  I previsionali sotto riportati sono derivati dallo storico. Le rate dei mutui e gli ammortamenti non sono inclusi in questo elenco 
+                  I previsionali sotto riportati sono derivati dallo storico {sourceYear}. Le rate dei mutui e gli ammortamenti non sono inclusi in questo elenco 
                   perché sono generati dinamicamente dal sistema Cash Flow sulla base dei finanziamenti attivi in Gestisci.
                 </p>
               </div>
@@ -228,53 +325,73 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
                 </button>
               </div>
 
-              <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="py-3 px-4 text-[10px] font-black text-slate-400 uppercase">Categoria</th>
-                      <th className="py-3 px-4 text-[10px] font-black text-slate-400 uppercase">Mese</th>
-                      <th className="py-3 px-4 text-[10px] font-black text-slate-400 uppercase text-right">Importo</th>
-                      <th className="py-3 px-4 text-[10px] font-black text-slate-400 uppercase text-center">Azioni</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {proposedTransactions.map(tx => (
-                      <tr key={tx.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                        <td className="py-2 px-4">
-                          <div className="text-[11px] font-bold text-slate-700 truncate max-w-[250px]">{tx.category}</div>
-                          <div className="text-[9px] text-slate-400 truncate max-w-[250px]">{tx.description}</div>
-                        </td>
-                        <td className="py-2 px-4">
-                          <select 
-                            value={new Date(tx.date!).getMonth()} 
-                            onChange={e => handleUpdateProposed(tx.id!, 'month', parseInt(e.target.value))}
-                            className="text-[11px] bg-transparent border-none p-0 font-medium text-slate-600 outline-none"
-                          >
-                            {MONTHS_SHORT.map((m, i) => <option key={i} value={i}>{m}</option>)}
-                          </select>
-                        </td>
-                        <td className="py-2 px-4 text-right">
-                          <input 
-                            type="number" 
-                            value={tx.amount} 
-                            onChange={e => handleUpdateProposed(tx.id!, 'amount', parseFloat(e.target.value) || 0)}
-                            className="w-24 text-right text-[11px] font-mono font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-slate-500"
-                          />
-                        </td>
-                        <td className="py-2 px-4 text-center">
-                          <button 
-                            onClick={() => handleRemoveProposed(tx.id!)}
-                            className="p-1.5 text-slate-300 hover:text-slate-900 transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
+              {proposedTransactions.length === 0 ? (
+                <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-3xl space-y-4">
+                  <AlertTriangle size={32} className="mx-auto text-slate-300" />
+                  <div>
+                    <p className="font-bold text-slate-600">Nessun dato da importare</p>
+                    <p className="text-sm text-slate-400 mt-1">
+                      Non sono stati trovati costi fissi nel {sourceYear}. Torna indietro per cambiare anno fonte, 
+                      oppure usa il pulsante "Aggiungi voce manuale" per inserire previsionali da zero.
+                    </p>
+                  </div>
+                  <button 
+                    onClick={handleAddManual}
+                    className="mx-auto bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg flex items-center gap-2"
+                  >
+                    <PlusCircle size={18} />
+                    Aggiungi Prima Voce
+                  </button>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="py-3 px-4 text-[10px] font-black text-slate-400 uppercase">Categoria</th>
+                        <th className="py-3 px-4 text-[10px] font-black text-slate-400 uppercase">Mese</th>
+                        <th className="py-3 px-4 text-[10px] font-black text-slate-400 uppercase text-right">Importo</th>
+                        <th className="py-3 px-4 text-[10px] font-black text-slate-400 uppercase text-center">Azioni</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {proposedTransactions.map(tx => (
+                        <tr key={tx.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                          <td className="py-2 px-4">
+                            <div className="text-[11px] font-bold text-slate-700 truncate max-w-[250px]">{tx.category}</div>
+                            <div className="text-[9px] text-slate-400 truncate max-w-[250px]">{tx.description}</div>
+                          </td>
+                          <td className="py-2 px-4">
+                            <select 
+                              value={new Date(tx.date!).getMonth()} 
+                              onChange={e => handleUpdateProposed(tx.id!, 'month', parseInt(e.target.value))}
+                              className="text-[11px] bg-transparent border-none p-0 font-medium text-slate-600 outline-none"
+                            >
+                              {MONTHS_SHORT.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                            </select>
+                          </td>
+                          <td className="py-2 px-4 text-right">
+                            <input 
+                              type="number" 
+                              value={tx.amount} 
+                              onChange={e => handleUpdateProposed(tx.id!, 'amount', parseFloat(e.target.value) || 0)}
+                              className="w-24 text-right text-[11px] font-mono font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-slate-500"
+                            />
+                          </td>
+                          <td className="py-2 px-4 text-center">
+                            <button 
+                              onClick={() => handleRemoveProposed(tx.id!)}
+                              className="p-1.5 text-slate-300 hover:text-slate-900 transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 grid grid-cols-2 gap-4">
                 <div className="space-y-1 text-center border-r border-slate-200">
@@ -303,7 +420,12 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
           {step === 2 && (
             <button 
               onClick={handleConfirm}
-              className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg flex items-center gap-2"
+              disabled={proposedTransactions.length === 0}
+              className={`px-8 py-3 rounded-xl font-bold transition-all shadow-lg flex items-center gap-2 ${
+                proposedTransactions.length > 0
+                  ? 'bg-slate-900 text-white hover:bg-slate-800'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              }`}
             >
               <CheckCircle2 size={18} />
               Conferma e Genera Previsionali

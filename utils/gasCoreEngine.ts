@@ -1,11 +1,43 @@
-import { Transaction, CEData, SPSnapshot, BudgetData, RimanenzeAnno } from '../types';
+import { Transaction, CEData, SPSnapshot, BudgetData, RimanenzeAnno, Project, InitialBalanceBreakdown } from '../types';
+import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 // ─── AGGREGAZIONE MENSILE ────────────────────────────────────────
+
+// Helper to determine ceType dynamically if it's an INCOME and linked to a project
+export const getDynamicCEType = (tx: Transaction, projects?: Project[]): string => {
+  let type = tx.ceType || '';
+  if (tx.category) {
+    if (tx.category.startsWith('[STRAORDINARI]')) {
+      type = 'straordinario';
+    } else if (CATEGORY_TO_CE_TYPE[tx.category]) {
+      type = CATEGORY_TO_CE_TYPE[tx.category];
+    }
+  }
+
+  if (tx.type === 'INCOME' && tx.project && projects) {
+    const proj = projects.find(p => p.name === tx.project);
+    if (proj) {
+      const isImmobiliare = proj.jobType === 'Immobiliare';
+      const isOperationalRevenue = type === 'ricavo_core' || type === 'ricavo_immobiliare' || 
+        tx.category === '[CANTIERE] SAL — Stato Avanzamento Lavori' ||
+        tx.category === '[CANTIERE] Saldo Finale Commessa' ||
+        tx.category === '[CANTIERE] Manutenzioni e Piccoli Lavori' ||
+        tx.category === '[IMMOBILIARE] Vendita Immobili e Terreni' ||
+        tx.category === '[CANTIERE] Anticipi da Clienti su Commessa';
+
+      if (isOperationalRevenue) {
+        return isImmobiliare ? 'ricavo_immobiliare' : 'ricavo_core';
+      }
+    }
+  }
+  return type;
+};
 
 export const aggregateByMonthAndType = (
   transactions: Transaction[],
   anno: number,
-  modalita: 'cassa' | 'competenza' = 'cassa'
+  modalita: 'cassa' | 'competenza' = 'cassa',
+  projects?: Project[]
 ): Record<string, number[]> => {
   // Inizializza 12 mesi a zero per ogni ceType
   const result: Record<string, number[]> = {};
@@ -20,7 +52,8 @@ export const aggregateByMonthAndType = (
   transactions
     .filter(tx => tx.ceType && !tx.isForecast)
     .forEach(tx => {
-      const type = tx.ceType!;
+      const type = getDynamicCEType(tx, projects);
+      if (!type) return;
       const isRicavo = type.startsWith('ricavo') ||
         type === 'provento_finanziario' ||
         (type === 'straordinario' && tx.type === 'INCOME');
@@ -45,15 +78,125 @@ export const aggregateByMonthAndType = (
   return result;
 };
 
-// ─── COSTRUZIONE DATI CE ─────────────────────────────────────────
+// Helper to calculate amortization repayment details
+export const calculateRepayment = (
+  principal: number, 
+  details: any, 
+  targetDate: Date
+) => {
+  if (!details || !details.interestStartDate) return { total: 0, principal: 0, interest: 0 };
+
+  const intStart = new Date(details.interestStartDate);
+  const princStart = details.principalStartDate ? new Date(details.principalStartDate) : intStart;
+  const end = details.endDate ? new Date(details.endDate) : new Date(intStart.getFullYear() + 20, intStart.getMonth(), intStart.getDate());
+
+  if (targetDate < intStart || targetDate > end) return { total: 0, principal: 0, interest: 0 };
+
+  let currentRate = details.interestRate;
+  if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
+    const rinegValide = [...details.rinegoziazioni]
+      .filter(r => new Date(r.dataInizio) <= targetDate)
+      .sort((a, b) => new Date(b.dataInizio).getTime() - new Date(a.dataInizio).getTime());
+    
+    if (rinegValide.length > 0) {
+      currentRate = rinegValide[0].nuovoTasso;
+    }
+  }
+
+  const i = (currentRate / 100) / 12;
+  const amortizationStart = !isNaN(princStart.getTime()) ? princStart : intStart;
+  
+  if (targetDate >= intStart && targetDate < amortizationStart) {
+    return { 
+      total: principal * i, 
+      principal: 0, 
+      interest: principal * i
+    };
+  }
+
+  const n = (end.getFullYear() - amortizationStart.getFullYear()) * 12 + (end.getMonth() - amortizationStart.getMonth());
+  if (n <= 0) return { total: 0, principal: 0, interest: 0 };
+
+  const rataFissa = i > 0
+    ? principal * (i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1)
+    : principal / n;
+
+  const monthsPassed = (targetDate.getFullYear() - amortizationStart.getFullYear()) * 12 + (targetDate.getMonth() - amortizationStart.getMonth());
+  if (monthsPassed < 0) return { total: 0, principal: 0, interest: 0 };
+
+  const residualCapital = i > 0
+    ? principal * (Math.pow(1 + i, n) - Math.pow(1 + i, monthsPassed)) / (Math.pow(1 + i, n) - 1)
+    : Math.max(0, principal - (principal / n * monthsPassed));
+
+  const interestPayment = Math.max(0, residualCapital * i);
+  const principalPayment = targetDate >= amortizationStart ? Math.min(residualCapital, rataFissa - interestPayment) : 0;
+
+  return {
+    total: Math.round((principalPayment + interestPayment) * 100) / 100,
+    principal: Math.round(principalPayment * 100) / 100,
+    interest: Math.round(interestPayment * 100) / 100
+  };
+};
+
+export const getDynamicLoansInterests = (
+  transactions: Transaction[],
+  anno: number,
+  initialData?: InitialBalanceBreakdown
+): number[] => {
+  const interests = Array(12).fill(0);
+  const loans: { name: string; amount: number; details: any }[] = [];
+
+  // 1. Loans from transaction inputs
+  transactions.forEach(t => {
+    if (t.type === 'INCOME' && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
+      const isForecast = t.isForecast;
+      const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
+      if (!(isForecast && hasLinked)) {
+        loans.push({
+          name: t.description,
+          amount: t.amount,
+          details: t.loanDetails
+        });
+      }
+    }
+  });
+
+  // 2. Existing Loans from initial data
+  if (initialData?.loans) {
+    initialData.loans
+      .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === anno))
+      .forEach(l => {
+        loans.push({
+          name: l.name,
+          amount: l.originalAmount,
+          details: l.details
+        });
+      });
+  }
+
+  // Calculate interest for each month of the target year
+  for (let month = 0; month < 12; month++) {
+    const d = new Date(anno, month, 15);
+    let monthInterests = 0;
+    loans.forEach(l => {
+      const rep = calculateRepayment(l.amount, l.details, d);
+      monthInterests += rep.interest;
+    });
+    interests[month] = Math.round(monthInterests * 100) / 100;
+  }
+
+  return interests;
+};
 
 export const buildCEData = (
   transactions: Transaction[],
   anno: number,
   manualOverrides?: Partial<CEData>,
-  modalita: 'cassa' | 'competenza' = 'cassa'
+  modalita: 'cassa' | 'competenza' = 'cassa',
+  projects?: Project[],
+  initialData?: InitialBalanceBreakdown
 ): CEData => {
-  const agg = aggregateByMonthAndType(transactions, anno, modalita);
+  const agg = aggregateByMonthAndType(transactions, anno, modalita, projects);
 
   return {
     anno,
@@ -65,8 +208,8 @@ export const buildCEData = (
     costiStudio:          manualOverrides?.costiStudio ?? agg['costo_studio'].map(v => Math.abs(v)),
     ammortamenti:         manualOverrides?.ammortamenti ?? 
       (agg['ammortamento'].some(v => v !== 0) 
-        ? agg['ammortamento'].map(v => Math.abs(v)) 
-        : Array(12).fill(0)),
+         ? agg['ammortamento'].map(v => Math.abs(v)) 
+         : Array(12).fill(0)),
     oneriFin:             manualOverrides?.oneriFin ?? agg['onere_finanziario'].map(v => Math.abs(v)),
     proventiFin:          manualOverrides?.proventiFin ?? agg['provento_finanziario'].map(v => Math.abs(v)),
     straordinario:        manualOverrides?.straordinario ?? agg['straordinario'],
@@ -77,7 +220,7 @@ export const buildCEData = (
 
 // ─── CALCOLI CE DERIVATI ─────────────────────────────────────────
 
-export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
+export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], projects?: Project[], initialData?: InitialBalanceBreakdown) => {
   const sum12 = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
   const add12 = (a: number[], b: number[]) => a.map((v, i) => v + b[i]);
   const sub12 = (a: number[], b: number[]) => a.map((v, i) => v - b[i]);
@@ -135,18 +278,49 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
   const getForecastSum = (types: string[]) => {
     if (!isCurrentYear) return 0;
     return transactions
-      .filter(tx => 
-        tx.isForecast && 
+      .filter(tx => {
+        const type = getDynamicCEType(tx, projects);
+        return tx.isForecast && 
         new Date(tx.date).getFullYear() === ce.anno && 
-        tx.ceType && types.includes(tx.ceType) &&
-        !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id)
-      )
+        type && types.includes(type) &&
+        !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
+      })
       .reduce((s, tx) => {
-        const type = tx.ceType!;
+        const type = getDynamicCEType(tx, projects);
         const isIncome = type.startsWith('ricavo') || type === 'provento_finanziario' || (type === 'straordinario' && tx.type === 'INCOME');
         return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
       }, 0);
   };
+
+  const dynamicInterests = getDynamicLoansInterests(transactions, ce.anno, initialData);
+
+  // Get monthly transaction-based forecasts for onere_finanziario
+  const forecastOneriFinByMonth = Array(12).fill(0);
+  if (isCurrentYear || ce.anno > oggi.getFullYear()) {
+    transactions
+      .filter(tx => {
+        const type = getDynamicCEType(tx, projects);
+        return tx.isForecast && 
+        new Date(tx.date).getFullYear() === ce.anno && 
+        type === 'onere_finanziario' &&
+        !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
+      })
+      .forEach(tx => {
+        const m = new Date(tx.date).getMonth();
+        forecastOneriFinByMonth[m] += Math.abs(tx.amount);
+      });
+  }
+
+  let proiezioneOneriFin = 0;
+  for (let m = 0; m < 12; m++) {
+    if (ce.anno < oggi.getFullYear()) {
+      proiezioneOneriFin += ce.oneriFin[m];
+    } else {
+      proiezioneOneriFin += ce.oneriFin[m] > 0 
+        ? ce.oneriFin[m] 
+        : (forecastOneriFinByMonth[m] + dynamicInterests[m]);
+    }
+  }
 
   const forecastRicaviCore = getForecastSum(['ricavo_core']);
   const forecastRicaviImmobiliare = getForecastSum(['ricavo_immobiliare']);
@@ -155,7 +329,6 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
   const forecastCostiFissi = getForecastSum(['costo_fisso']);
   const forecastCostiStudio = getForecastSum(['costo_studio']);
   const forecastAmmortamenti = getForecastSum(['ammortamento']);
-  const forecastOneriFin = getForecastSum(['onere_finanziario']);
   const forecastProventiFin = getForecastSum(['provento_finanziario']);
   const forecastStraordinario = getForecastSum(['straordinario']);
   const forecastCompensoImprenditore = getForecastSum(['distribuzione_utile']);
@@ -169,7 +342,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
   const proiezioneCostiFissi = isCurrentYear ? sum12(ce.costiFissi) + Math.abs(forecastCostiFissi) : sum12(ce.costiFissi);
   const proiezioneCostiStudio = isCurrentYear ? sum12(ce.costiStudio) + Math.abs(forecastCostiStudio) : sum12(ce.costiStudio);
   const proiezioneAmmortamenti = isCurrentYear ? sum12(ce.ammortamenti) + Math.abs(forecastAmmortamenti) : sum12(ce.ammortamenti);
-  const proiezioneOneriFin = isCurrentYear ? sum12(ce.oneriFin) + Math.abs(forecastOneriFin) : sum12(ce.oneriFin);
+  
   const proiezioneProventiFin = isCurrentYear ? sum12(ce.proventiFin) + forecastProventiFin : sum12(ce.proventiFin);
   const proiezioneStraordinario = isCurrentYear ? sum12(ce.straordinario) + forecastStraordinario : sum12(ce.straordinario);
   const proiezioneCompensoImprenditore = isCurrentYear ? sum12(ce.compensoImprenditore) + Math.abs(forecastCompensoImprenditore) : sum12(ce.compensoImprenditore);
@@ -195,16 +368,18 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = []) => {
     ? 12
     : oggi.getMonth() + 1;
 
-  const ricaviConInvoiceDate = transactions.filter(tx =>
-    tx.invoiceDate &&
-    new Date(tx.date).getFullYear() === ce.anno &&
-    tx.ceType?.startsWith('ricavo')
-  ).length;
+  const ricaviConInvoiceDate = transactions.filter(tx => {
+    const type = getDynamicCEType(tx, projects);
+    return tx.invoiceDate &&
+      new Date(tx.date).getFullYear() === ce.anno &&
+      type?.startsWith('ricavo');
+  }).length;
 
-  const totaleRicavi = transactions.filter(tx =>
-    new Date(tx.date).getFullYear() === ce.anno &&
-    tx.ceType?.startsWith('ricavo')
-  ).length;
+  const totaleRicavi = transactions.filter(tx => {
+    const type = getDynamicCEType(tx, projects);
+    return new Date(tx.date).getFullYear() === ce.anno &&
+      type?.startsWith('ricavo');
+  }).length;
 
   const coperturainvoiceDate = totaleRicavi > 0
     ? ricaviConInvoiceDate / totaleRicavi

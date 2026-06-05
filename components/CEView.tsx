@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Transaction, CEData, CERow, BudgetData, RimanenzeAnno, RimanenzeData, AppView } from '../types';
-import { buildCEData, calcCEMetrics, calcScostamenti, calcEffettoRimanenze } from '../utils/gasCoreEngine';
+import { Transaction, TransactionType, CEData, CERow, BudgetData, RimanenzeAnno, RimanenzeData, AppView, Project, InitialBalanceBreakdown } from '../types';
+import { buildCEData, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, getDynamicLoansInterests, calculateRepayment } from '../utils/gasCoreEngine';
 import { exportCEPDF } from '../utils/cePdfExport';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import CalcoloDrawer, { FormulaStep } from './CalcoloDrawer';
@@ -25,6 +25,8 @@ interface CEViewProps {
   rimanenze?: RimanenzeData;
   onRimanenzeChange?: (anno: number, data: RimanenzeAnno) => void;
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
+  projects?: Project[];
+  initialData?: InitialBalanceBreakdown;
 }
 
 const formatEuro = (val: number) => 
@@ -86,6 +88,8 @@ const CEView: React.FC<CEViewProps> = ({
   rimanenze,
   onRimanenzeChange,
   onGoToManuale,
+  projects,
+  initialData,
 }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [activeTab, setActiveTab] = useState<'ytd' | 'projection' | 'monthly' | 'scostamenti'>('ytd');
@@ -95,11 +99,11 @@ const CEView: React.FC<CEViewProps> = ({
   const [drawerKpi, setDrawerKpi] = useState<string | null>(null);
 
   const ceData = useMemo(() => 
-    buildCEData(transactions, selectedYear, manualData[selectedYear.toString()], modalita), 
-    [transactions, selectedYear, manualData, modalita]
+    buildCEData(transactions, selectedYear, manualData[selectedYear.toString()], modalita, projects, initialData), 
+    [transactions, selectedYear, manualData, modalita, projects, initialData]
   );
 
-  const metrics = useMemo(() => calcCEMetrics(ceData, transactions), [ceData, transactions]);
+  const metrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
 
   const txAnno = useMemo(() => 
     (transactions || []).filter(tx => new Date(tx.date).getFullYear() === selectedYear),
@@ -163,9 +167,66 @@ const CEView: React.FC<CEViewProps> = ({
       !tx.isForecast && tx.ceType
     );
 
+    const today = new Date();
+    // Proiezioni: consuntivi + previsionali non ancora saldati
+    const txAnnoProiezioniBase = transactions.filter(tx => {
+      if (new Date(tx.date).getFullYear() !== selectedYear) return false;
+      if (!tx.ceType) return false;
+      if (!tx.isForecast) return true;
+      const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
+      return !isLinked;
+    });
+
+    const getPureForecastSum = (types: string[]): number => {
+      const txs = transactions.filter(tx => {
+        const type = getDynamicCEType(tx, projects);
+        return tx.isForecast && 
+          new Date(tx.date).getFullYear() === selectedYear && 
+          type && types.includes(type);
+      });
+      const sum = txs.reduce((s, tx) => {
+        const type = getDynamicCEType(tx, projects);
+        const isIncome = type.startsWith('ricavo') || type === 'provento_finanziario' || (type === 'straordinario' && tx.type === 'INCOME');
+        return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
+      }, 0);
+
+      if (types.includes('onere_finanziario')) {
+        const interests = getDynamicLoansInterests(transactions, selectedYear, initialData);
+        return sum - interests.reduce((a, b) => a + b, 0);
+      }
+      return sum;
+    };
+
+    const prevRicCore = getPureForecastSum(['ricavo_core']);
+    const prevRicImmob = getPureForecastSum(['ricavo_immobiliare']);
+    const prevRicAltro = getPureForecastSum(['ricavo_altro']);
+    const prevFat = prevRicCore + prevRicImmob + prevRicAltro;
+    const prevCVar = Math.abs(getPureForecastSum(['costo_variabile']));
+    const prevCStu = Math.abs(getPureForecastSum(['costo_studio']));
+    const prevCFis = Math.abs(getPureForecastSum(['costo_fisso']));
+    const prevAmm = Math.abs(getPureForecastSum(['ammortamento']));
+    const prevOnFin = Math.abs(getPureForecastSum(['onere_finanziario']));
+    const prevPrFin = getPureForecastSum(['provento_finanziario']);
+    const prevStr = getPureForecastSum(['straordinario']);
+    
+    const prevEbtBase = prevFat - prevCVar - prevCStu - prevCFis - prevAmm - prevOnFin + prevPrFin;
+    const prevTaxes = (prevEbtBase + prevStr) > 0 ? (prevEbtBase + prevStr) * metrics.aliquotaEffettiva : 0;
+    const prevUtile = prevEbtBase + prevStr - prevTaxes;
+    const prevPrelievo = Math.abs(getPureForecastSum(['distribuzione_utile']));
+    
+    const prevPMargin = prevFat - prevCVar;
+    const prevEbitda = prevPMargin - prevCStu - prevCFis;
+    const prevEbit = prevEbitda - prevAmm;
+    const prevEbt = prevEbtBase;
+    const prevBreakEven = (prevCFis + prevCStu + prevAmm) / (1 - (prevFat > 0 ? prevCVar / prevFat : 0));
+
     const configs: Record<string, {
       nome: string; valore: number; percentuale?: number;
       steps: FormulaStep[]; ceTypes: string[];
+      proiezioneValore?: number; proiezionePercentuale?: number;
+      proiezioneSteps?: FormulaStep[];
+      soloPrevisionaleValore?: number; soloPrevisionalePercentuale?: number;
+      soloPrevisionaleSteps?: FormulaStep[];
     }> = {
       fatturato: {
         nome: 'Fatturato / Ricavi Core',
@@ -178,6 +239,269 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'Fatturato Totale', valore: fat, isPositivo: true, isRisultato: true, percentualeSu: fat },
         ],
         ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare'],
+        proiezioneValore: metrics.proiezioneFatturato,
+        proiezionePercentuale: 1,
+        proiezioneSteps: [
+          { label: 'Ricavi Core [Proiezione]', valore: metrics.proiezioneRicaviCore, isPositivo: true },
+          { label: 'Vendite Immobiliari [Proiezione]', valore: metrics.proiezioneRicaviImmobiliare, isPositivo: true, indent: true },
+          { label: 'Altri Ricavi [Proiezione]', valore: metrics.proiezioneRicaviAltro, isPositivo: true, indent: true },
+          { label: 'Fatturato Totale [Proiezione]', valore: metrics.proiezioneFatturato, isPositivo: true, isRisultato: true, percentualeSu: metrics.proiezioneFatturato },
+        ],
+        soloPrevisionaleValore: prevFat,
+        soloPrevisionalePercentuale: 1,
+        soloPrevisionaleSteps: [
+          { label: 'Ricavi Core [Previsionale]', valore: prevRicCore, isPositivo: true },
+          { label: 'Vendite Immobiliari [Previsionale]', valore: prevRicImmob, isPositivo: true, indent: true },
+          { label: 'Altri Ricavi [Previsionale]', valore: prevRicAltro, isPositivo: true, indent: true },
+          { label: 'Fatturato Totale [Previsionale]', valore: prevFat, isPositivo: true, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      ricavo_core: {
+        nome: 'Ricavi Core (SAL/Commesse)',
+        valore: s12(ceData.ricaviCore),
+        percentuale: fat > 0 ? s12(ceData.ricaviCore) / fat : 0,
+        steps: [
+          { label: 'Ricavi Core', valore: s12(ceData.ricaviCore), isPositivo: true, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['ricavo_core'],
+        proiezioneValore: metrics.proiezioneRicaviCore,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneRicaviCore / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Ricavi Core [Proiezione]', valore: metrics.proiezioneRicaviCore, isPositivo: true, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevRicCore,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevRicCore / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Ricavi Core [Previsionale]', valore: prevRicCore, isPositivo: true, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      ricavo_immobiliare: {
+        nome: 'Vendite Immobiliari',
+        valore: s12(ceData.ricaviImmobiliare),
+        percentuale: fat > 0 ? s12(ceData.ricaviImmobiliare) / fat : 0,
+        steps: [
+          { label: 'Vendite Immobiliari (commesse immobiliari/acconti)', valore: s12(ceData.ricaviImmobiliare), isPositivo: true, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['ricavo_immobiliare'],
+        proiezioneValore: metrics.proiezioneRicaviImmobiliare,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneRicaviImmobiliare / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Vendite Immobiliari [Proiezione]', valore: metrics.proiezioneRicaviImmobiliare, isPositivo: true, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevRicImmob,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevRicImmob / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Vendite Immobiliari [Previsionale]', valore: prevRicImmob, isPositivo: true, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      ricavo_altro: {
+        nome: 'Altri Ricavi (Affitti/Sviluppo)',
+        valore: s12(ceData.ricaviAltro),
+        percentuale: fat > 0 ? s12(ceData.ricaviAltro) / fat : 0,
+        steps: [
+          { label: 'Altri Ricavi (affitti, provvigioni, servizi)', valore: s12(ceData.ricaviAltro), isPositivo: true, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['ricavo_altro'],
+        proiezioneValore: metrics.proiezioneRicaviAltro,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneRicaviAltro / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Altri Ricavi [Proiezione]', valore: metrics.proiezioneRicaviAltro, isPositivo: true, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevRicAltro,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevRicAltro / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Altri Ricavi [Previsionale]', valore: prevRicAltro, isPositivo: true, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      costo_variabile: {
+        nome: 'Costi Variabili (Materiali/Subappalti)',
+        valore: cVar,
+        percentuale: fat > 0 ? cVar / fat : 0,
+        steps: [
+          { label: 'Costi Variabili diretti di cantiere', valore: cVar, isPositivo: false, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['costo_variabile'],
+        proiezioneValore: metrics.proiezioneCostiVariabili,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiVariabili / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Costi Variabili diretti di cantiere [Proiezione]', valore: metrics.proiezioneCostiVariabili, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevCVar,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevCVar / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Costi Variabili diretti [Previsionale]', valore: prevCVar, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      costo_studio: {
+        nome: 'Costi Studio (Personale/Amm.)',
+        valore: cStu,
+        percentuale: fat > 0 ? cStu / fat : 0,
+        steps: [
+          { label: 'Personale tecnico e ammortamento studio', valore: cStu, isPositivo: false, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['costo_studio'],
+        proiezioneValore: metrics.proiezioneCostiStudio,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiStudio / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Personale tecnico e ammortamento studio [Proiezione]', valore: metrics.proiezioneCostiStudio, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevCStu,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevCStu / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Personale tecnico e studio [Previsionale]', valore: prevCStu, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      costo_fixed: {
+        nome: 'Altri Costi Fissi (Sedi/Marketing)',
+        valore: cFis,
+        percentuale: fat > 0 ? cFis / fat : 0,
+        steps: [
+          { label: 'Spese di sede, utenze, marketing, assicurazioni', valore: cFis, isPositivo: false, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['costo_fisso'],
+        proiezioneValore: metrics.proiezioneCostiFissi,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiFissi / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Spese di sede, utenze, marketing, assicurazioni [Proiezione]', valore: metrics.proiezioneCostiFissi, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevCFis,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevCFis / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Spese di sede, utenze, marketing [Previsionale]', valore: prevCFis, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      costo_fisso: {
+        nome: 'Altri Costi Fissi (Sedi/Marketing)',
+        valore: cFis,
+        percentuale: fat > 0 ? cFis / fat : 0,
+        steps: [
+          { label: 'Spese di sede, utenze, marketing, assicurazioni', valore: cFis, isPositivo: false, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['costo_fisso'],
+        proiezioneValore: metrics.proiezioneCostiFissi,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiFissi / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Spese di sede, utenze, marketing, assicurazioni [Proiezione]', valore: metrics.proiezioneCostiFissi, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevCFis,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevCFis / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Spese di sede, utenze, marketing [Previsionale]', valore: prevCFis, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      ammortamento: {
+        nome: 'Ammortamenti (Manuale)',
+        valore: amm,
+        percentuale: fat > 0 ? amm / fat : 0,
+        steps: [
+          { label: 'Ammortamento beni strumentali aziendali', valore: amm, isPositivo: false, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['ammortamento'],
+        proiezioneValore: metrics.proiezioneAmmortamenti,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneAmmortamenti / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Ammortamento beni strumentali aziendali [Proiezione]', valore: metrics.proiezioneAmmortamenti, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevAmm,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevAmm / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Ammortamento beni strumentali [Previsionale]', valore: prevAmm, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      onere_finanziario: {
+        nome: 'Oneri Finanziari',
+        valore: s12(ceData.oneriFin),
+        percentuale: fat > 0 ? s12(ceData.oneriFin) / fat : 0,
+        steps: [
+          { label: 'Interessi passivi e commissioni bancarie', valore: s12(ceData.oneriFin), isPositivo: false, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['onere_finanziario'],
+        proiezioneValore: metrics.proiezioneOneriFin,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneOneriFin / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Interessi passivi e commissioni bancarie [Proiezione]', valore: metrics.proiezioneOneriFin, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevOnFin,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevOnFin / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Interessi passivi e commissioni [Previsionale]', valore: prevOnFin, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      provento_finanziario: {
+        nome: 'Proventi Finanziari',
+        valore: s12(ceData.proventiFin),
+        percentuale: fat > 0 ? s12(ceData.proventiFin) / fat : 0,
+        steps: [
+          { label: 'Interessi attivi, proventi da partecipazioni', valore: s12(ceData.proventiFin), isPositivo: true, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['provento_finanziario'],
+        proiezioneValore: metrics.proiezioneProventiFin,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneProventiFin / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Interessi attivi, proventi da partecipazioni [Proiezione]', valore: metrics.proiezioneProventiFin, isPositivo: true, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevPrFin,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevPrFin / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Interessi attivi, proventi [Previsionale]', valore: prevPrFin, isPositivo: true, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      straordinario: {
+        nome: 'Risultato Straordinario',
+        valore: str,
+        percentuale: fat > 0 ? str / fat : 0,
+        steps: [
+          { label: 'Proventi ed oneri straordinari (netti)', valore: str, isPositivo: str >= 0, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['straordinario'],
+        proiezioneValore: metrics.proiezioneStraordinario,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneStraordinario / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Proventi ed oneri straordinari (netti) [Proiezione]', valore: metrics.proiezioneStraordinario, isPositivo: metrics.proiezioneStraordinario >= 0, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevStr,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevStr / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Proventi ed oneri straordinari [Previsionale]', valore: prevStr, isPositivo: prevStr >= 0, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      imposta_ce: {
+        nome: 'Imposte Stimate (Manuale)',
+        valore: imp,
+        percentuale: fat > 0 ? imp / fat : 0,
+        steps: [
+          { label: 'Imposte IRES/IRAP stimate dell\'anno', valore: imp, isPositivo: false, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['imposta_ce'],
+        proiezioneValore: metrics.proiezioneEbt + metrics.proiezioneStraordinario - metrics.proiezioneUtile,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? (metrics.proiezioneEbt + metrics.proiezioneStraordinario - metrics.proiezioneUtile) / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Imposte IRES/IRAP stimate dell\'anno [Proiezione]', valore: metrics.proiezioneEbt + metrics.proiezioneStraordinario - metrics.proiezioneUtile, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevTaxes,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevTaxes / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Imposte IRES/IRAP stimate [Previsionale]', valore: prevTaxes, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
+        ]
+      },
+      distribuzione_utile: {
+        nome: 'Prelievo Utile Soci',
+        valore: s12(ceData.compensoImprenditore),
+        percentuale: fat > 0 ? s12(ceData.compensoImprenditore) / fat : 0,
+        steps: [
+          { label: 'Prelievi utili/Compenso soci', valore: s12(ceData.compensoImprenditore), isPositivo: false, isRisultato: true, percentualeSu: fat }
+        ],
+        ceTypes: ['distribuzione_utile'],
+        proiezioneValore: metrics.proiezioneCompensoImprenditore,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneCompensoImprenditore / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Prelievi utili/Compenso soci [Proiezione]', valore: metrics.proiezioneCompensoImprenditore, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+        ],
+        soloPrevisionaleValore: prevPrelievo,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevPrelievo / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Prelievi utili/Compenso soci [Previsionale]', valore: prevPrelievo, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
+        ]
       },
       primo_margine: {
         nome: 'Primo Margine',
@@ -189,6 +513,20 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'Primo Margine', valore: pMar, isPositivo: pMar > 0, isRisultato: true, percentualeSu: fat },
         ],
         ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile'],
+        proiezioneValore: metrics.proiezionePrimoMargine,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Fatturato [Proiezione]', valore: metrics.proiezioneFatturato, isPositivo: true },
+          { label: 'Costi Variabili [Proiezione]', valore: metrics.proiezioneCostiVariabili, isPositivo: false, percentualeSu: metrics.proiezioneFatturato },
+          { label: 'Primo Margine [Proiezione]', valore: metrics.proiezionePrimoMargine, isPositivo: metrics.proiezionePrimoMargine > 0, isRisultato: true, percentualeSu: metrics.proiezioneFatturato },
+        ],
+        soloPrevisionaleValore: prevPMargin,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevPMargin / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Fatturato [Previsionale]', valore: prevFat, isPositivo: true },
+          { label: 'Costi Variabili [Previsionale]', valore: prevCVar, isPositivo: false, percentualeSu: prevFat },
+          { label: 'Primo Margine [Previsionale]', valore: prevPMargin, isPositivo: prevPMargin > 0, isRisultato: true, percentualeSu: prevFat }
+        ]
       },
       ebitda: {
         nome: 'EBITDA',
@@ -201,6 +539,22 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'EBITDA', valore: ebit, isPositivo: ebit > 0, isRisultato: true, percentualeSu: fat },
         ],
         ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio'],
+        proiezioneValore: metrics.proiezioneEbitda,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'Primo Margine [Proiezione]', valore: metrics.proiezionePrimoMargine, isPositivo: true, percentualeSu: metrics.proiezioneFatturato },
+          { label: 'Costi Studio [Proiezione]', valore: metrics.proiezioneCostiStudio, isPositivo: false, indent: true, percentualeSu: metrics.proiezioneFatturato },
+          { label: 'Costi Fissi di Struttura [Proiezione]', valore: metrics.proiezioneCostiFissi, isPositivo: false, indent: true, percentualeSu: metrics.proiezioneFatturato },
+          { label: 'EBITDA [Proiezione]', valore: metrics.proiezioneEbitda, isPositivo: metrics.proiezioneEbitda > 0, isRisultato: true, percentualeSu: metrics.proiezioneFatturato },
+        ],
+        soloPrevisionaleValore: prevEbitda,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevEbitda / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'Primo Margine [Previsionale]', valore: prevPMargin, isPositivo: true, percentualeSu: prevFat },
+          { label: 'Costi Studio [Previsionale]', valore: prevCStu, isPositivo: false, indent: true, percentualeSu: prevFat },
+          { label: 'Costi Fissi [Previsionale]', valore: prevCFis, isPositivo: false, indent: true, percentualeSu: prevFat },
+          { label: 'EBITDA [Previsionale]', valore: prevEbitda, isPositivo: prevEbitda > 0, isRisultato: true, percentualeSu: prevFat }
+        ]
       },
       ebit: {
         nome: 'EBIT',
@@ -212,6 +566,20 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'EBIT', valore: ebit2, isPositivo: ebit2 > 0, isRisultato: true, percentualeSu: fat },
         ],
         ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio', 'ammortamento'],
+        proiezioneValore: metrics.proiezioneEbit,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'EBITDA [Proiezione]', valore: metrics.proiezioneEbitda, isPositivo: true, percentualeSu: metrics.proiezioneFatturato },
+          { label: 'Ammortamenti [Proiezione]', valore: metrics.proiezioneAmmortamenti, isPositivo: false, indent: true },
+          { label: 'EBIT [Proiezione]', valore: metrics.proiezioneEbit, isPositivo: metrics.proiezioneEbit > 0, isRisultato: true, percentualeSu: metrics.proiezioneFatturato },
+        ],
+        soloPrevisionaleValore: prevEbit,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevEbit / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'EBITDA [Previsionale]', valore: prevEbitda, isPositivo: true, percentualeSu: prevFat },
+          { label: 'Ammortamenti [Previsionale]', valore: prevAmm, isPositivo: false, indent: true },
+          { label: 'EBIT [Previsionale]', valore: prevEbit, isPositivo: prevEbit > 0, isRisultato: true, percentualeSu: prevFat }
+        ]
       },
       ebt: {
         nome: 'EBT — Utile Ante Imposte',
@@ -225,6 +593,24 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'EBT', valore: ebt, isPositivo: ebt > 0, isRisultato: true, percentualeSu: fat },
         ],
         ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio', 'ammortamento', 'onere_finanziario', 'provento_finanziario', 'straordinario'],
+        proiezioneValore: metrics.proiezioneEbt,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbt / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'EBIT [Proiezione]', valore: metrics.proiezioneEbit, isPositivo: true, percentualeSu: metrics.proiezioneFatturato },
+          { label: 'Oneri Finanziari [Proiezione]', valore: metrics.proiezioneOneriFin, isPositivo: false, indent: true },
+          { label: 'Proventi Finanziari [Proiezione]', valore: metrics.proiezioneProventiFin, isPositivo: true, indent: true },
+          { label: 'Risultato Straordinario [Proiezione]', valore: metrics.proiezioneStraordinario, isPositivo: metrics.proiezioneStraordinario > 0, indent: true },
+          { label: 'EBT [Proiezione]', valore: metrics.proiezioneEbt, isPositivo: metrics.proiezioneEbt > 0, isRisultato: true, percentualeSu: metrics.proiezioneFatturato },
+        ],
+        soloPrevisionaleValore: prevEbt,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevEbt / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'EBIT [Previsionale]', valore: prevEbit, isPositivo: true, percentualeSu: prevFat },
+          { label: 'Oneri Finanziari [Previsionale]', valore: prevOnFin, isPositivo: false, indent: true },
+          { label: 'Proventi Finanziari [Previsionale]', valore: prevPrFin, isPositivo: true, indent: true },
+          { label: 'Risultato Straordinario [Previsionale]', valore: prevStr, isPositivo: prevStr > 0, indent: true },
+          { label: 'EBT [Previsionale]', valore: prevEbt, isPositivo: prevEbt > 0, isRisultato: true, percentualeSu: prevFat }
+        ]
       },
       utile_netto: {
         nome: 'Utile Netto',
@@ -236,6 +622,20 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'Utile Netto', valore: utile, isPositivo: utile > 0, isRisultato: true, percentualeSu: fat },
         ],
         ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio', 'ammortamento', 'onere_finanziario', 'provento_finanziario', 'straordinario', 'imposta_ce'],
+        proiezioneValore: metrics.proiezioneUtile,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneUtile / metrics.proiezioneFatturato : 0,
+        proiezioneSteps: [
+          { label: 'EBT [Proiezione]', valore: metrics.proiezioneEbt, isPositivo: true, percentualeSu: metrics.proiezioneFatturato },
+          { label: 'Imposte stimate [Proiezione]', valore: metrics.proiezioneEbt + metrics.proiezioneStraordinario - metrics.proiezioneUtile, isPositivo: false, indent: true },
+          { label: 'Utile Netto [Proiezione]', valore: metrics.proiezioneUtile, isPositivo: metrics.proiezioneUtile > 0, isRisultato: true, percentualeSu: metrics.proiezioneFatturato },
+        ],
+        soloPrevisionaleValore: prevUtile,
+        soloPrevisionalePercentuale: prevFat > 0 ? prevUtile / prevFat : 0,
+        soloPrevisionaleSteps: [
+          { label: 'EBT [Previsionale]', valore: prevEbt, isPositivo: true, percentualeSu: prevFat },
+          { label: 'Imposte stimate [Previsionale]', valore: prevTaxes, isPositivo: false, indent: true },
+          { label: 'Utile Netto [Previsionale]', valore: prevUtile, isPositivo: prevUtile > 0, isRisultato: true, percentualeSu: prevFat }
+        ]
       },
       break_even: {
         nome: 'Punto di Pareggio',
@@ -247,23 +647,166 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'Break-even = Costi Fissi ÷ Margine Contrib.', valore: metrics.breakEven, isPositivo: true, isRisultato: true },
         ],
         ceTypes: ['costo_fisso', 'costo_studio', 'ammortamento', 'costo_variabile'],
+        proiezioneValore: metrics.proiezioneBreakEven,
+        proiezioneSteps: [
+          { label: 'Costi Fissi Totali [Proiezione]', valore: metrics.proiezioneCostiFissi + metrics.proiezioneCostiStudio + metrics.proiezioneAmmortamenti, isPositivo: false },
+          { label: `Incidenza Costi Variabili [Proiezione]`, valore: metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiVariabili / metrics.proiezioneFatturato : 0, isPositivo: false, indent: true },
+          { label: 'Margine di Contribuzione % [Proiezione]', valore: metrics.proiezioneFatturato > 0 ? (metrics.proiezioneFatturato - metrics.proiezioneCostiVariabili) / metrics.proiezioneFatturato : 0, isPositivo: true, indent: true },
+          { label: 'Break-even [Proiezione]', valore: metrics.proiezioneBreakEven, isPositivo: true, isRisultato: true },
+        ],
+        soloPrevisionaleValore: prevBreakEven,
+        soloPrevisionaleSteps: [
+          { label: 'Costi Fissi Totali [Previsionale]', valore: prevCFis + prevCStu + prevAmm, isPositivo: false },
+          { label: `Incidenza Costi Variabili [Previsionale]`, valore: prevFat > 0 ? prevCVar / prevFat : 0, isPositivo: false, indent: true },
+          { label: 'Margine di Contribuzione % [Previsionale]', valore: prevFat > 0 ? (prevFat - prevCVar) / prevFat : 0, isPositivo: true, indent: true },
+          { label: 'Break-even [Previsionale]', valore: prevBreakEven, isPositivo: true, isRisultato: true },
+        ]
       },
     };
 
     const cfg = configs[kpiId];
     if (!cfg) return null;
+
+    // Se stiamo guardando oneri finanziari, generiamo gli interessi virtuali previsionali
+    let virtualLoanInterestTxs: Transaction[] = [];
+    if (cfg.ceTypes.includes('onere_finanziario') && selectedYear >= today.getFullYear()) {
+      const interests = getDynamicLoansInterests(transactions, selectedYear, initialData);
+      
+      const loans: { name: string; amount: number; details: any }[] = [];
+      transactions.forEach(t => {
+        if (t.type === 'INCOME' && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
+          const isForecast = t.isForecast;
+          const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
+          if (!(isForecast && hasLinked)) {
+            loans.push({ name: t.description, amount: t.amount, details: t.loanDetails });
+          }
+        }
+      });
+      if (initialData?.loans) {
+        initialData.loans
+          .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === selectedYear))
+          .forEach(l => {
+            loans.push({ name: l.name, amount: l.originalAmount, details: l.details });
+          });
+      }
+
+      for (let month = 0; month < 12; month++) {
+        const d = new Date(selectedYear, month, 15);
+        const hasActualOneriFin = transactions.some(t => 
+          !t.isForecast && 
+          new Date(t.date).getFullYear() === selectedYear && 
+          new Date(t.date).getMonth() === month &&
+          getDynamicCEType(t, projects) === 'onere_finanziario'
+        );
+
+        if (!hasActualOneriFin) {
+          loans.forEach((l, idx) => {
+            const rep = calculateRepayment(l.amount, l.details, d);
+            if (rep.interest > 0) {
+              virtualLoanInterestTxs.push({
+                id: `virtual-interest-${l.name}-${month}-${idx}`,
+                date: `${selectedYear}-${String(month + 1).padStart(2, '0')}-15`,
+                description: `[STIMA MUTUO] Interessi: ${l.name}`,
+                category: '[FINANZA] Interessi Passivi Finanziamenti',
+                ceType: 'onere_finanziario',
+                amount: rep.interest,
+                type: TransactionType.EXPENSE,
+                isForecast: true
+              });
+            }
+          });
+        }
+      }
+    }
+
+    const filteredProiezioneTxs = txAnnoProiezioniBase.filter(tx => {
+      const dType = getDynamicCEType(tx, projects);
+      return cfg.ceTypes.includes(dType || '');
+    });
+
+    const projectionTxsFinal = [...filteredProiezioneTxs, ...virtualLoanInterestTxs];
+
+    // Solo Previsionali
+    const txAnnoSoloPrevisionaliBase = transactions.filter(tx => 
+      new Date(tx.date).getFullYear() === selectedYear && 
+      tx.isForecast && 
+      tx.ceType
+    );
+
+    let virtualLoanInterestTxsSoloPrev: Transaction[] = [];
+    if (cfg.ceTypes.includes('onere_finanziario') && selectedYear >= today.getFullYear()) {
+      const interests = getDynamicLoansInterests(transactions, selectedYear, initialData);
+      
+      const loans: { name: string; amount: number; details: any }[] = [];
+      transactions.forEach(t => {
+        if (t.type === 'INCOME' && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
+          const isForecast = t.isForecast;
+          const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
+          if (!(isForecast && hasLinked)) {
+            loans.push({ name: t.description, amount: t.amount, details: t.loanDetails });
+          }
+        }
+      });
+      if (initialData?.loans) {
+        initialData.loans
+          .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === selectedYear))
+          .forEach(l => {
+            loans.push({ name: l.name, amount: l.originalAmount, details: l.details });
+          });
+      }
+
+      for (let month = 0; month < 12; month++) {
+        const d = new Date(selectedYear, month, 15);
+        loans.forEach((l, idx) => {
+          const rep = calculateRepayment(l.amount, l.details, d);
+          if (rep.interest > 0) {
+            virtualLoanInterestTxsSoloPrev.push({
+              id: `virtual-interest-soloprev-${l.name}-${month}-${idx}`,
+              date: `${selectedYear}-${String(month + 1).padStart(2, '0')}-15`,
+              description: `[STIMA MUTUO] Interessi: ${l.name}`,
+              category: '[FINANZA] Interessi Passivi Finanziamenti',
+              ceType: 'onere_finanziario',
+              amount: rep.interest,
+              type: TransactionType.EXPENSE,
+              isForecast: true
+            });
+          }
+        });
+      }
+    }
+
+    const filteredSoloPrevisionaleTxs = txAnnoSoloPrevisionaliBase.filter(tx => {
+      const dType = getDynamicCEType(tx, projects);
+      return cfg.ceTypes.includes(dType || '');
+    });
+
+    const soloPrevisionaleTxsFinal = [...filteredSoloPrevisionaleTxs, ...virtualLoanInterestTxsSoloPrev];
+
     return {
       kpiNome: cfg.nome,
       kpiValore: cfg.valore,
       kpiPercentuale: cfg.percentuale,
       formulaSteps: cfg.steps,
-      transazioniContribuenti: txAnnoContribuenti.filter(tx => cfg.ceTypes.includes(tx.ceType ?? '')),
+      transazioniContribuenti: txAnnoContribuenti.filter(tx => {
+        const dType = getDynamicCEType(tx, projects);
+        return cfg.ceTypes.includes(dType || '');
+      }),
       anno: selectedYear,
       onClose: () => setDrawerKpi(null),
+      // Props per proiezioni
+      proiezioneKpiValore: cfg.proiezioneValore,
+      proiezionePercentuale: cfg.proiezionePercentuale,
+      proiezioneFormulaSteps: cfg.proiezioneSteps,
+      proiezioneTransazioniContribuenti: projectionTxsFinal,
+      // Props per solo previsionali
+      soloPrevisionaleKpiValore: cfg.soloPrevisionaleValore,
+      soloPrevisionalePercentuale: cfg.soloPrevisionalePercentuale,
+      soloPrevisionaleFormulaSteps: cfg.soloPrevisionaleSteps,
+      soloPrevisionaleTransazioniContribuenti: soloPrevisionaleTxsFinal,
     };
   };
 
-  const renderRow = (label: string, data: number[], type: 'auto' | 'manual' | 'calc' | 'kpi', field?: keyof CEData, projOverride?: number) => {
+  const renderRow = (label: string, data: number[], type: 'auto' | 'manual' | 'calc' | 'kpi', field?: keyof CEData, projOverride?: number, customKpiId?: string) => {
     const sum = data.reduce((a, b) => a + b, 0);
     const pct = metrics.fatturato > 0 ? sum / metrics.fatturato : 0;
     
@@ -273,14 +816,37 @@ const CEView: React.FC<CEViewProps> = ({
       ? projOverride
       : (metrics.mesiTrascorsi > 0 ? (sum / metrics.mesiTrascorsi) * 12 : 0);
 
+    const projectionPct = metrics.proiezioneFatturato > 0 ? projection / metrics.proiezioneFatturato : 0;
+
+    // Determine the drawer KPI ID from name or standard mapping
+    let kpiId = customKpiId;
+    if (!kpiId) {
+      if (label.includes('Ricavi Core')) kpiId = 'ricavo_core';
+      else if (label.includes('Vendite Immobiliari')) kpiId = 'ricavo_immobiliare';
+      else if (label.includes('Altri Ricavi')) kpiId = 'ricavo_altro';
+      else if (label.includes('Costi Variabili')) kpiId = 'costo_variabile';
+      else if (label.includes('Costi Studio')) kpiId = 'costo_studio';
+      else if (label.includes('Altri Costi Fissi')) kpiId = 'costo_fisso';
+      else if (label.includes('Ammortamenti')) kpiId = 'ammortamento';
+      else if (label.includes('Oneri Finanziari')) kpiId = 'onere_finanziario';
+      else if (label.includes('Proventi Finanziari')) kpiId = 'provento_finanziario';
+      else if (label.includes('Risultato Straordinario')) kpiId = 'straordinario';
+      else if (label.includes('Imposte Stimate')) kpiId = 'imposta_ce';
+      else if (label.includes('Prelievo Utile')) kpiId = 'distribuzione_utile';
+    }
+
     return (
       <tr className="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-        <td className="py-3 px-4 text-xs font-bold text-slate-700 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+        <td 
+          onClick={() => kpiId && setDrawerKpi(kpiId)}
+          className={`py-3 px-4 text-xs font-bold text-slate-700 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${kpiId ? 'cursor-pointer hover:text-indigo-600 hover:bg-slate-50 transition-all' : ''}`}
+        >
           <div className="flex items-center gap-2">
             {type === 'auto' && <div className="w-2 h-2 rounded-full bg-sky-500" title="Auto-popolato" />}
             {type === 'manual' && <div className="w-2 h-2 rounded-full bg-amber-500" title="Manuale" />}
             {type === 'calc' && <div className="w-2 h-2 rounded-full bg-emerald-500" title="Calcolato" />}
             {label}
+            {kpiId && <span className="text-[9px] text-slate-300 font-normal ml-auto no-print">🔍 Spiega</span>}
           </div>
         </td>
         {activeTab === 'monthly' ? (
@@ -297,6 +863,9 @@ const CEView: React.FC<CEViewProps> = ({
           {formatPercent(pct)}
         </td>
         <ProjectionCell value={projection} />
+        <td className="p-1 text-right text-[10px] font-medium text-violet-600 font-bold">
+          {formatPercent(projectionPct)}
+        </td>
       </tr>
     );
   };
@@ -571,11 +1140,12 @@ const CEView: React.FC<CEViewProps> = ({
                 <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Totale YTD</th>
                 <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% Fatt.</th>
                 <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Proiezione 📈</th>
+                <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% Proi.</th>
               </tr>
             </thead>
             <tbody>
               {/* RICAVI */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">① Ricavi di Struttura</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">① Ricavi di Struttura</td></tr>
               {renderRow('Ricavi Core (SAL/Commesse)', ceData.ricaviCore, 'auto', undefined, metrics.proiezioneRicaviCore)}
               {renderRow('Vendite Immobiliari', ceData.ricaviImmobiliare, 'auto', undefined, metrics.proiezioneRicaviImmobiliare)}
               {renderRow('Altri Ricavi (Affitti/Sviluppo)', ceData.ricaviAltro, 'auto', undefined, metrics.proiezioneRicaviAltro)}
@@ -585,10 +1155,11 @@ const CEView: React.FC<CEViewProps> = ({
                 <CalcCell value={metrics.fatturato} isKPI />
                 <td className="p-1 text-right text-[10px]">100%</td>
                 <ProjectionCell value={metrics.proiezioneFatturato} />
+                <td className="p-1 text-right text-[10px] font-bold text-violet-600">100%</td>
               </tr>
 
               {/* COSTI VARIABILI */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">② Costi Variabili</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">② Costi Variabili</td></tr>
               {renderRow('Costi Variabili (Materiali/Subappalti)', ceData.costiVariabili, 'auto', undefined, metrics.proiezioneCostiVariabili)}
               <tr className="bg-slate-50/30 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-50/30 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALE COSTI VARIABILI (B)</td>
@@ -596,6 +1167,7 @@ const CEView: React.FC<CEViewProps> = ({
                 <CalcCell value={metrics.totCostiVar.reduce((a,b)=>a+b,0)} isKPI />
                 <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.totCostiVar.reduce((a,b)=>a+b,0)/metrics.fatturato : 0)}</td>
                 <ProjectionCell value={metrics.proiezioneCostiVariabili} />
+                <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiVariabili/metrics.proiezioneFatturato : 0)}</td>
               </tr>
 
               <tr className="bg-[#222222] text-white font-black">
@@ -604,10 +1176,11 @@ const CEView: React.FC<CEViewProps> = ({
                 <td className="text-right px-4 text-sm">{formatEuro(metrics.primoMargineTot)}</td>
                 <td className="text-right px-2 text-xs">{formatPercent(metrics.primoMarginePercent)}</td>
                 <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezionePrimoMargine)}</td>
+                <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine/metrics.proiezioneFatturato : 0)}</td>
               </tr>
 
               {/* COSTI FISSI */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">③ Costi Fissi di Struttura</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">③ Costi Fissi di Struttura</td></tr>
               {renderRow('Costi Studio (Personale/Amm.)', ceData.costiStudio, 'auto', undefined, metrics.proiezioneCostiStudio)}
               {renderRow('Altri Costi Fissi (Sedi/Marketing)', ceData.costiFissi, 'auto', undefined, metrics.proiezioneCostiFissi)}
               {renderRow('Ammortamenti (Manuale)', ceData.ammortamenti, 'manual', 'ammortamenti', metrics.proiezioneAmmortamenti)}
@@ -618,6 +1191,7 @@ const CEView: React.FC<CEViewProps> = ({
                 <td className="text-right px-4 text-sm">{formatEuro(metrics.ebitdaTot)}</td>
                 <td className="text-right px-2 text-xs">{formatPercent(metrics.ebitdaPercent)}</td>
                 <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezioneEbitda)}</td>
+                <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda/metrics.proiezioneFatturato : 0)}</td>
               </tr>
 
               <tr className="border-b border-slate-200 bg-slate-900/5">
@@ -632,10 +1206,13 @@ const CEView: React.FC<CEViewProps> = ({
                   {formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}
                 </td>
                 <ProjectionCell value={metrics.proiezioneEbit} />
+                <td className="p-1 text-right text-[10px] font-bold text-violet-600">
+                  {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)}
+                </td>
               </tr>
 
               {/* ONERI E IMPOSTE */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">④ Oneri, Proventi e Imposte</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">④ Oneri, Proventi e Imposte</td></tr>
               {renderRow('Oneri Finanziari', ceData.oneriFin, 'auto', undefined, metrics.proiezioneOneriFin)}
               {renderRow('Proventi Finanziari', ceData.proventiFin, 'auto', undefined, metrics.proiezioneProventiFin)}
               {renderRow('Risultato Straordinario', ceData.straordinario, 'auto', undefined, metrics.proiezioneStraordinario)}
@@ -656,6 +1233,7 @@ const CEView: React.FC<CEViewProps> = ({
                 <CalcCell value={metrics.ebt.reduce((a,b)=>a+b,0)} isKPI />
                 <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.ebt.reduce((a,b)=>a+b,0)/metrics.fatturato : 0)}</td>
                 <ProjectionCell value={metrics.proiezioneEbt} />
+                <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbt/metrics.proiezioneFatturato : 0)}</td>
               </tr>
 
               {renderRow('Imposte Stimate (Manuale)', ceData.imposte, 'manual', 'imposte', ceData.imposte.reduce((a,b)=>a+b,0))}
@@ -676,10 +1254,11 @@ const CEView: React.FC<CEViewProps> = ({
                 <td className="text-right px-4 text-sm">{formatEuro(metrics.utileNettoTot)}</td>
                 <td className="text-right px-2 text-xs">{formatPercent(metrics.utileNettoPercent)}</td>
                 <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezioneUtile)}</td>
+                <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneUtile/metrics.proiezioneFatturato : 0)}</td>
               </tr>
 
               {/* SOCI */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 16 : 4} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">⑤ Compenso Imprenditore</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">⑤ Compenso Imprenditore</td></tr>
               {renderRow('Prelievo Utile Soci', ceData.compensoImprenditore, 'auto', undefined, metrics.proiezioneCompensoImprenditore)}
             </tbody>
           </table>

@@ -1720,7 +1720,7 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "DE VECCHI FOTOGRAFO", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "NOTAIO IMPARATO", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "MENTI PRATICHE", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "ABACO COMUNI VARI", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "ABACO COMUNI VARI", categoria: "[CANTIERE] Oneri Comunali, Abaco e Occupazioni", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "ZONE INTERMEDIAZIONE IMMOBILIARE", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "STUDIO LEGALE PER VALUTAZIONE", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "AVVOCATO TALLUTO TOMMASO", categoria: "[CONSULENZE] Professionisti Esterni di Cantiere", ceType: "costo_variabile", confidenza: "alta" },
