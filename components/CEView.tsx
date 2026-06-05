@@ -127,6 +127,17 @@ const CEView: React.FC<CEViewProps> = ({
     return calcEffettoRimanenze(rimanenzeAnno, metrics);
   }, [rimanenzeAnno, metrics]);
 
+  const { projBreakEven, projBreakEvenCassa } = useMemo(() => {
+    const projCostiFissiTot = metrics.proiezioneCostiFissi + metrics.proiezioneCostiStudio + metrics.proiezioneAmmortamenti;
+    const projPctCostiVar = metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiVariabili / metrics.proiezioneFatturato : 0;
+    const breakEven = (1 - projPctCostiVar) > 0 ? projCostiFissiTot / (1 - projPctCostiVar) : 0;
+    
+    const projCostiFissiCassa = projCostiFissiTot - metrics.proiezioneAmmortamenti + metrics.costiCapitaleRate;
+    const breakEvenCassa = (1 - projPctCostiVar) > 0 ? projCostiFissiCassa / (1 - projPctCostiVar) : 0;
+    
+    return { projBreakEven: breakEven, projBreakEvenCassa: breakEvenCassa };
+  }, [metrics]);
+
   // Helper per aggiornare un singolo campo delle rimanenze
   const handleRimanenzeField = (field: keyof RimanenzeAnno, value: number | string) => {
     const current = rimanenzeAnno ?? {
@@ -1037,92 +1048,113 @@ const CEView: React.FC<CEViewProps> = ({
 
       {/* KPI Summary Cards */}
       <InfoTooltipWrapper className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Fatturato YTD</span>
-              <InfoTooltip termId="fatturato" />
+        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Fatturato YTD</span>
+                <InfoTooltip termId="fatturato" />
+              </div>
+              <button
+                onClick={() => setDrawerKpi('fatturato')}
+                className="text-[9px] font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
+              >
+                Spiega →
+              </button>
             </div>
-            <button
-              onClick={() => setDrawerKpi('fatturato')}
-              className="text-[9px] font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
-            >
-              Spiega →
-            </button>
+            <div className="text-2xl font-black text-slate-900">{formatEuro(metrics.fatturato)}</div>
+            <div className="text-[10px] text-slate-500 mt-1">reale YTD</div>
           </div>
-          <div className="text-2xl font-black text-slate-900">{formatEuro(metrics.fatturato)}</div>
-          <div className="text-[10px] text-slate-500 mt-1 italic">Proiezione: {formatEuro(metrics.proiezioneFatturato)}</div>
+          <div className="mt-3 pt-3 border-t border-slate-100 text-[10px] text-violet-600 font-bold">
+            Proiezione: {formatEuro(metrics.proiezioneFatturato)}
+          </div>
         </div>
 
-        <div className={`p-5 rounded-3xl border shadow-sm bg-indigo-50 border-indigo-100`}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Primo Margine</span>
-              <InfoTooltip termId="primo_margine" />
+        <div className="p-5 rounded-3xl border shadow-sm bg-indigo-50 border-indigo-100 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Primo Margine</span>
+                <InfoTooltip termId="primo_margine" />
+              </div>
+              <button
+                onClick={() => setDrawerKpi('primo_margine')}
+                className="text-[9px] font-black text-indigo-400 hover:text-indigo-600 uppercase tracking-widest transition-colors"
+              >
+                Spiega →
+              </button>
             </div>
-            <button
-              onClick={() => setDrawerKpi('primo_margine')}
-              className="text-[9px] font-black text-indigo-400 hover:text-indigo-600 uppercase tracking-widest transition-colors"
-            >
-              Spiega →
-            </button>
+            <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.primoMarginePercent)}</div>
+            <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.primoMargineTot)})</div>
           </div>
-          <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.primoMarginePercent)}</div>
-          <div className="text-[10px] text-slate-500 mt-1">{formatEuro(metrics.primoMargineTot)}</div>
+          <div className="mt-3 pt-3 border-t border-indigo-200/50 text-[10px] text-indigo-700 font-bold">
+            Proiezione: {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)} ({formatEuro(metrics.proiezionePrimoMargine)})
+          </div>
         </div>
 
-        <div className={`p-5 rounded-3xl border shadow-sm bg-emerald-50 border-emerald-100`}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">EBITDA %</span>
-              <InfoTooltip termId="ebitda" />
+        <div className="p-5 rounded-3xl border shadow-sm bg-emerald-50 border-emerald-100 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">EBITDA %</span>
+                <InfoTooltip termId="ebitda" />
+              </div>
+              <button
+                onClick={() => setDrawerKpi('ebitda')}
+                className="text-[9px] font-black text-emerald-400 hover:text-emerald-600 uppercase tracking-widest transition-colors"
+              >
+                Spiega →
+              </button>
             </div>
-            <button
-              onClick={() => setDrawerKpi('ebitda')}
-              className="text-[9px] font-black text-emerald-400 hover:text-emerald-600 uppercase tracking-widest transition-colors"
-            >
-              Spiega →
-            </button>
+            <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.ebitdaPercent)}</div>
+            <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.ebitdaTot)})</div>
           </div>
-          <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.ebitdaPercent)}</div>
-          <div className="text-[10px] text-slate-500 mt-1">{formatEuro(metrics.ebitdaTot)}</div>
+          <div className="mt-3 pt-3 border-t border-emerald-200/50 text-[10px] text-emerald-700 font-bold">
+            Proiezione: {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)} ({formatEuro(metrics.proiezioneEbitda)})
+          </div>
         </div>
 
-        <div className={`p-5 rounded-3xl border shadow-sm bg-amber-50 border-amber-100`}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider">EBIT %</span>
-              <InfoTooltip termId="ebit" />
+        <div className="p-5 rounded-3xl border shadow-sm bg-amber-50 border-amber-100 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider">EBIT %</span>
+                <InfoTooltip termId="ebit" />
+              </div>
+              <button
+                onClick={() => setDrawerKpi('ebit')}
+                className="text-[9px] font-black text-amber-400 hover:text-amber-600 uppercase tracking-widest transition-colors"
+              >
+                Spiega →
+              </button>
             </div>
-            <button
-              onClick={() => setDrawerKpi('ebit')}
-              className="text-[9px] font-black text-amber-400 hover:text-amber-600 uppercase tracking-widest transition-colors"
-            >
-              Spiega →
-            </button>
+            <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}</div>
+            <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.ebitTot)})</div>
           </div>
-          <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}</div>
-          <div className="text-[10px] text-slate-500 mt-1">{formatEuro(metrics.ebitTot)}</div>
+          <div className="mt-3 pt-3 border-t border-amber-200/50 text-[10px] text-amber-700 font-bold">
+            Proiezione: {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)} ({formatEuro(metrics.proiezioneEbit)})
+          </div>
         </div>
 
-        <div className="bg-[#222222] p-5 rounded-3xl border border-slate-800 shadow-lg text-white">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Punto di Pareggio</span>
-              <InfoTooltip termId="break_even" />
+        <div className="bg-[#222222] p-5 rounded-3xl border border-slate-800 shadow-lg text-white flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Punto di Pareggio</span>
+                <InfoTooltip termId="break_even" />
+              </div>
+              <button
+                onClick={() => setDrawerKpi('break_even')}
+                className="text-[9px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition-colors"
+              >
+                Spiega →
+              </button>
             </div>
-            <button
-              onClick={() => setDrawerKpi('break_even')}
-              className="text-[9px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition-colors"
-            >
-              Spiega →
-            </button>
+            <div className="text-2xl font-black">{formatEuro(metrics.breakEven)}</div>
+            <div className="text-[10px] text-slate-400 mt-1">reale YTD (cassa: {formatEuro(metrics.breakEvenCassa)})</div>
           </div>
-          <div className="text-2xl font-black">{formatEuro(metrics.breakEven)}</div>
-          <div className="text-[10px] text-slate-400 mt-1">Contabile (con ammortamenti)</div>
-          <div className="mt-3 pt-3 border-t border-white/10">
-            <div className="text-lg font-black text-slate-400">{formatEuro(metrics.breakEvenCassa)}</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Di cassa (rate capitale incluse)</div>
+          <div className="mt-3 pt-3 border-t border-white/10 text-[10px] text-indigo-300 font-bold">
+            Proiezione: {formatEuro(projBreakEven)} (cassa: {formatEuro(projBreakEvenCassa)})
           </div>
         </div>
       </InfoTooltipWrapper>
