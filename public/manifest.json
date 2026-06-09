@@ -1,7 +1,7 @@
-{
+﻿{
   "name": "GV GestioneFinanziaria",
   "short_name": "GV Finanza",
-  "description": "Gestione finanziaria e controllo di gestione — Gruppo Visentin SRL",
+  "description": "Gestione finanziaria e controllo di gestione - Gruppo Visentin SRL",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a1628",
@@ -9,16 +9,21 @@
   "orientation": "any",
   "icons": [
     {
+      "src": "/favicon.ico",
+      "sizes": "256x256",
+      "type": "image/x-icon"
+    },
+    {
       "src": "/icon-192-v7.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "/icon-512-v7.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ]
 }
