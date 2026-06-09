@@ -17,7 +17,7 @@ async function padIcon(size) {
         bottom: padding,
         left: padding,
         right: padding,
-        background: { r: 10, g: 22, b: 40, alpha: 1 } // #0a1628
+        background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent
       })
       .toFile(tempPath);
       
@@ -44,7 +44,7 @@ async function padAppleIcon() {
         bottom: padding,
         left: padding,
         right: padding,
-        background: { r: 10, g: 22, b: 40, alpha: 1 } // #0a1628
+        background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent
       })
       .toFile(tempPath);
       
