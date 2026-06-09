@@ -1,4 +1,16 @@
-import { Transaction } from '../types';
+import { Transaction, InitialBalanceBreakdown } from '../types';
+import { getDynamicLoansInterests } from './gasCoreEngine';
+
+export const parseUTCDate = (dateStr: string): Date => {
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1; // 0-indexed
+    const d = parseInt(parts[2], 10);
+    return new Date(Date.UTC(y, m, d));
+  }
+  return new Date(dateStr);
+};
 
 export interface OverheadRates {
   // BASE DI CALCOLO
@@ -28,16 +40,31 @@ export interface OverheadRates {
 
   // ANNO DI RIFERIMENTO
   anno: number;
+
+  // PREVISIONALE (based on tx.isForecast === true)
+  totaleCostiDirettiPrev: number;
+  totaleCostiStudioPrev: number;
+  totaleOverheadPuroPrev: number;
+  totaleOverheadCompletoPrev: number;
+  totaleOneriFinPrev: number;
+  fatturatoPrev: number;
+  incidenzaStudioFatturatoPrev: number;
+  incidenzaFissiFatturatoPrev: number;
+  incidenzaCompletaFatturatoPrev: number;
+  overheadRateStudioPrev: number;
+  overheadRateFissiPrev: number;
+  overheadRateCompletoPrev: number;
 }
 
 export const calculateOverheadRates = (
   transactions: Transaction[],
-  anno: number
+  anno: number,
+  initialData?: InitialBalanceBreakdown
 ): OverheadRates => {
 
   const txAnno = transactions.filter(tx => {
-    const d = new Date(tx.date);
-    return d.getFullYear() === anno && tx.ceType && !tx.isForecast;
+    const d = parseUTCDate(tx.date);
+    return d.getUTCFullYear() === anno && tx.ceType && !tx.isForecast;
   });
 
   const sumByType = (types: string[]) =>
@@ -47,7 +74,7 @@ export const calculateOverheadRates = (
 
   const totaleCostiDiretti    = sumByType(['costo_variabile']);
   const totaleCostiStudio     = sumByType(['costo_studio']);
-  const totaleOverheadPuro    = sumByType(['costo_fisso', 'ammortamento']);
+  const totaleOverheadPuro    = sumByType(['costo_fisso']);
   const totaleOneriFin        = sumByType(['onere_finanziario']);
   const totaleOverheadCompleto = totaleCostiStudio + totaleOverheadPuro;
   const fatturato             = sumByType(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare']);
@@ -83,6 +110,38 @@ export const calculateOverheadRates = (
     (totaleOverheadCompleto * fattoreProiezione) /
     Math.max(1, totaleCostiDiretti * fattoreProiezione);
 
+  // --- CALCOLO PREVISIONALI ---
+  const txAnnoPrev = transactions.filter(tx => {
+    const d = parseUTCDate(tx.date);
+    return d.getUTCFullYear() === anno && tx.ceType && tx.isForecast;
+  });
+
+  const sumByTypePrev = (types: string[]) =>
+    txAnnoPrev
+      .filter(tx => types.includes(tx.ceType ?? ''))
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+
+  // Calcolo dinamico interessi previsionali sui finanziamenti attivi
+  const dynamicInterests = getDynamicLoansInterests(transactions, anno, initialData);
+  const sumDynamicInterests = dynamicInterests.reduce((a, b) => a + b, 0);
+
+  const totaleCostiDirettiPrev    = sumByTypePrev(['costo_variabile']);
+  const totaleCostiStudioPrev     = sumByTypePrev(['costo_studio']);
+  const totaleOverheadPuroPrev    = sumByTypePrev(['costo_fisso']);
+  const totaleOneriFinPrev        = sumByTypePrev(['onere_finanziario']) + sumDynamicInterests;
+  const totaleOverheadCompletoPrev = totaleCostiStudioPrev + totaleOverheadPuroPrev;
+  const fatturatoPrev             = sumByTypePrev(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare']);
+
+  const basePrev = totaleCostiDirettiPrev > 0 ? totaleCostiDirettiPrev : 1;
+  const overheadRateStudioPrev    = totaleCostiStudioPrev / basePrev;
+  const overheadRateFissiPrev     = totaleOverheadPuroPrev / basePrev;
+  const overheadRateCompletoPrev  = totaleOverheadCompletoPrev / basePrev;
+
+  const baseFattPrev = fatturatoPrev > 0 ? fatturatoPrev : 1;
+  const incidenzaStudioFatturatoPrev    = totaleCostiStudioPrev / baseFattPrev;
+  const incidenzaFissiFatturatoPrev     = totaleOverheadPuroPrev / baseFattPrev;
+  const incidenzaCompletaFatturatoPrev  = totaleOverheadCompletoPrev / baseFattPrev;
+
   return {
     totaleCostiDiretti,
     totaleCostiStudio,
@@ -100,6 +159,18 @@ export const calculateOverheadRates = (
     mesiTrascorsi,
     compensoSoci,
     anno,
+    totaleCostiDirettiPrev,
+    totaleCostiStudioPrev,
+    totaleOverheadPuroPrev,
+    totaleOverheadCompletoPrev,
+    totaleOneriFinPrev,
+    fatturatoPrev,
+    incidenzaStudioFatturatoPrev,
+    incidenzaFissiFatturatoPrev,
+    incidenzaCompletaFatturatoPrev,
+    overheadRateStudioPrev,
+    overheadRateFissiPrev,
+    overheadRateCompletoPrev,
   };
 };
 
@@ -185,6 +256,7 @@ export const calcolaPreventivoCantiere = (
 
 export interface PreventivoImmobiliareResult {
   costoTerreno: number;
+  costiCorrelati: number;
   costoCostruzione: number;
   quotaOverheadSuCostruzione: number;
   costoTotaleOperazione: number;
@@ -203,16 +275,17 @@ export interface PreventivoImmobiliareResult {
 export const calcolaPreventivoImmobiliare = (
   costoTerreno: number,          // NON entra nella base overhead
   costoCostruzione: number,      // base per overhead
+  costiCorrelati: number,        // NON entra nella base overhead
   margineTargetPercent: number,  // sul prezzo finale
   rates: OverheadRates
 ): PreventivoImmobiliareResult => {
 
-  // L'overhead si applica solo sulla costruzione, non sul terreno
+  // L'overhead si applica solo sulla costruzione, non sul terreno e non sui costi correlati
   const quotaOverheadSuCostruzione =
     costoCostruzione * rates.overheadRateCompleto;
 
   const costoTotaleOperazione =
-    costoTerreno + costoCostruzione + quotaOverheadSuCostruzione;
+    costoTerreno + costoCostruzione + quotaOverheadSuCostruzione + costiCorrelati;
 
   // Prezzo minimo per raggiungere il margine target
   const prezzoVenditaMinimo = margineTargetPercent < 1
@@ -220,7 +293,7 @@ export const calcolaPreventivoImmobiliare = (
     : costoTotaleOperazione;
 
   const margineEuro  = prezzoVenditaMinimo - costoTotaleOperazione;
-  const margineNetto = prezzoVenditaMinimo - costoTerreno
+  const margineNetto = prezzoVenditaMinimo - costoTerreno - costiCorrelati
                        - costoCostruzione - quotaOverheadSuCostruzione;
   const roiOperazione = costoTotaleOperazione > 0
     ? margineEuro / costoTotaleOperazione
@@ -232,6 +305,12 @@ export const calcolaPreventivoImmobiliare = (
       importo: costoTerreno,
       percentualeSuVendita: prezzoVenditaMinimo > 0
         ? costoTerreno / prezzoVenditaMinimo : 0,
+    },
+    {
+      voce: 'Costi correlati (passthrough)',
+      importo: costiCorrelati,
+      percentualeSuVendita: prezzoVenditaMinimo > 0
+        ? costiCorrelati / prezzoVenditaMinimo : 0,
     },
     {
       voce: 'Costo costruzione',
@@ -254,6 +333,7 @@ export const calcolaPreventivoImmobiliare = (
 
   return {
     costoTerreno,
+    costiCorrelati,
     costoCostruzione,
     quotaOverheadSuCostruzione,
     costoTotaleOperazione,
@@ -289,9 +369,9 @@ export const calcolaCostoOrario = (
 ): CostoOrarioResult => {
 
   const txMese = transactions.filter(tx => {
-    const d = new Date(tx.date);
-    return d.getFullYear() === anno
-        && d.getMonth() + 1 === mese
+    const d = parseUTCDate(tx.date);
+    return d.getUTCFullYear() === anno
+        && d.getUTCMonth() + 1 === mese
         && (tx.ceType === 'costo_variabile')
         && (
           tx.category?.includes('[PERSONALE] Stipendi Dipendenti Operativi') ||

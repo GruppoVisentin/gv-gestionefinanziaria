@@ -314,14 +314,55 @@ export const GLOSSARIO: TermineGlossario[] = [
   },
 
   // ─── OVERHEAD E STRUTTURA ────────────────────────────────────────
-
+ 
+  {
+    id: 'overhead_rate_studio',
+    nome: 'Overhead Rate Studio',
+    categoria: 'overhead',
+    origine: 'Misura la componente dell\'overhead relativa alla struttura tecnica dello studio e al personale',
+    definizione: 'È il ricarico percentuale da applicare ai costi diretti di cantiere per coprire i costi legati al personale tecnico di studio, collaboratori di progettazione e stipendi degli uffici.',
+    formulaTestuale: 'Overhead Rate Studio = Costi Studio ÷ Costi Diretti Cantiere',
+    formulaPassaggi: [
+      { label: 'Somma i costi dello studio e tecnici', formula: 'Σ costo_studio (stipendi ufficio + tecnici)' },
+      { label: 'Somma tutti i costi diretti di cantiere', formula: 'Σ costo_variabile (materiali + subappalti)' },
+      { label: 'Dividi costi studio per costi diretti', formula: 'Costi Studio ÷ Costi Diretti' },
+    ],
+    esempioNumerico: {
+      dati: 'Costi Studio €60.000. Costi Diretti Cantiere €500.000',
+      calcolo: '60.000 ÷ 500.000',
+      risultato: 'Overhead Rate Studio = 12% — ogni €100 di costi diretti di cantiere, €12 coprono lo studio',
+    },
+    doveAppareNellApp: ['AnalisiView — Blocco B "Per i Preventivi"'],
+    connessoCon: ['overhead_rate_totale', 'incidenza_studio_fatturato'],
+  },
+  {
+    id: 'overhead_rate_fissi',
+    nome: 'Overhead Rate — Costi Fissi (escl. Studio)',
+    categoria: 'overhead',
+    origine: 'Misura la componente dell\'overhead relativa alle spese di funzionamento e di gestione fisse',
+    definizione: 'È il ricarico percentuale da applicare ai costi diretti di cantiere per coprire le spese fisse pure di funzionamento della società (sedi, affitti, commercialista, utenze, assicurazioni, marketing, ammortamenti).',
+    formulaTestuale: 'Overhead Rate Costi Fissi (escl. Studio) = Costi Fissi Puri ÷ Costi Diretti Cantiere',
+    formulaPassaggi: [
+      { label: 'Somma i costi fissi strutturali', formula: 'Σ costo_fisso + ammortamento (sedi + utilities + professionisti)' },
+      { label: 'Somma tutti i costi diretti di cantiere', formula: 'Σ costo_variabile (materiali + subappalti)' },
+      { label: 'Dividi costi fissi per costi diretti', formula: 'Costi Fissi ÷ Costi Diretti' },
+    ],
+    esempioNumerico: {
+      dati: 'Costi Fissi €80.000. Costi Diretti Cantiere €500.000',
+      calcolo: '80.000 ÷ 500.000',
+      risultato: 'Overhead Rate Costi Fissi (escl. Studio) = 16% — ogni €100 di costi diretti, €16 vanno per coprire le spese generali',
+    },
+    doveAppareNellApp: ['AnalisiView — Blocco B "Per i Preventivi"'],
+    connessoCon: ['overhead_rate_totale', 'incidenza_fissi_fatturato'],
+  },
+ 
   {
     id: 'overhead_rate_totale',
-    nome: 'Overhead Rate Totale',
+    nome: 'Overhead Rate — Costi Fissi Totali',
     categoria: 'overhead',
     origine: 'Dall\'inglese "overhead" — i costi che stanno "sopra" (over) la testa (head), cioè i costi di struttura che esistono indipendentemente dai cantieri',
     definizione: 'È la percentuale da aggiungere ai costi diretti di cantiere per coprire i costi della struttura aziendale (ufficio, tecnici, commercialista, assicurazioni, ecc.). È il numero da usare obbligatoriamente in ogni preventivo. Se non lo applichi, stai lavorando in perdita strutturale.',
-    formulaTestuale: 'Overhead Rate Totale = (Costi Studio + Costi Fissi Puri) ÷ Costi Diretti Cantiere',
+    formulaTestuale: 'Overhead Rate Costi Fissi Totali = (Costi Studio + Costi Fissi Puri) ÷ Costi Diretti Cantiere',
     formulaPassaggi: [
       { label: 'Somma tutti i costi dello studio e tecnici', formula: 'Σ costo_studio (stipendi ufficio + tecnici + amministratori)' },
       { label: 'Somma tutti i costi fissi strutturali', formula: 'Σ costo_fisso (affitti + utenze + software + assicurazioni + marketing + ammortamenti)' },
@@ -349,11 +390,11 @@ export const GLOSSARIO: TermineGlossario[] = [
     nome: 'Incidenza Studio sul Fatturato',
     categoria: 'overhead',
     origine: 'Indicatore di controllo di gestione — misura quanto pesa la struttura tecnica rispetto ai ricavi generati',
-    definizione: 'Quanto costano lo studio e il personale tecnico in proporzione al fatturato. A differenza dell\'overhead rate (usato per i preventivi), questa percentuale si usa per il controllo mensile: capire se la struttura è dimensionata correttamente rispetto all\'attività.',
+    definizione: 'Quanto costano lo studio e il personale tecnico in proporzione al fatturato. A differenza dell\'overhead rate (usato per i preventivi), questa percentuale si usa per il controllo mensile per verificare il dimensionamento della struttura tecnica. Le voci incluse sono: 1) Costi di Studio (Stipendi e Contributi Ufficio, Collaboratori Fissi, Compenso Amministratori) al numeratore. 2) Fatturato (SAL Cantieri, Saldi Finali Commessa, Manutenzioni, Vendita/Affitti Immobili, Rimborsi) al denominatore.',
     formulaTestuale: 'Incidenza Studio = Costi Studio ÷ Fatturato',
     formulaPassaggi: [
-      { label: 'Somma tutti i costi costo_studio del periodo', formula: 'Stipendi Ufficio + Contributi Ufficio + Collaboratori + Compenso Amministratori' },
-      { label: 'Dividi per il fatturato del periodo', formula: '÷ Ricavi Core + Altri Ricavi' },
+      { label: 'Costi Studio (Numeratore) — Somma le voci di:', formula: '[PERSONALE] Stipendi Ufficio + Contributi Ufficio + Collaboratori Fissi + Compenso Amministratori' },
+      { label: 'Fatturato (Denominatore) — Somma le voci di:', formula: '[CANTIERE] SAL + Saldo Commessa + Manutenzioni + [IMMOBILIARE] Vendite/Affitti + [RIMBORSI] Rimborsi' },
     ],
     esempioNumerico: {
       dati: 'Costi Studio annui €60.000, Fatturato €800.000',
@@ -372,12 +413,42 @@ export const GLOSSARIO: TermineGlossario[] = [
   },
 
   {
+    id: 'incidenza_fissi_puro_fatturato',
+    nome: 'Incidenza Costi Fissi (escl. Studio) sul Fatturato',
+    categoria: 'overhead',
+    origine: 'Misure di controllo di gestione — analizza l\'impatto della struttura fissa pura (escluso lo Studio/Personale) sul fatturato',
+    definizione: 'Indica la quota di fatturato assorbita dalle spese generali di struttura fissa pura (affitti, utenze, assicurazioni, commercialista, software, marketing, ammortamenti), escludendo i costi del personale tecnico e di studio. Consente di misurare l\'efficienza dei costi fissi generali in modo indipendente dal costo delle risorse umane.',
+    formulaTestuale: 'Incidenza Costi Fissi (escl. Studio) = Costi Fissi Puri ÷ Fatturato',
+    formulaPassaggi: [
+      { label: 'Costi Fissi Puri (Numeratore) — Somma delle voci di:', formula: '[STRUTTURA] Affitti + Utenze + Software + Assicurazioni + Marketing + Consulenze Generali + Ammortamenti' },
+      { label: 'Fatturato (Denominatore) — Somma delle voci di:', formula: '[CANTIERE] SAL + Saldi Commessa + Manutenzioni + [IMMOBILIARE] Vendita/Affitti' },
+    ],
+    esempioNumerico: {
+      dati: 'Costi Fissi Puri annui €80.000, Fatturato €800.000',
+      calcolo: '80.000 ÷ 800.000',
+      risultato: 'Incidenza Costi Fissi (escl. Studio) = 10% — ogni €100 di fatturato, €10 vanno per coprire le spese generali',
+    },
+    doveAppareNellApp: ['AnalisiView — Blocco A "Controllo di Gestione"'],
+    sogliaEdilizia: {
+      ottimo: '< 8%',
+      buono: '8–12%',
+      attenzione: '12–15%',
+      critico: '> 15%',
+    },
+    connessoCon: ['incidenza_studio_fatturato', 'incidenza_fissi_fatturato'],
+  },
+
+  {
     id: 'incidenza_fissi_fatturato',
     nome: 'Incidenza Overhead Totale sul Fatturato',
     categoria: 'overhead',
     origine: 'Complementare all\'incidenza studio — misura tutto il peso della struttura aziendale sui ricavi',
-    definizione: 'Quanto pesa l\'intera struttura aziendale (tecnici + ufficio + affitti + utenze + assicurazioni + tutto il resto) rispetto al fatturato. È la percentuale usata nel metodo Gasparotto per il controllo mensile della struttura dei costi.',
+    definizione: 'Quanto pesa l\'intera struttura aziendale (tecnici + ufficio + affitti + utenze + assicurazioni + tutto il resto) rispetto al fatturato. È la percentuale usata nel metodo Gasparotto per il controllo mensile della struttura dei costi. Le voci incluse sono: 1) Costi Studio + Costi Fissi Puri (Commercialista, Consulenti Fissi, SOA/ISO, Affitti Sedi, Utenze, Software, Cancelleria, Assicurazione Mezzi, Revisioni, Riparazioni Programmate, Assicurazioni Generali, Corsi, Visite Mediche, Pubblicità, IMU/TARI, Ammortamenti) al numeratore. 2) Fatturato al denominatore.',
     formulaTestuale: 'Incidenza Overhead Totale = (Costi Studio + Costi Fissi Puri) ÷ Fatturato',
+    formulaPassaggi: [
+      { label: 'Costi Studio + Costi Fissi Puri (Numeratore) — Somma delle voci:', formula: 'Stipendi/Contributi Ufficio + Collaboratori + Compenso Amministratori + Commercialista + Consulenti Fissi + SOA/ISO + Affitti + Utenze + Software + Cancelleria + Assicurazioni Mezzi/Generali + Revisioni + Riparazioni Programmate + Corsi + Visite Mediche + Pubblicità + IMU/TARI + Ammortamenti' },
+      { label: 'Fatturato (Denominatore) — Somma delle voci:', formula: '[CANTIERE] SAL + Saldo Commessa + Manutenzioni + [IMMOBILIARE] Vendite/Affitti + [RIMBORSI] Rimborsi' },
+    ],
     esempioNumerico: {
       dati: 'Studio €60.000 + Fissi €80.000 = €140.000. Fatturato €800.000',
       calcolo: '140.000 ÷ 800.000',
@@ -391,6 +462,32 @@ export const GLOSSARIO: TermineGlossario[] = [
       critico: '> 35%',
     },
     connessoCon: ['incidenza_studio_fatturato', 'overhead_rate_totale'],
+  },
+
+  {
+    id: 'oneri_finanziari_incidenza',
+    nome: 'Incidenza Oneri Finanziari sul Fatturato',
+    categoria: 'overhead',
+    origine: 'Misura il peso del costo del capitale di debito sul fatturato complessivo dell\'azienda',
+    definizione: 'Indica quanta percentuale del fatturato viene assorbita dagli oneri finanziari (interessi passivi, commissioni bancarie e bolli). Mostra la dipendenza finanziaria dalle banche e l\'onerosità del debito. Le voci incluse sono: 1) Oneri Finanziari (Interessi Passivi Finanziamenti, Commissioni e Bolli Bancari, Interessi su Mutuo Cantiere) al numeratore. 2) Fatturato al denominatore.',
+    formulaTestuale: 'Incidenza Oneri Finanziari = Oneri Finanziari ÷ Fatturato',
+    formulaPassaggi: [
+      { label: 'Oneri Finanziari (Numeratore) — Somma le voci di:', formula: '[FINANZA] Interessi Passivi Finanziamenti + Commissioni e Bolli Bancari + Interessi su Mutuo Cantiere' },
+      { label: 'Fatturato (Denominatore) — Somma le voci di:', formula: '[CANTIERE] SAL + Saldo Commessa + Manutenzioni + [IMMOBILIARE] Vendite/Affitti + [RIMBORSI] Rimborsi' },
+    ],
+    esempioNumerico: {
+      dati: 'Oneri Finanziari €8.000, Fatturato €800.000',
+      calcolo: '8.000 ÷ 800.000',
+      risultato: 'Incidenza Oneri Finanziari = 1,0% — ogni €100 di fatturato, €1 va alle banche',
+    },
+    doveAppareNellApp: ['AnalisiView — Blocco A "Controllo di Gestione"'],
+    sogliaEdilizia: {
+      ottimo: '< 1,5%',
+      buono: '1,5–3,0%',
+      attenzione: '3,0–5,0%',
+      critico: '> 5,0%',
+    },
+    connessoCon: ['copertura_interessi', 'ebitda'],
   },
 
   {
@@ -647,6 +744,60 @@ export const GLOSSARIO: TermineGlossario[] = [
     doveAppareNellApp: ['AnalisiView — tab Previsione Fiscale'],
     erroreComune: 'Il personale dipendente (stipendi + contributi) NON è deducibile dall\'IRAP — questo è il motivo per cui un\'azienda edile con molti dipendenti paga più IRAP di una con soli subappalti.',
     connessoCon: ['ires', 'ebit', 'overhead_rate_totale'],
+  },
+
+  // ─── BUDGET E FORECAST ──────────────────────────────────────────
+
+  {
+    id: 'budget_annuo',
+    nome: 'Budget Annuo',
+    categoria: 'concetti',
+    origine: 'Dall\'antico francese "bougette" — borsa o valigetta per contenere i conti dello Stato',
+    definizione: 'È il valore programmatico (l\'obiettivo o limite massimo) stabilito per l\'intera durata dell\'anno solare per una specifica categoria economica. Si inserisce manualmente all\'inizio del periodo strategico e funge da traguardo fisso contro cui misurare le performance reali dell\'azienda.',
+    doveAppareNellApp: ['BudgetView — Tabella Budget e Scostamenti (colonna gialla)'],
+    connessoCon: ['consuntivo_ytd', 'scostamento_budget', 'avanzamento_budget'],
+  },
+
+  {
+    id: 'consuntivo_ytd',
+    nome: 'Consuntivo YTD (Year To Date)',
+    categoria: 'concetti',
+    origine: 'Dall\'inglese "Year To Date" — cioè dall\'inizio dell\'anno ad oggi',
+    definizione: 'Rappresenta la somma totale dei ricavi effettivi o dei costi operativi reali registrati (transazioni non previsionali) dall\'inizio dell\'anno fiscale (1° gennaio) fino alla data odierna. È estratto automaticamente in tempo reale dalle transazioni completate nelle timeline.',
+    doveAppareNellApp: ['BudgetView — Tabella Budget (colonna azzurra)', 'Dashboard'],
+    connessoCon: ['budget_annuo', 'scostamento_budget', 'avanzamento_budget'],
+  },
+
+  {
+    id: 'scostamento_budget',
+    nome: 'Scostamento di Budget',
+    categoria: 'concetti',
+    origine: 'Dal verbo "scostare" — la distanza misurata tra il traguardo teorico ed il risultato pratico',
+    definizione: 'È il differenziale calcolato parametrizzando i dati ad oggi. Per evitare distorsioni (es. confrontare 5 mesi reali con 12 mesi di obiettivo), il sistema divide l\'obiettivo annuale per i mesi trascorsi e sottrae il consuntivo accumulato nello stesso periodo. Indica se siamo in vantaggio (verde per ricavi) o in ritardo (rosso).',
+    formulaTestuale: 'Scostamento = Consuntivo YTD − (Budget Annuo ÷ 12 × Mesi Trascorsi)',
+    esempioNumerico: {
+      dati: 'Budget annuo ricavi €120.000. Mesi trascorsi: 5 (gen-mag). Consuntivo YTD reale: €55.000',
+      calcolo: 'Quota budget 5 mesi = €120.000 ÷ 12 × 5 = €50.000. Scostamento = €55.000 − €50.000',
+      risultato: 'Scostamento = +€5.000 (Vantaggio del 10% sul pro-quota temporale)',
+    },
+    doveAppareNellApp: ['BudgetView — Tabella Budget (colonna verde/rossa)', 'CEView — Scostamenti'],
+    connessoCon: ['budget_annuo', 'consuntivo_ytd', 'avanzamento_budget'],
+  },
+
+  {
+    id: 'avanzamento_budget',
+    nome: 'Avanzamento % di Budget',
+    categoria: 'concetti',
+    origine: 'La frazione di traguardo annuale già completata',
+    definizione: 'Indica la percentuale complessiva dell\'obiettivo annuale che è stata effettivamente realizzata ad oggi. È calcolata dividendo il consuntivo cumulato YTD per il budget totale pianificato per l\'intero anno solare.',
+    formulaTestuale: 'Avanzamento % = Consuntivo YTD ÷ Budget Annuo Totale',
+    esempioNumerico: {
+      dati: 'Consuntivo ricavi YTD ad oggi €60.000. Budget totale annuo stabilito €100.000',
+      calcolo: '60.000 ÷ 100.000',
+      risultato: 'Avanzamento = 60% dell\'obiettivo annuale raggiunto',
+    },
+    doveAppareNellApp: ['BudgetView — Tabella Budget (colonna destra indaco)'],
+    connessoCon: ['budget_annuo', 'consuntivo_ytd', 'scostamento_budget'],
   },
 
 ];

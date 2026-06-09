@@ -1053,7 +1053,10 @@ const CEView: React.FC<CEViewProps> = ({
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Fatturato YTD</span>
-                <InfoTooltip termId="fatturato" />
+                <InfoTooltip 
+                  termId="fatturato" 
+                  calculatedValues={`Fatturato YTD:\n- Consuntivo YTD: ${formatEuro(metrics.fatturato)}\n- Proiezione 12m: ${formatEuro(metrics.proiezioneFatturato)}`}
+                />
               </div>
               <button
                 onClick={() => setDrawerKpi('fatturato')}
@@ -1069,13 +1072,16 @@ const CEView: React.FC<CEViewProps> = ({
             Proiezione: {formatEuro(metrics.proiezioneFatturato)}
           </div>
         </div>
-
+ 
         <div className="p-5 rounded-3xl border shadow-sm bg-indigo-50 border-indigo-100 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
                 <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Primo Margine</span>
-                <InfoTooltip termId="primo_margine" />
+                <InfoTooltip 
+                  termId="primo_margine" 
+                  calculatedValues={`Primo Margine:\n- Consuntivo YTD: ${formatEuro(metrics.primoMargineTot)} (${formatPercent(metrics.primoMarginePercent)})\n- Proiezione 12m: ${formatEuro(metrics.proiezionePrimoMargine)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)})`}
+                />
               </div>
               <button
                 onClick={() => setDrawerKpi('primo_margine')}
@@ -1091,13 +1097,16 @@ const CEView: React.FC<CEViewProps> = ({
             Proiezione: {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)} ({formatEuro(metrics.proiezionePrimoMargine)})
           </div>
         </div>
-
+ 
         <div className="p-5 rounded-3xl border shadow-sm bg-emerald-50 border-emerald-100 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
                 <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">EBITDA %</span>
-                <InfoTooltip termId="ebitda" />
+                <InfoTooltip 
+                  termId="ebitda" 
+                  calculatedValues={`EBITDA %:\n- Consuntivo YTD: ${formatEuro(metrics.ebitdaTot)} (${formatPercent(metrics.ebitdaPercent)})\n- Proiezione 12m: ${formatEuro(metrics.proiezioneEbitda)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)})`}
+                />
               </div>
               <button
                 onClick={() => setDrawerKpi('ebitda')}
@@ -1113,13 +1122,16 @@ const CEView: React.FC<CEViewProps> = ({
             Proiezione: {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)} ({formatEuro(metrics.proiezioneEbitda)})
           </div>
         </div>
-
+ 
         <div className="p-5 rounded-3xl border shadow-sm bg-amber-50 border-amber-100 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
                 <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider">EBIT %</span>
-                <InfoTooltip termId="ebit" />
+                <InfoTooltip 
+                  termId="ebit" 
+                  calculatedValues={`EBIT %:\n- Consuntivo YTD: ${formatEuro(metrics.ebitTot)} (${formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)})\n- Proiezione 12m: ${formatEuro(metrics.proiezioneEbit)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)})`}
+                />
               </div>
               <button
                 onClick={() => setDrawerKpi('ebit')}
@@ -1135,13 +1147,16 @@ const CEView: React.FC<CEViewProps> = ({
             Proiezione: {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)} ({formatEuro(metrics.proiezioneEbit)})
           </div>
         </div>
-
+ 
         <div className="bg-[#222222] p-5 rounded-3xl border border-slate-800 shadow-lg text-white flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Punto di Pareggio</span>
-                <InfoTooltip termId="break_even" />
+                <InfoTooltip 
+                  termId="break_even" 
+                  calculatedValues={`Punto di Pareggio:\n- Competenza YTD: ${formatEuro(metrics.breakEven)}\n- Cassa YTD: ${formatEuro(metrics.breakEvenCassa)}\n- Proiezione Competenza 12m: ${formatEuro(projBreakEven)}\n- Proiezione Cassa 12m: ${formatEuro(projBreakEvenCassa)}`}
+                />
               </div>
               <button
                 onClick={() => setDrawerKpi('break_even')}
@@ -1225,6 +1240,23 @@ const CEView: React.FC<CEViewProps> = ({
                 <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezioneEbitda)}</td>
                 <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda/metrics.proiezioneFatturato : 0)}</td>
               </tr>
+
+              {effettoRimanenze && (
+                <tr className="bg-emerald-50/50 font-bold border-b border-emerald-100">
+                  <td className="py-3 px-4 text-xs sticky left-0 bg-emerald-50/50 z-10 text-emerald-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <div className="flex flex-col">
+                      <span>EBITDA DI COMPETENZA (OIC)</span>
+                      <span className="text-[9px] font-normal text-emerald-600">Inclusa var. rimanenze: {formatEuro(effettoRimanenze.variazioneRimanenzeNetta)}</span>
+                    </div>
+                  </td>
+                  {activeTab === 'monthly' && Array(12).fill(0).map((_, i) => <td key={i} className="px-2"></td>)}
+                  <td className="text-right px-4 text-sm text-emerald-700">{formatEuro(metrics.ebitdaTot + effettoRimanenze.variazioneRimanenzeNetta)}</td>
+                  <td className="text-right px-2 text-xs text-emerald-600">
+                    {formatPercent(effettoRimanenze.fatturatoCompetenzaRettificato > 0 ? (metrics.ebitdaTot + effettoRimanenze.variazioneRimanenzeNetta) / effettoRimanenze.fatturatoCompetenzaRettificato : 0)}
+                  </td>
+                  <td colSpan={2}></td>
+                </tr>
+              )}
 
               <tr className="border-b border-slate-200 bg-slate-900/5">
                 <td className="py-4 px-4 text-sm sticky left-0 bg-[#1a1a1a] z-10 text-slate-300">

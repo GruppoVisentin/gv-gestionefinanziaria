@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { Transaction, TransactionType } from "../types";
+import { Transaction, TransactionType, SPSnapshot } from "../types";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "../constants";
 
 const apiKey = process.env.API_KEY || '';
@@ -193,5 +193,142 @@ export const fetchEuriborRates = async (): Promise<{
   } catch (error) {
     console.error("Gemini Euribor error:", error);
     return null;
+  }
+};
+
+export const parseBalanceSheetText = async (textInput: string): Promise<Partial<SPSnapshot> | null> => {
+  if (!apiKey) {
+    console.warn("API Key is missing for Gemini.");
+    return null;
+  }
+
+  try {
+    const prompt = `
+      Sei un esperto contabile italiano. Analizza il seguente testo estratto da un bilancino di verifica o situazione patrimoniale fornita dal commercialista.
+      Estrai e riclassifica i valori per compilare lo Stato Patrimoniale dell'impresa.
+      
+      Dati da cercare e mappare (cerca corrispondenze anche parziali o sinonimi tipici dei conti italiani):
+      - immImmateriali (Immobilizzazioni immateriali, brevetti, marchi, spese impianto/sviluppo)
+      - immMateriali (Immobilizzazioni materiali, macchinari, attrezzature, computer, automezzi, impianti)
+      - immobiliTerreni (Fabbricati, terreni, immobili di proprietà civile o industriale)
+      - partecipazioni (Partecipazioni in altre imprese, titoli a lungo termine)
+      - rimanenze (Magazzino, rimanenze finali, lavori in corso su ordinazione, WIP)
+      - creditiClienti (Crediti v/clienti, fatture da emettere, crediti commerciali)
+      - creditiTributari (Crediti per imposte, IVA a credito, crediti tributari vari)
+      - liquidita (Cassa, banca c/c attivi, disponibilità liquide)
+      - capitaleSociale (Capitale sociale, capitale deliberato/sottoscritto)
+      - riserve (Riserva legale, riserva straordinaria, sovrapprezzo azioni, utili portati a nuovo)
+      - utileEsercizio (Utile o perdita d'esercizio)
+      - mutuiLT (Mutui passivi oltre 12 mesi, finanziamenti a lungo termine da banche o altri)
+      - leasingLT (Debiti per leasing a lungo termine, locazione finanziaria LT)
+      - tfr (Trattamento fine rapporto dipendenti, fondo TFR)
+      - fidiRT (Fidi bancari, anticipi su fatture, banche c/c passivi, scoperti a breve termine)
+      - debitiFornitori (Debiti v/fornitori, fatture da ricevere, debiti commerciali)
+      - debitiTributari (Debiti tributari, debiti previdenziali/assistenziali, IVA a debito, imposte da pagare, INPS, INAIL, Erario c/ritenute)
+      - accontiClienti (Acconti da clienti, debiti per acconti)
+      - altriDebitiBT (Altri debiti a breve termine, debiti v/soci per finanziamenti infruttiferi, debiti diversi entro 12m)
+      - mutuiBT (Quota corrente mutui/leasing entro 12m)
+
+      IMPORTANTE:
+      - Se trovi saldi espressi in formato italiano (es. con punti come separatori delle migliaia e virgole per i decimali, o con indicazione "Dare" / "Avere"), convertili correttamente in numeri JavaScript (es. "832.211,28" o "832211,28" diventa 832211.28).
+      - Ritorna esclusivamente un oggetto JSON piatto contenente solo le chiavi identificate (con valori numerici positivi o negativi a seconda del segno contabile corretto). Ometti le chiavi non trovate o non specificate nel testo.
+      - Non includere spiegazioni, formattazioni markdown extra o markdown block, rispondi SOLO con il JSON.
+      
+      Testo del bilancio da analizzare:
+      ---
+      ${textInput}
+      ---
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+    });
+
+    const text = response.text?.trim();
+    if (!text) return null;
+
+    const match = text.match(/\{[\s\S]+\}/);
+    if (match) {
+      return JSON.parse(match[0]);
+    }
+    return null;
+  } catch (error) {
+    console.error("Gemini parse balance sheet error:", error);
+    return null;
+  }
+};
+
+export const generateForecastInsights = async (metricsPrev: any, rates: any): Promise<string> => {
+  if (!apiKey) {
+    return "";
+  }
+  try {
+    const prompt = `
+      Sei un AI Coach finanziario per l'impresa edile Gruppo Visentin SRL.
+      Analizza questi dati PREVISIONALI (target/pianificati) calcolati per l'anno in corso:
+      - Fatturato Previsionale: ${new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(metricsPrev.fatturato)}
+      - Primo Margine Previsionale %: ${new Intl.NumberFormat('it-IT', { style: 'percent', minimumFractionDigits: 1 }).format(metricsPrev.primoMarginePercent)}
+      - EBITDA Previsionale %: ${new Intl.NumberFormat('it-IT', { style: 'percent', minimumFractionDigits: 1 }).format(metricsPrev.ebitdaPercent)}
+      - Utile Netto Previsionale %: ${new Intl.NumberFormat('it-IT', { style: 'percent', minimumFractionDigits: 1 }).format(metricsPrev.utileNettoPercent)}
+      - Punto di Pareggio (BEP) Previsionale: ${new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(metricsPrev.breakEven)}
+      - Incidenza Studio Previsionale: ${new Intl.NumberFormat('it-IT', { style: 'percent', minimumFractionDigits: 1 }).format(rates.incidenzaStudioFatturatoPrev)}
+      - Incidenza Fissi Previsionale: ${new Intl.NumberFormat('it-IT', { style: 'percent', minimumFractionDigits: 1 }).format(rates.incidenzaFissiFatturatoPrev ?? 0)}
+      
+      Fornisci una breve valutazione strategica e 3 azioni correttive concrete suggerite dall'AI per raggiungere o consolidare questi target previsionali. Sii sintetico e diretto. Parla in italiano. Usa un formato elenco puntato chiaro in Markdown.
+    `;
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+    });
+    return response.text || "";
+  } catch (e) {
+    console.error("Gemini forecast insight error:", e);
+    return "";
+  }
+};
+
+export const generateCardInsight = async (
+  cardId: number,
+  label: string,
+  value: string,
+  fasciaColore: string,
+  desc: string,
+  extraContext?: string
+): Promise<string> => {
+  if (!apiKey) return "";
+  try {
+    const livello = {
+      ottimo: 'OTTIMO (target raggiunto e superato)',
+      buono: 'BUONO (in linea con i target)',
+      attenzione: 'ATTENZIONE (deviazione dai target — monitoraggio necessario)',
+      critico: 'CRITICO (soglia di sicurezza superata — azione urgente richiesta)',
+    }[fasciaColore] ?? fasciaColore;
+
+    const prompt = `
+      Sei un AI Coach finanziario per Gruppo Visentin SRL, impresa edile italiana.
+      Un indicatore chiave del controllo di gestione ha raggiunto questo valore:
+
+      - Indicatore: ${label}
+      - Descrizione: ${desc}
+      - Valore attuale (consuntivo YTD): ${value}
+      - Livello di performance: ${livello}
+      ${extraContext ? `- Contesto aggiuntivo: ${extraContext}` : ''}
+
+      Fornisci UNA sola azione correttiva concreta, specifica e immediatamente attuabile per questo indicatore.
+      Tono professionale, diretto, massimo 2-3 frasi. Parla in italiano. 
+      ${fasciaColore === 'ottimo' || fasciaColore === 'buono' 
+        ? 'Il valore è positivo: dai un consiglio per mantenere o consolidare la performance.' 
+        : 'Il valore richiede attenzione: dai un consiglio correttivo urgente e pratico.'}
+      Non usare markdown, rispondi solo con il testo dell'azione.
+    `;
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+    });
+    return response.text?.trim() || "";
+  } catch (e) {
+    console.error("Gemini card insight error:", e);
+    return "";
   }
 };

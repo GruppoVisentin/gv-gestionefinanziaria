@@ -3,6 +3,19 @@ import { Transaction, TransactionType, Project } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
+const safeParseFloat = (val: any): number => {
+  if (typeof val === 'number') return val;
+  const str = String(val ?? '').trim();
+  if (!str) return NaN;
+  if (str.includes('.') && str.includes(',')) {
+    return parseFloat(str.replace(/\./g, '').replace(',', '.'));
+  }
+  if (str.includes(',')) {
+    return parseFloat(str.replace(',', '.'));
+  }
+  return parseFloat(str);
+};
+
 // ─── TIPI ────────────────────────────────────────────────────────
 
 export interface ExistingTransactionIndexes {
@@ -34,6 +47,7 @@ export interface DettFEP {
   tipologia: string;
   categoria: string;
   aliquoteMiste: boolean;
+  dataDocumento?: string; // YYYY-MM-DD
 }
 
 export interface DettFEA {
@@ -45,6 +59,7 @@ export interface DettFEA {
   totale: number;
   cantiere: string;
   descrizioneDettaglio: string;
+  dataDocumento?: string; // YYYY-MM-DD
 }
 
 export interface MappingConto {
@@ -79,6 +94,7 @@ export interface RigaClassificata {
   cantierePuntaNet: string;
   cantiereMatchFonte: 'cliente_fea' | 'fornitore_fep' | 'nome_cantiere' | 'testo_banca' | null;
   tipoEntrata: 'sal' | 'acconto' | 'saldo' | 'immobile' | 'altro' | null;
+  dataDocumento?: string | null; // YYYY-MM-DD
 }
 
 // ─── FUNZIONI UTILI ──────────────────────────────────────────────
@@ -371,8 +387,8 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
     const flag = String(r[indexFlag] ?? '').trim().toUpperCase();
     if (flag !== 'B' && flag !== 'I') continue;
 
-    const eBanca = parseFloat(String(r[indexEntrate] ?? '').replace(',', '.'));
-    const uBanca = parseFloat(String(r[indexUscite] ?? '').replace(',', '.'));
+    const eBanca = safeParseFloat(r[indexEntrate]);
+    const uBanca = safeParseFloat(r[indexUscite]);
 
     const isEntrata = !isNaN(eBanca) && eBanca > 0;
     const isUscita = !isNaN(uBanca) && uBanca > 0;
@@ -524,6 +540,12 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
       const forMatch = desc.match(/del\s+\d{2}\/\d{2}\/\d{4}\s+(.+?)\s+-\s+\(Prot/i);
 
       if (numMatch) {
+        let dataDocumento: string | undefined = undefined;
+        const dateMatch = desc.match(/del\s+(\d{2})\/(\d{2})\/(\d{4})/i);
+        if (dateMatch) {
+          dataDocumento = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+        }
+
         current = {
           numero: numMatch[1].trim(),
           fornitore: forMatch ? forMatch[1].trim() : '',
@@ -535,6 +557,7 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
           tipologia: '',
           categoria: '',
           aliquoteMiste: false,
+          dataDocumento,
           cantieriSomme: {},
           tipologieSomme: {},
           categorieSomme: {},
@@ -646,6 +669,12 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
       }
 
       if (match) {
+        let dataDocumento: string | undefined = undefined;
+        const dateMatch = desc.match(/del\s+(\d{2})\/(\d{2})\/(\d{4})/i);
+        if (dateMatch) {
+          dataDocumento = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+        }
+
         const isPrimaNota = headers[8] === 'BANCA' || headers[8] === 'CONTO';
         const rowAmount = (isPrimaNota && typeof row[5] === 'number') ? row[5] : 0;
         current = {
@@ -657,7 +686,8 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
           codIva: '',
           totale: rowAmount,
           cantiere: '',
-          descrizioneDettaglio: isPrimaNota ? desc : ''
+          descrizioneDettaglio: isPrimaNota ? desc : '',
+          dataDocumento
         };
         if (isPrimaNota) {
           salvaCorrente();
@@ -1202,6 +1232,7 @@ export const suggerisciAliquotaIVADaCategoria = (categoria: string): AliquotaIVA
     '[PERSONALE] Compenso Amministratori',
     '[STRAORDINARI] Sanzioni e Penali',
     '[STRAORDINARI] Volontariato e Donazioni',
+    '[CANTIERE] Caparra Confirmatoria',
   ].includes(categoria)) return 0;
   if ([
     '[COMPLIANCE] Visite Mediche Dipendenti',
@@ -1210,16 +1241,11 @@ export const suggerisciAliquotaIVADaCategoria = (categoria: string): AliquotaIVA
     '[CANTIERE] SAL — Stato Avanzamento Lavori',
     '[CANTIERE] Saldo Finale Commessa',
     '[CANTIERE] Manutenzioni e Piccoli Lavori',
-    '[CANTIERE] Fornitori Materiali',
     '[CANTIERE] Subappalti Manodopera',
-    '[CANTIERE] Noleggi Attrezzature e Mezzi',
-    '[CANTIERE] Rifiuti e Macerie',
     '[CANTIERE] Pranzi e Trasferte Cantiere',
     '[IMMOBILIARE] Vendita Immobili e Terreni',
     '[IMMOBILIARE] Affitti Attivi',
-    '[PERSONALE] Stipendi Dipendenti Operativi',
     '[CANTIERE] Anticipi da Clienti su Commessa',
-    '[CANTIERE] Caparra Confirmatoria',
   ].includes(categoria)) return 10;
   return 22;
 };
@@ -1232,7 +1258,8 @@ export const rigaToTransaction = (
   ceType: string,
   vatRate?: number,
   sourceRef?: string,
-  importSessionId?: string
+  importSessionId?: string,
+  invoiceDate?: string
 ): Transaction => {
   const rate = vatRate ?? 0;
   const netAmount = riga.importo / (1 + rate / 100);
@@ -1247,6 +1274,7 @@ export const rigaToTransaction = (
     vatRate: rate,
     sourceRef: sourceRef ?? `Punta Net · ${riga.data.toLocaleDateString('it-IT')}`,
     importSessionId,
+    invoiceDate
   };
 };
 

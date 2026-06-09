@@ -94,6 +94,7 @@ export interface Project {
   estimatedMaterials?: number;
   estimatedSubcontractors?: number;
   estimatedProfessionals?: number;
+  estimatedRevenue?: number;
 }
 
 export interface BankAccount {
@@ -109,6 +110,7 @@ export interface InitialBalanceBreakdown {
   accontiClienti?: number;
   altriDebitiBT?: number;
   mutuiBT?: number;
+  imposteAnnoPrecedente?: number;
 }
 
 export interface FinancialSummary {
@@ -294,6 +296,7 @@ export interface BackupData {
   spSnapshots?: SPSnapshot[];
   budgetData?: Record<string, BudgetData>;
   oreCantiereStorico?: Record<string, number>;
+  oreOperaiStorico?: Record<string, any>;
   tipologieCantiere?: TipologiaCantiere[];
   cantieriPrev?: CantierePrev[];
   rimanenze?: RimanenzeData;   // aggiunta — opzionale per retrocompatibilità
@@ -317,6 +320,7 @@ export enum AppView {
   SETTINGS = 'SETTINGS',
   OPERATORS = 'OPERATORS',
   // ── Moduli futuri (placeholder) ──
+  BILANCIO_RIEPILOGO = 'BILANCIO_RIEPILOGO',
   CE_RICLASSIFICATO = 'CE_RICLASSIFICATO',
   STATO_PATRIMONIALE = 'STATO_PATRIMONIALE',
   BUDGET = 'BUDGET',

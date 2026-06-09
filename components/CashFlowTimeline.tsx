@@ -8,6 +8,7 @@ import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { exportMonthlyReportPDF } from '../utils/monthlyPdfExport';
 import { exportCashFlowProjectionPDF } from '../utils/cashFlowPdfExport';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA } from '../utils/gasCoreEngine';
 
 interface CashFlowTimelineProps {
   transactions: Transaction[];
@@ -52,6 +53,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const [tempAccontiClienti, setTempAccontiClienti] = useState(0);
   const [tempAltriDebitiBT, setTempAltriDebitiBT] = useState(0);
   const [tempMutuiBT, setTempMutuiBT] = useState(0);
+  const [tempImposteAnnoPrecedente, setTempImposteAnnoPrecedente] = useState(0);
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountBalance, setNewAccountBalance] = useState('');
 
@@ -235,6 +237,15 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       return calculateLoanRepaymentForYear(currentYear, monthIndex);
   };
 
+  // --- CALCULATION LOGIC FOR TAXES & VAT ---
+  const taxForecasts = useMemo(() => {
+    const ceData = buildCEData(transactions, currentYear, undefined, 'cassa', projects, initialData);
+    const ceMetrics = calcCEMetrics(ceData, transactions, projects, initialData);
+    const prevFiscale = calcPrevisioneFiscale(transactions, currentYear, ceMetrics, undefined, 0.24, 0.039, true, initialData);
+    const posIva = calcPosizIoneIVA(transactions, currentYear, true);
+    return { prevFiscale, posIva };
+  }, [transactions, currentYear, projects, initialData]);
+
   // --- CALCULATION LOGIC FOR THRESHOLDS ---
   const { avgMonthlyExpense, safetyThreshold } = useMemo(() => {
     const totalAnnualExpense = transactions
@@ -359,6 +370,20 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       return total;
   };
 
+  const calculateProjectRevenueForMonth = (monthIndex: number) => {
+      let total = 0;
+      projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
+          const start = new Date(p.estimatedStartDate!);
+          const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
+          const targetMonthGlobal = currentYear * 12 + monthIndex;
+          const diff = targetMonthGlobal - startMonthGlobal;
+
+          // Assumiamo che il ricavo venga incassato spalmato in 6 mesi (da data inizio)
+          if (diff >= 0 && diff < 6) total += (p.estimatedRevenue || 0) / 6;
+      });
+      return total;
+  };
+
   const calculateMonthlyFlow = (monthIndex: number, isForecast: boolean) => {
     const monthlyTransactions = transactions.filter(t => {
       const tDate = new Date(t.date);
@@ -376,7 +401,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       );
     });
 
-    const income = monthlyTransactions
+    let income = monthlyTransactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
@@ -389,9 +414,28 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         const { totalPayment } = calculateLoanRepaymentForMonth(monthIndex);
         expense += totalPayment;
 
+        income += calculateProjectRevenueForMonth(monthIndex);
+
         ['[CONSULENZE] Professionisti Esterni di Cantiere', '[PERSONALE] Subappalti Manodopera', '[FORNITORI] Fornitori Materiali', '[FORNITORI] Subappalti su Cantieri'].forEach(cat => {
             expense += calculateProjectCostForMonth(cat, monthIndex);
         });
+
+        // Tax Deductions (IRES/IRAP and VAT)
+        const ivaMese = taxForecasts.posIva.mensile[monthIndex];
+        if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
+            expense += ivaMese.versamentoIVA;
+        }
+
+        if (monthIndex === 5) {
+            const paidJune = transactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            if (!paidJune) {
+                expense += taxForecasts.prevFiscale.accontoGiugno;
+                expense += taxForecasts.prevFiscale.saldoAprilem;
+            }
+        } else if (monthIndex === 10) {
+            const paidNov = transactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            if (!paidNov) expense += taxForecasts.prevFiscale.accontoNovembre;
+        }
     }
 
     return income - expense;
@@ -421,15 +465,36 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
     if (isForecast) {
         let annualAutoCosts = 0;
+        let annualAutoIncome = 0;
         for (let i = 0; i < 12; i++) {
             const { totalPayment } = calculateLoanRepaymentForMonth(i);
             annualAutoCosts += totalPayment;
+            
+            annualAutoIncome += calculateProjectRevenueForMonth(i);
 
             ['[CONSULENZE] Professionisti Esterni di Cantiere', '[PERSONALE] Subappalti Manodopera', '[FORNITORI] Fornitori Materiali', '[FORNITORI] Subappalti su Cantieri'].forEach(cat => {
                 annualAutoCosts += calculateProjectCostForMonth(cat, i);
             });
+            
+            // Tax Deductions (IRES/IRAP and VAT)
+            const ivaMese = taxForecasts.posIva.mensile[i];
+            if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
+                annualAutoCosts += ivaMese.versamentoIVA;
+            }
+
+            if (i === 5) {
+                const paidJune = transactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                if (!paidJune) {
+                    annualAutoCosts += taxForecasts.prevFiscale.accontoGiugno;
+                    annualAutoCosts += taxForecasts.prevFiscale.saldoAprilem;
+                }
+            } else if (i === 10) {
+                const paidNov = transactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                if (!paidNov) annualAutoCosts += taxForecasts.prevFiscale.accontoNovembre;
+            }
+            totalFlow += annualAutoIncome;
+            totalFlow -= annualAutoCosts;
         }
-        totalFlow -= annualAutoCosts;
     }
 
     return totalFlow;
@@ -545,6 +610,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     setTempAccontiClienti(initialData.accontiClienti || 0);
     setTempAltriDebitiBT(initialData.altriDebitiBT || 0);
     setTempMutuiBT(initialData.mutuiBT || 0);
+    setTempImposteAnnoPrecedente(initialData.imposteAnnoPrecedente || 0);
     
     // Reset Form Fields
     setNewAccountName('');
@@ -728,7 +794,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       loans: tempLoans,
       accontiClienti: tempAccontiClienti,
       altriDebitiBT: tempAltriDebitiBT,
-      mutuiBT: tempMutuiBT
+      mutuiBT: tempMutuiBT,
+      imposteAnnoPrecedente: tempImposteAnnoPrecedente
     });
 
     // Se siamo nell'anno base, aggiorniamo anche il saldo manuale CF
@@ -905,6 +972,29 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                        >
                          <Plus size={20} />
                        </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 pt-8 border-t border-slate-700 space-y-4">
+                    <h4 className="text-white font-bold flex items-center gap-2">
+                      <Building2 size={16} className="text-slate-500" />
+                      Dati di Bilancio Anno Precedente
+                    </h4>
+                    <p className="text-[10px] text-slate-500 leading-tight">
+                      Inserisci i dati derivanti dall'esercizio precedente (Metodo Storico).
+                      Serviranno per calcolare correttamente gli acconti fiscali dell'anno in corso.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700">
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Totale Imposte Anno Precedente (IRES/IRAP)</label>
+                        <input 
+                          type="number" 
+                          value={tempImposteAnnoPrecedente}
+                          onChange={(e) => setTempImposteAnnoPrecedente(parseFloat(e.target.value) || 0)}
+                          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:border-slate-500 outline-none font-mono"
+                        />
+                      </div>
                     </div>
                   </div>
 

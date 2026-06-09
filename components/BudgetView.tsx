@@ -98,6 +98,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
     [transactions, selectedYear]
   );
 
+  const totalBudgetRevenues = useMemo(() => currentBudget.righe.filter(r => r.ceType.startsWith('ricavo')).reduce((sum, r) => sum + r.budgetAnnuo, 0), [currentBudget]);
+  const totalActualRevenues = useMemo(() => currentBudget.righe.filter(r => r.ceType.startsWith('ricavo')).reduce((sum, r) => sum + Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0)), 0), [currentBudget, actuals]);
+  const totalBudgetCosts = useMemo(() => currentBudget.righe.filter(r => !r.ceType.startsWith('ricavo') && r.ceType !== 'distribuzione_utile').reduce((sum, r) => sum + r.budgetAnnuo, 0), [currentBudget]);
+  const totalActualCosts = useMemo(() => currentBudget.righe.filter(r => !r.ceType.startsWith('ricavo') && r.ceType !== 'distribuzione_utile').reduce((sum, r) => sum + Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0)), 0), [currentBudget, actuals]);
+
   const handleBudgetChange = (index: number, value: number) => {
     const newRighe = [...currentBudget.righe];
     newRighe[index] = { 
@@ -168,21 +173,18 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
               </button>
             )}
 
-            <PDFExportButton
-              config={{
-                titolo: `Budget ${selectedYear} — Previsionale vs Consuntivo`,
-                sottotitolo: `Gruppo Visentin SRL · Generato il ${new Date().toLocaleDateString('it-IT')}`,
-                elementId: 'budget-content',
-                orientazione: 'landscape',
-                nomeFile: `Budget_${selectedYear}`,
-              }}
-              label="Esporta PDF"
-            />
+            <button
+              onClick={() => exportBudgetPDF({ selectedYear, budgetData: currentBudget, actuals })}
+              className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-800 text-xs font-black rounded-xl transition-all active:scale-95 shadow-sm bg-white"
+              title="Esporta Budget e Scostamenti in PDF Tecnico"
+            >
+              <span>Esporta PDF</span>
+            </button>
           </div>
         </div>
 
       {/* Summary Dashboard */}
-      <InfoTooltipWrapper className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {currentBudget.righe.filter(r => ['ricavo_core', 'costo_variabile', 'costo_fisso'].includes(r.ceType)).map(r => {
           const actualTotal = Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0));
           const { diff, isPositive } = calculateScostamento(actualTotal, r.budgetAnnuo, r.ceType);
@@ -198,7 +200,12 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{r.categoria}</span>
-                  {termId && <InfoTooltip termId={termId} />}
+                  {termId && (
+                    <InfoTooltip 
+                      termId={termId} 
+                      calculatedValues={`${r.categoria}:\n- Consuntivo YTD: ${formatEuro(actualTotal)}\n- Budget Target: ${formatEuro(r.budgetAnnuo)}\n- Scostamento: ${isPositive ? '+' : ''}${formatEuro(diff)} (${formatPercent(pct)})`}
+                    />
+                  )}
                 </div>
                 {isPositive ? <CheckCircle2 size={16} className="text-slate-900" /> : <AlertCircle size={16} className="text-slate-500" />}
               </div>
@@ -214,25 +221,57 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
               </div>
               <div className="mt-4 h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div 
-                  className={`h-full transition-all duration-1000 ${isPositive ? 'bg-slate-900' : 'bg-slate-500'}`}
+                  className={`h-full transition-all duration-1000 ${isPositive ? 'bg-slate-900' : 'bg-slate-50'}`}
                   style={{ width: `${Math.min(pct * 100, 100)}%` }}
                 />
               </div>
             </div>
           );
         })}
-      </InfoTooltipWrapper>
+      </div>
 
       {/* Budget Table */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-visible">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="py-4 px-6 text-[10px] font-black text-slate-500 uppercase tracking-wider">Categoria</th>
-              <th className="py-4 px-6 text-[10px] font-black text-amber-500 uppercase tracking-wider text-right">Budget Annuo 🟡</th>
-              <th className="py-4 px-6 text-[10px] font-black text-sky-500 uppercase tracking-wider text-right">Consuntivo YTD 🔵</th>
-              <th className="py-4 px-6 text-[10px] font-black text-emerald-500 uppercase tracking-wider text-right">Scostamento 🟢</th>
-              <th className="py-4 px-6 text-[10px] font-black text-indigo-500 uppercase tracking-wider text-right">Avanzamento %</th>
+              <th className="py-4 px-6 text-[10px] font-black text-amber-500 uppercase tracking-wider text-right">
+                <InfoTooltipWrapper className="justify-end w-full">
+                  <span>Budget Annuo 🟡</span>
+                  <InfoTooltip 
+                    termId="budget_annuo" 
+                    calculatedValues={`Budget Annuo:\n- Target Ricavi: ${formatEuro(totalBudgetRevenues)}\n- Target Costi Operativi: ${formatEuro(totalBudgetCosts)}\n- Target Totale (Netto): ${formatEuro(totalBudgetRevenues - totalBudgetCosts)}`}
+                  />
+                </InfoTooltipWrapper>
+              </th>
+              <th className="py-4 px-6 text-[10px] font-black text-sky-500 uppercase tracking-wider text-right">
+                <InfoTooltipWrapper className="justify-end w-full">
+                  <span>Consuntivo YTD 🔵</span>
+                  <InfoTooltip 
+                    termId="consuntivo_ytd" 
+                    calculatedValues={`Consuntivo YTD:\n- Consuntivo Ricavi YTD: ${formatEuro(totalActualRevenues)}\n- Consuntivo Costi YTD: ${formatEuro(totalActualCosts)}\n- Risultato Netto YTD: ${formatEuro(totalActualRevenues - totalActualCosts)}`}
+                  />
+                </InfoTooltipWrapper>
+              </th>
+              <th className="py-4 px-6 text-[10px] font-black text-emerald-500 uppercase tracking-wider text-right">
+                <InfoTooltipWrapper className="justify-end w-full">
+                  <span>Scostamento 🟢</span>
+                  <InfoTooltip 
+                    termId="scostamento_budget" 
+                    calculatedValues={`Scostamento Budget:\n- Scostamento Ricavi: ${totalActualRevenues - totalBudgetRevenues >= 0 ? '+' : ''}${formatEuro(totalActualRevenues - totalBudgetRevenues)}\n- Scostamento Costi: ${totalActualCosts - totalBudgetCosts <= 0 ? '-' : '+'}${formatEuro(totalActualCosts - totalBudgetCosts)}\n- Differenza Netta: ${formatEuro((totalActualRevenues - totalActualCosts) - (totalBudgetRevenues - totalBudgetCosts))}`}
+                  />
+                </InfoTooltipWrapper>
+              </th>
+              <th className="py-4 px-6 text-[10px] font-black text-indigo-500 uppercase tracking-wider text-right">
+                <InfoTooltipWrapper className="justify-end w-full">
+                  <span>Avanzamento %</span>
+                  <InfoTooltip 
+                    termId="avanzamento_budget" 
+                    calculatedValues={`Avanzamento Target %:\n- Ricavi realizzati: ${formatPercent(totalBudgetRevenues > 0 ? totalActualRevenues / totalBudgetRevenues : 0)}\n- Budget Costi spesi: ${formatPercent(totalBudgetCosts > 0 ? totalActualCosts / totalBudgetCosts : 0)}`}
+                  />
+                </InfoTooltipWrapper>
+              </th>
             </tr>
           </thead>
           <tbody>

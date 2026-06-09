@@ -7,6 +7,8 @@ interface InfoTooltipProps {
   termId: string;
   // Opzionale: testo custom per il tooltip rapido (altrimenti usa i primi 120 char della definizione)
   customTip?: string;
+  // Opzionale: calcoli e numeri reali da mostrare SOLO nella modale espansa
+  calculatedValues?: string;
   // Dimensione icona
   size?: 'sm' | 'md';
   // Colore icona
@@ -16,6 +18,7 @@ interface InfoTooltipProps {
 const InfoTooltip: React.FC<InfoTooltipProps> = ({
   termId,
   customTip,
+  calculatedValues,
   size = 'sm',
   color,
 }) => {
@@ -81,8 +84,8 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({
           className={`
             absolute z-50 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-4
             ${tooltipPos === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}
+            -right-4 md:right-auto md:left-1/2 md:-translate-x-1/2
           `}
-          style={{ left: '50%', transform: 'translateX(-50%)' }}
           onClick={e => e.stopPropagation()}
         >
           {/* Header tooltip */}
@@ -102,7 +105,7 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({
           </div>
 
           {/* Definizione breve */}
-          <p className="text-xs text-slate-600 leading-relaxed mb-3">
+          <p className="text-xs text-slate-600 leading-relaxed mb-3 whitespace-pre-line">
             {tipText}
           </p>
 
@@ -144,6 +147,7 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({
       {showModal && (
         <TermModal
           termId={termId}
+          customTip={calculatedValues}
           onClose={() => setShowModal(false)}
         />
       )}

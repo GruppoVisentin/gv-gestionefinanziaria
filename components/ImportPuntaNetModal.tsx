@@ -224,12 +224,14 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         let cantiereScore = 0;
         let cantiereMatchFonte: 'cliente_fea' | 'fornitore_fep' | 'nome_cantiere' | 'testo_banca' | null = null;
         let tipoEntrata: 'sal' | 'acconto' | 'saldo' | 'immobile' | 'altro' | null = null;
+        let dataDocumento: string | null = null;
 
         // Arricchimento FEP
         if (mov.tipoMovimento === 'FEP') {
           if (mov.numeroFattura && mapFEP.has(mov.numeroFattura)) {
             const dett = mapFEP.get(mov.numeroFattura);
             cantierePuntaNet = dett.cantiere;
+            dataDocumento = dett.dataDocumento || null;
             
             // Calcola l'aliquota IVA dinamicamente da imponibile e imposte della fattura
             if (dett.imponibile > 0) {
@@ -305,6 +307,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         else if (mov.tipoMovimento === 'FEA' && mov.numeroFattura && mapFEA.has(mov.numeroFattura)) {
           const dett = mapFEA.get(mov.numeroFattura);
           cantierePuntaNet = dett.cantiere;
+          dataDocumento = dett.dataDocumento || null;
           
           // Calcola l'aliquota IVA: catena di fallback per robustezza
           // 1) Calcola da ratio matematico imponibile/totale
@@ -383,6 +386,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
             vatRateSuggerito = codIvaToNumber(dettFEP.codIva);
             vatRateNota = `Ereditato da FEP di riferimento n. ${dettFEP.numero}`;
             arricchitoDaFattura = true;
+            dataDocumento = dettFEP.dataDocumento || null;
             if (dettFEP.tipologia) {
               const catMappata = mappaTipologiaACategoriaApp(dettFEP.tipologia, 'FEP');
               if (catMappata) {
@@ -463,7 +467,8 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           cantierePuntaNet,
           cantiereMatchFonte,
           tipoEntrata,
-          aliquoteMiste: mov.tipoMovimento === 'FEP' && mov.numeroFattura && mapFEP.get(mov.numeroFattura)?.aliquoteMiste
+          aliquoteMiste: mov.tipoMovimento === 'FEP' && mov.numeroFattura && mapFEP.get(mov.numeroFattura)?.aliquoteMiste,
+          dataDocumento
         };
       });
 
@@ -557,7 +562,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       const vatRate = r.vatRateConfermato ?? r.vatRateSuggerito ?? 0;
       // N6 fix: usa CATEGORY_TO_CE_TYPE per estrarre sempre il ceType corretto, bypassando eventuali disallineamenti nelle regole
       const finalCeType = CATEGORY_TO_CE_TYPE[r.categoria!] ?? r.ceType ?? 'solo_cashflow';
-      const tx = rigaToTransaction(r.riga, r.categoria!, finalCeType, Number(vatRate), undefined, sessionId);
+      const tx = rigaToTransaction(r.riga, r.categoria!, finalCeType, Number(vatRate), undefined, sessionId, r.dataDocumento || undefined);
       // Se c'è un cantiere suggerito e confermato (o matchato), lo impostiamo
       if (r.cantiereSuggerito) {
         tx.project = r.cantiereSuggerito;
@@ -877,18 +882,25 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                           </div>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 gap-3">
-                          <select value={r.categoria ?? ''} onChange={e => aggiornaCategoria(realIdx, e.target.value)} className="w-full p-2 rounded-xl border border-slate-200 text-[11px] font-bold">
-                            <option value="">Seleziona categoria...</option>
-                            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                          <select value={r.vatRateConfermato ?? r.vatRateSuggerito ?? ''} onChange={e => aggiornaVatRate(realIdx, Number(e.target.value))} className="w-full p-2 rounded-xl border border-slate-200 text-[11px] font-bold">
-                            <option value="">IVA...</option>
-                            <option value="0">0% (Esente)</option>
-                            <option value="4">4%</option>
-                            <option value="10">10%</option>
-                            <option value="22">22%</option>
-                          </select>
+                        <div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <select value={r.categoria ?? ''} onChange={e => aggiornaCategoria(realIdx, e.target.value)} className="w-full p-2 rounded-xl border border-slate-200 text-[11px] font-bold">
+                              <option value="">Seleziona categoria...</option>
+                              {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <select value={r.vatRateConfermato ?? r.vatRateSuggerito ?? ''} onChange={e => aggiornaVatRate(realIdx, Number(e.target.value))} className="w-full p-2 rounded-xl border border-slate-200 text-[11px] font-bold">
+                              <option value="">IVA...</option>
+                              <option value="0">0% (Esente)</option>
+                              <option value="4">4%</option>
+                              <option value="10">10%</option>
+                              <option value="22">22%</option>
+                            </select>
+                          </div>
+                          {(r.categoria === '[FORNITORI] Subappalti su Cantieri' || r.categoria === '[PERSONALE] Subappalti Manodopera') && (
+                            <p className="text-[10px] text-slate-500 font-semibold mt-1.5 px-1 bg-slate-50 border border-slate-100 rounded p-1 flex items-center gap-1.5">
+                              <span>ℹ️ Se c'è <strong>Reverse Charge</strong>, imposta l'IVA a 0% (Esente).</span>
+                            </p>
+                          )}
                         </div>
                       )}
 

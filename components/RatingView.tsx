@@ -31,24 +31,38 @@ const formatPercent = (val: number) =>
   new Intl.NumberFormat('it-IT', { style: 'percent', minimumFractionDigits: 1 }).format(val);
 
 const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceManualData, onGoToManuale }) => {
-  const currentYear = new Date().getFullYear();
   const [showHelp, setShowHelp] = useState(false);
   
+  const sortedSnapshots = useMemo(() => 
+    [...spSnapshots].sort((a, b) => new Date(b.dataRiferimento).getTime() - new Date(a.dataRiferimento).getTime()),
+    [spSnapshots]
+  );
+
+  const [selectedDate, setSelectedDate] = useState<string>('');
+
+  const activeSP = useMemo(() => {
+    if (sortedSnapshots.length === 0) return null;
+    if (selectedDate) {
+      return sortedSnapshots.find(s => s.dataRiferimento === selectedDate) || sortedSnapshots[0];
+    }
+    return sortedSnapshots[0];
+  }, [sortedSnapshots, selectedDate]);
+
+  const ratingYear = useMemo(() => 
+    activeSP ? new Date(activeSP.dataRiferimento).getFullYear() : new Date().getFullYear(),
+    [activeSP]
+  );
+
   const ceData = useMemo(() => 
-    buildCEData(transactions, currentYear, ceManualData[currentYear.toString()]), 
-    [transactions, currentYear, ceManualData]
+    buildCEData(transactions, ratingYear, ceManualData[ratingYear.toString()]), 
+    [transactions, ratingYear, ceManualData]
   );
 
   const ceMetrics = useMemo(() => calcCEMetrics(ceData, transactions), [ceData, transactions]);
 
-  const latestSP = useMemo(() => 
-    spSnapshots.sort((a, b) => new Date(b.dataRiferimento).getTime() - new Date(a.dataRiferimento).getTime())[0],
-    [spSnapshots]
-  );
-
   const spMetrics = useMemo(() => 
-    latestSP ? calcSPMetrics(latestSP, ceMetrics, transactions) : null,
-    [latestSP, ceMetrics, transactions]
+    activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions) : null,
+    [activeSP, ceMetrics, transactions]
   );
 
   const rollingDSODPO = useMemo(() =>
@@ -59,66 +73,146 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
   const indicators = useMemo(() => {
     if (!spMetrics) return [];
     
+    // PFN / EBITDA
+    let pfnEbitdaHealth: 'green' | 'orange' | 'red' = 'red';
+    let pfnEbitdaScore = 0;
+    if (spMetrics.pfnSuEbitda <= 3) {
+      pfnEbitdaHealth = 'green';
+      pfnEbitdaScore = 1;
+    } else if (spMetrics.pfnSuEbitda <= 4.5) {
+      pfnEbitdaHealth = 'orange';
+      pfnEbitdaScore = 1; // Count as 1 for total score or count as partial
+    }
+    
+    // EBITDA / Oneri Fin.
+    let ebitdaOneriHealth: 'green' | 'orange' | 'red' = 'red';
+    let ebitdaOneriScore = 0;
+    const ebitdaOneriRatio = ceMetrics.oneriFin > 0 ? (ceMetrics.ebitdaTot / ceMetrics.oneriFin) : 0;
+    if (ceMetrics.oneriFin > 0) {
+      if (ebitdaOneriRatio >= 3) {
+        ebitdaOneriHealth = 'green';
+        ebitdaOneriScore = 1;
+      } else if (ebitdaOneriRatio >= 1.5) {
+        ebitdaOneriHealth = 'orange';
+        ebitdaOneriScore = 1;
+      }
+    }
+    
+    // Current Ratio
+    let currentRatioHealth: 'green' | 'orange' | 'red' = 'red';
+    let currentRatioScore = 0;
+    if (spMetrics.currentRatio >= 1.2) {
+      currentRatioHealth = 'green';
+      currentRatioScore = 1;
+    } else if (spMetrics.currentRatio >= 1.0) {
+      currentRatioHealth = 'orange';
+      currentRatioScore = 1;
+    }
+    
+    // Solidità Patrimoniale
+    let soliditaHealth: 'green' | 'orange' | 'red' = 'red';
+    let soliditaScore = 0;
+    if (spMetrics.soliditaPatr >= 0.3) {
+      soliditaHealth = 'green';
+      soliditaScore = 1;
+    } else if (spMetrics.soliditaPatr >= 0.15) {
+      soliditaHealth = 'orange';
+      soliditaScore = 1;
+    }
+    
+    // Utile Netto %
+    let utileHealth: 'green' | 'orange' | 'red' = 'red';
+    let utileScore = 0;
+    if (ceMetrics.utileNettoPercent >= 0.03) {
+      utileHealth = 'green';
+      utileScore = 1;
+    } else if (ceMetrics.utileNettoPercent >= 0) {
+      utileHealth = 'orange';
+      utileScore = 1;
+    }
+    
+    // DSO (Giorni Incasso)
+    let dsoHealth: 'green' | 'orange' | 'red' = 'red';
+    let dsoScore = 0;
+    if (spMetrics.dso <= 60) {
+      dsoHealth = 'green';
+      dsoScore = 1;
+    } else if (spMetrics.dso <= 90) {
+      dsoHealth = 'orange';
+      dsoScore = 1;
+    }
+    
+    // DPO (Giorni Pagamento)
+    let dpoHealth: 'green' | 'orange' | 'red' = 'red';
+    let dpoScore = 0;
+    if (spMetrics.dpo >= 30 && spMetrics.dpo <= 90) {
+      dpoHealth = 'green';
+      dpoScore = 1;
+    } else if ((spMetrics.dpo >= 20 && spMetrics.dpo < 30) || (spMetrics.dpo > 90 && spMetrics.dpo <= 120)) {
+      dpoHealth = 'orange';
+      dpoScore = 1;
+    }
+    
     return [
       { 
         label: 'PFN / EBITDA', 
         value: spMetrics.pfnSuEbitda.toFixed(2) + 'x',
-        score: spMetrics.pfnSuEbitda <= 3 ? 1 : 0,
+        score: pfnEbitdaScore,
         target: '< 3x',
-        status: spMetrics.pfnSuEbitda <= 3 ? 'slate-600' : 'slate-400'
+        health: pfnEbitdaHealth
       },
       { 
         label: 'EBITDA / Oneri Fin.', 
         value: ceMetrics.oneriFin > 0 ? (ceMetrics.ebitdaTot / ceMetrics.oneriFin).toFixed(2) + 'x' : 'N/A',
-        score: ceMetrics.oneriFin > 0 && (ceMetrics.ebitdaTot / ceMetrics.oneriFin) >= 3 ? 1 : 0,
+        score: ebitdaOneriScore,
         target: '> 3x',
-        status: ceMetrics.oneriFin > 0 && (ceMetrics.ebitdaTot / ceMetrics.oneriFin) >= 3 ? 'slate-600' : 'slate-400'
+        health: ebitdaOneriHealth
       },
       { 
         label: 'Current Ratio', 
         value: spMetrics.currentRatio.toFixed(2),
-        score: spMetrics.currentRatio >= 1.2 ? 1 : 0,
+        score: currentRatioScore,
         target: '> 1.2',
-        status: spMetrics.currentRatio >= 1.2 ? 'slate-600' : 'slate-400'
+        health: currentRatioHealth
       },
       { 
         label: 'Solidità Patrimoniale', 
         value: formatPercent(spMetrics.soliditaPatr),
-        score: spMetrics.soliditaPatr >= 0.3 ? 1 : 0,
+        score: soliditaScore,
         target: '> 30%',
-        status: spMetrics.soliditaPatr >= 0.3 ? 'slate-600' : 'slate-400'
+        health: soliditaHealth
       },
       { 
         label: 'Utile Netto %', 
         value: formatPercent(ceMetrics.utileNettoPercent),
-        score: ceMetrics.utileNettoPercent >= 0.03 ? 1 : 0,
+        score: utileScore,
         target: '> 3%',
-        status: ceMetrics.utileNettoPercent >= 0.03 ? 'slate-600' : 'slate-400'
+        health: utileHealth
       },
       { 
         label: 'DSO (Giorni Incasso)', 
         value: Math.round(spMetrics.dso) + ' gg',
-        score: spMetrics.dso <= 60 ? 1 : 0,
+        score: dsoScore,
         target: '< 60 gg',
-        status: spMetrics.dso <= 60 ? 'slate-600' : 'slate-400'
+        health: dsoHealth
       },
-      {
-        label: 'DPO (Giorni Pagamento)',
+      { 
+        label: 'DPO (Giorni Pagamento)', 
         value: Math.round(spMetrics.dpo) + ' gg',
-        score: spMetrics.dpo >= 30 && spMetrics.dpo <= 90 ? 1 : 0,
+        score: dpoScore,
         target: '30–90 gg',
-        status: spMetrics.dpo >= 30 && spMetrics.dpo <= 90 ? 'slate-600' : 'slate-500'
+        health: dpoHealth
       }
     ];
   }, [spMetrics, ceMetrics]);
 
-  const totalScore = indicators.reduce((a, b) => a + b.score, 0);
-  const rating = totalScore >= 6 ? { label: 'AAA / AA — Eccellente', color: 'slate-900' } :
-                 totalScore >= 5 ? { label: 'A / BBB — Solido', color: 'slate-700' } :
-                 totalScore >= 3 ? { label: 'BB — Attenzione', color: 'slate-500' } :
+  const totalScore = indicators.reduce((a, b) => a + (b.health === 'green' ? 1 : b.health === 'orange' ? 0.5 : 0), 0);
+  const rating = totalScore >= 5.5 ? { label: 'AAA / AA — Eccellente', color: 'slate-900' } :
+                 totalScore >= 4 ? { label: 'A / BBB — Solido', color: 'slate-700' } :
+                 totalScore >= 2.5 ? { label: 'BB — Attenzione', color: 'slate-500' } :
                  { label: 'B / C — Critico', color: 'slate-400' };
 
-  if (!latestSP) {
+  if (!activeSP) {
     return (
       <div className="flex flex-col items-center justify-center p-20 bg-white rounded-3xl border border-slate-200 shadow-sm">
         <AlertCircle size={48} className="text-slate-300 mb-4" />
@@ -141,17 +235,26 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
         </div>
         <div className="flex items-center gap-4">
           <HelpButton onClick={() => setShowHelp(true)} />
-          <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-xl text-xs font-bold text-slate-500">
-            <Activity size={14} />
-            Dati aggiornati al {new Date(latestSP.dataRiferimento).toLocaleDateString('it-IT')}
+          <div className="flex items-center bg-slate-100 rounded-xl p-1">
+            <select 
+              value={activeSP.dataRiferimento}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="bg-transparent px-4 py-2 font-black text-slate-800 outline-none text-sm cursor-pointer"
+            >
+              {sortedSnapshots.map(s => (
+                <option key={s.dataRiferimento} value={s.dataRiferimento}>
+                  Snapshot del {new Date(s.dataRiferimento).toLocaleDateString('it-IT')}
+                </option>
+              ))}
+            </select>
           </div>
           <PDFExportButton
             config={{
-              titolo: `Report Rating Bancario ${currentYear}`,
+              titolo: `Report Rating Bancario ${ratingYear}`,
               sottotitolo: `Valutazione merito creditizio — aggiornato ${new Date().toLocaleDateString('it-IT')}`,
               elementId: 'rating-report-content',
               orientazione: 'portrait',
-              nomeFile: `Rating_${currentYear}`,
+              nomeFile: `Rating_${ratingYear}`,
             }}
           />
         </div>
@@ -160,7 +263,7 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
       <div id="rating-report-content" className="space-y-6">
         {/* Header for PDF only (hidden in UI) */}
         <div className="hidden print-only bg-white p-6 rounded-3xl border border-slate-200 mb-6">
-           <h2 className="text-2xl font-black text-slate-900">Rating Bancario {currentYear}</h2>
+           <h2 className="text-2xl font-black text-slate-900">Rating Bancario {ratingYear}</h2>
            <p className="text-slate-500 text-sm">Valutazione automatica del merito creditizio del Gruppo Visentin</p>
         </div>
 
@@ -171,13 +274,54 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
         <div className="text-4xl font-black mb-4">{rating.label}</div>
         <div className="flex justify-center gap-1">
           {[1, 2, 3, 4, 5, 6, 7].map(i => (
-            <div key={i} className={`w-10 h-2 rounded-full ${i <= totalScore ? 'bg-white' : 'bg-black/20'}`} />
+            <div key={i} className={`w-10 h-2 rounded-full ${i <= Math.round(totalScore) ? 'bg-white' : 'bg-black/20'}`} />
           ))}
         </div>
         <p className="text-xs mt-6 opacity-80 max-w-xl mx-auto italic">
           Questa valutazione si basa sugli indici di bilancio calcolati automaticamente. 
           Il rating reale della banca include anche la Centrale Rischi e fattori qualitativi.
         </p>
+      </div>
+
+      {/* Legenda Gradi di Valutazione */}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4 no-print">
+        <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+          Legenda Classi di Rating (Basilea 3)
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
+            <span className="inline-block px-2.5 py-1 bg-slate-950 text-white text-[9px] font-black rounded-lg uppercase tracking-wider">
+              AAA / AA — Eccellente
+            </span>
+            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+              Massima stabilità. Rischio di credito minimo e solidissima capacità di rimborso del debito.
+            </p>
+          </div>
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
+            <span className="inline-block px-2.5 py-1 bg-slate-700 text-white text-[9px] font-black rounded-lg uppercase tracking-wider">
+              A / BBB — Solido
+            </span>
+            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+              Adeguata solidità finanziaria. Capacità di rimborso protetta, pur se parzialmente esposta a shock di mercato.
+            </p>
+          </div>
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
+            <span className="inline-block px-2.5 py-1 bg-slate-500 text-white text-[9px] font-black rounded-lg uppercase tracking-wider">
+              BB — Attenzione
+            </span>
+            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+              Presenza di debolezze o scostamenti temporanei dai target. Richiede monitoraggio gestionale attivo.
+            </p>
+          </div>
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
+            <span className="inline-block px-2.5 py-1 bg-slate-400 text-white text-[9px] font-black rounded-lg uppercase tracking-wider">
+              B / C — Critico
+            </span>
+            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+              Elevata tensione finanziaria o patrimoniale. Rischio di credito significativo con necessità di rientro.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Indicators Grid */}
@@ -192,6 +336,11 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
                          ind.label === 'DSO (Giorni Incasso)' ? 'dso' :
                          ind.label === 'DPO (Giorni Pagamento)' ? 'dpo' : undefined;
 
+          // Determine color styling based on health
+          const colorText = ind.health === 'green' ? 'text-emerald-600' : ind.health === 'orange' ? 'text-amber-500' : 'text-rose-600';
+          const colorBgBar = ind.health === 'green' ? 'bg-emerald-600' : ind.health === 'orange' ? 'bg-amber-500' : 'bg-rose-600';
+          const HealthIcon = ind.health === 'green' ? CheckCircle2 : AlertCircle;
+
           return (
             <div key={i} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
               <div className="flex items-center justify-between mb-4">
@@ -199,16 +348,16 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{ind.label}</span>
                   {termId && <InfoTooltip termId={termId} />}
                 </div>
-                {ind.status === 'slate-600' ? <CheckCircle2 size={16} className="text-slate-900" /> : ind.status === 'slate-500' ? <AlertCircle size={16} className="text-slate-500" /> : <AlertCircle size={16} className="text-slate-400" />}
+                <HealthIcon size={16} className={colorText} />
               </div>
               <div className="flex items-baseline justify-between">
-                <div className="text-2xl font-black text-slate-900">{ind.value}</div>
+                <div className={`text-2xl font-black ${colorText}`}>{ind.value}</div>
                 <div className="text-[10px] font-bold text-slate-400">Target: {ind.target}</div>
               </div>
               <div className="mt-4 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                 <div 
-                  className={`h-full transition-all duration-1000 ${ind.status === 'slate-600' ? 'bg-slate-900' : ind.status === 'slate-500' ? 'bg-slate-500' : 'bg-slate-400'}`}
-                  style={{ width: `${Math.min(ind.score * 100, 100)}%` }}
+                  className={`h-full transition-all duration-1000 ${colorBgBar}`}
+                  style={{ width: `${ind.health === 'green' ? 100 : ind.health === 'orange' ? 66 : 33}%` }}
                 />
               </div>
             </div>
@@ -258,7 +407,7 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
                 ? `lag fattura/incasso (${rollingDSODPO.transazioniDsoUsate} tx)`
                 : 'stima da volumi — compila "Data Fattura" sui SAL per maggiore precisione'}
             </p>
-            {latestSP && spMetrics && (
+            {activeSP && spMetrics && (
               <p className="text-[10px] text-slate-300">
                 Da snapshot SP: {Math.round(spMetrics.dso)} gg
               </p>
@@ -287,7 +436,7 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
                 ? `lag fattura/pagamento (${rollingDSODPO.transazioniDpoUsate} tx)`
                 : 'stima da volumi — compila "Data Fattura" sulle uscite fornitori per maggiore precisione'}
             </p>
-            {latestSP && spMetrics && (
+            {activeSP && spMetrics && (
               <p className="text-[10px] text-slate-300">
                 Da snapshot SP: {Math.round(spMetrics.dpo)} gg
               </p>

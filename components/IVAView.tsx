@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { Transaction, AppView } from '../types';
 import { calcPosizIoneIVA } from '../utils/gasCoreEngine';
-import { Receipt, TrendingDown, TrendingUp, AlertCircle, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Receipt, TrendingDown, TrendingUp, AlertCircle, Info, ChevronLeft, ChevronRight, FileDown } from 'lucide-react';
 import InfoTooltip from './InfoTooltip';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
-import PDFExportButton from './PDFExportButton';
+import { exportIVAPDF } from '../utils/ivaPdfExport';
 
 interface IVAViewProps {
   transactions: Transaction[];
@@ -18,17 +18,18 @@ const formatEuro = (val: number) =>
 const MONTHS = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 
 // Mesi di versamento per liquidazione trimestrale (indici 0-11)
-// Versamento entro il 16 del mese successivo al trimestre
-const MESI_VERSAMENTO_TRIM = [3, 6, 9, 11]; // apr, lug, ott, dic (per trim gen-mar, apr-giu, lug-set, ott-nov)
+// Versamento entro il 16 del secondo mese successivo al trimestre (maggio, agosto, novembre, dicembre per acconto)
+const MESI_VERSAMENTO_TRIM = [4, 7, 10, 11]; // mag, ago, nov, dic (per trim gen-mar, apr-giu, lug-set, acconto ott-dic)
 
 const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
   const currentYear = new Date().getFullYear();
   const [anno, setAnno] = useState(currentYear);
   const [showHelp, setShowHelp] = useState(false);
+  const [vistaPrevisionale, setVistaPrevisionale] = useState(false);
 
   const riepilogo = useMemo(() =>
-    calcPosizIoneIVA(transactions, anno),
-    [transactions, anno]
+    calcPosizIoneIVA(transactions, anno, vistaPrevisionale),
+    [transactions, anno, vistaPrevisionale]
   );
 
   const meseCorrente = anno === currentYear ? new Date().getMonth() : 11;
@@ -37,7 +38,7 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
     <div id="iva-content" className="space-y-6 animate-in fade-in duration-500 pb-20">
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
         <div>
           <h2 className="text-2xl font-black text-slate-900 flex items-center gap-3">
             <Receipt className="text-violet-600" />
@@ -48,8 +49,31 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
           </p>
         </div>
 
-        {/* Destra: selettore anno + tasto PDF */}
+        {/* Destra: selettore consuntivo/previsionale + selettore anno + tasto PDF */}
         <div className="flex items-center gap-3 flex-wrap justify-end no-print">
+          <div className="flex items-center bg-slate-100 rounded-xl p-1">
+            <button
+              onClick={() => setVistaPrevisionale(false)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
+                !vistaPrevisionale
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Consuntivo YTD
+            </button>
+            <button
+              onClick={() => setVistaPrevisionale(true)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
+                vistaPrevisionale
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Previsionale (Forecast)
+            </button>
+          </div>
+
           <div className="flex items-center bg-slate-100 rounded-xl p-1">
             <button
               onClick={() => setAnno(prev => prev - 1)}
@@ -66,16 +90,14 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
             </button>
           </div>
 
-          <PDFExportButton
-            config={{
-              titolo: `Posizione IVA ${anno}`,
-              sottotitolo: `Regime ${riepilogo.frequenzaLiquidazione} · Generato il ${new Date().toLocaleDateString('it-IT')}`,
-              elementId: 'iva-content',
-              orientazione: 'portrait',
-              nomeFile: `Posizione_IVA_${anno}`,
-            }}
-            label="Esporta PDF"
-          />
+          <button
+            onClick={() => exportIVAPDF({ riepilogo, anno, vistaPrevisionale })}
+            className="flex items-center gap-1.5 px-4 py-2 border-2 border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-800 text-sm font-bold rounded-xl transition-all active:scale-95 shadow-sm bg-white"
+            title="Esporta PDF Tecnico Dettagliato"
+          >
+            <FileDown size={16} />
+            <span>Esporta PDF</span>
+          </button>
           <HelpButton onClick={() => setShowHelp(true)} />
         </div>
       </div>
@@ -88,7 +110,7 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
             <TrendingUp size={16} className="text-blue-600" />
           </div>
           <div className="text-2xl font-black text-blue-600">{formatEuro(riepilogo.totaleIvaIncassata)}</div>
-          <div className="text-[10px] text-slate-500 mt-1">Da clienti — anno {anno}</div>
+          <div className="text-[10px] text-slate-500 mt-1">{vistaPrevisionale ? 'Incl. stime future' : 'Da clienti'} — anno {anno}</div>
         </div>
 
         <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
@@ -97,16 +119,16 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
             <TrendingDown size={16} className="text-rose-600" />
           </div>
           <div className="text-2xl font-black text-rose-600">{formatEuro(riepilogo.totaleIvaPagata)}</div>
-          <div className="text-[10px] text-slate-500 mt-1">A fornitori — anno {anno}</div>
+          <div className="text-[10px] text-slate-500 mt-1">{vistaPrevisionale ? 'Incl. stime future' : 'A fornitori'} — anno {anno}</div>
         </div>
 
         <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider">Già Versato</span>
+            <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider">Già Versato / Stima</span>
             <Receipt size={16} className="text-amber-600" />
           </div>
           <div className="text-2xl font-black text-amber-600">{formatEuro(riepilogo.totaleVersato)}</div>
-          <div className="text-[10px] text-slate-500 mt-1">F24 IVA registrati</div>
+          <div className="text-[10px] text-slate-500 mt-1">{vistaPrevisionale ? 'Reali + stime F24 future' : 'F24 IVA registrati'}</div>
         </div>
 
         <div className={`p-5 rounded-3xl border shadow-sm ${
@@ -129,22 +151,35 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
             {formatEuro(Math.abs(riepilogo.creditoDebitoResiduo))}
           </div>
           <div className={`text-[10px] mt-1 ${riepilogo.creditoDebitoResiduo > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-            {riepilogo.creditoDebitoResiduo > 0 ? 'Da versare ancora' : 'A credito verso erario'}
+            {vistaPrevisionale 
+              ? (riepilogo.creditoDebitoResiduo > 0 ? 'Previsione debito fine anno' : 'Previsione credito fine anno')
+              : (riepilogo.creditoDebitoResiduo > 0 ? 'Da versare ancora' : 'A credito verso erario')
+            }
           </div>
         </div>
       </div>
 
       {/* Nota frequenza */}
-      <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-2xl p-4">
-        <Info size={16} className="text-slate-500 shrink-0 mt-0.5" />
-        <p className="text-[11px] text-slate-800 leading-relaxed">
-          Regime rilevato: <span className="font-black uppercase">{riepilogo.frequenzaLiquidazione}</span> — 
-          basato sui versamenti F24 IVA registrati nell'anno.
-          {riepilogo.frequenzaLiquidazione === 'trimestrale' && (
-            <> I mesi di versamento trimestrale sono Aprile, Luglio, Ottobre e Dicembre (con maggiorazione 1%).</>
-          )}
-          {' '}I valori si basano solo sulle transazioni con IVA compilata — verifica che il campo aliquota IVA sia valorizzato su tutte le transazioni rilevanti.
-        </p>
+      <div className="flex flex-col gap-2 bg-slate-50 border border-slate-100 rounded-2xl p-4">
+        <div className="flex items-start gap-3">
+          <Info size={16} className="text-slate-500 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-slate-800 leading-relaxed">
+            Regime rilevato: <span className="font-black uppercase">{riepilogo.frequenzaLiquidazione}</span> — 
+            basato sui versamenti F24 IVA registrati nell'anno.
+            {riepilogo.frequenzaLiquidazione === 'trimestrale' && (
+              <> I mesi di versamento trimestrale sono Aprile, Luglio, Ottobre e Dicembre (con maggiorazione 1%).</>
+            )}
+            {' '}I valori si basano solo sulle transazioni con IVA compilata — verifica che il campo aliquota IVA sia valorizzato su tutte le transazioni rilevanti.
+          </p>
+        </div>
+        {vistaPrevisionale && (
+          <div className="text-[10px] text-violet-700 bg-violet-50/50 border border-violet-100 rounded-xl p-2.5 font-semibold flex items-center gap-2">
+            <span>🔮</span>
+            <span>
+              <strong>Visione Previsionale Attiva:</strong> I mesi futuri evidenziati in viola includono transazioni stimate (isForecast = true). Le scadenze di versamento F24 future (*) sono proiettate in base ai saldi dei mesi precedenti.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Tabella mensile */}
@@ -165,6 +200,7 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
             <tbody>
               {riepilogo.mensile.map((m) => {
                 const isFuturo = m.mese > meseCorrente;
+                const isPrevisionale = !!m.isForecastMese;
                 const isVersamTrim = riepilogo.frequenzaLiquidazione === 'trimestrale' &&
                   MESI_VERSAMENTO_TRIM.includes(m.mese);
                 const isVersamMensile = riepilogo.frequenzaLiquidazione === 'mensile';
@@ -174,15 +210,21 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
                   <tr
                     key={m.mese}
                     className={`border-b border-slate-100 transition-colors ${
-                      isFuturo ? 'opacity-60' : 'hover:bg-slate-50/50'
-                    } ${isScadenza && !isFuturo ? 'bg-slate-50' : ''}`}
+                      isPrevisionale 
+                        ? 'bg-violet-50/20 hover:bg-violet-50/40 border-violet-100' 
+                        : isFuturo 
+                        ? 'opacity-60 hover:bg-slate-50/50' 
+                        : 'hover:bg-slate-50/50'
+                    } ${isScadenza && !isFuturo && !isPrevisionale ? 'bg-slate-50' : ''}`}
                   >
-                    <td className="py-3 px-4 text-xs font-black text-slate-700 sticky left-0 bg-white z-10">
+                    <td className={`py-3 px-4 text-xs font-black text-slate-700 sticky left-0 z-10 ${isPrevisionale ? 'bg-violet-50/50' : 'bg-white'}`}>
                       <div className="flex items-center gap-2">
                         {MONTHS[m.mese]}
-                        {isFuturo && (
+                        {isPrevisionale ? (
+                          <span className="px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[8px] font-black uppercase tracking-wide">Forecast</span>
+                        ) : isFuturo ? (
                           <span className="text-[9px] font-bold text-slate-400 uppercase">prev.</span>
-                        )}
+                        ) : null}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-right text-xs font-medium text-blue-600 font-mono">
@@ -195,7 +237,12 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
                       {m.saldoIVA !== 0 ? formatEuro(m.saldoIVA) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="py-3 px-4 text-right text-xs font-medium text-amber-600 font-mono">
-                      {m.versamentoIVA > 0 ? formatEuro(m.versamentoIVA) : <span className="text-slate-300">—</span>}
+                      {m.versamentoIVA > 0 ? (
+                        <span className={isPrevisionale ? 'text-violet-600 font-black' : ''}>
+                          {formatEuro(m.versamentoIVA)}
+                          {isPrevisionale && ' *'}
+                        </span>
+                      ) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="py-3 px-4 text-right">
                       {m.posizionNetta !== 0 ? (
@@ -214,13 +261,15 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
                     <td className="py-3 px-4 text-center">
                       {isScadenza ? (
                         <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
-                          isFuturo
+                          isPrevisionale
+                            ? 'bg-violet-100 text-violet-700 border border-violet-200 shadow-sm'
+                            : isFuturo
                             ? 'bg-slate-100 text-slate-700'
                             : m.versamentoIVA > 0
                             ? 'bg-slate-200 text-slate-900'
                             : 'bg-slate-100 text-slate-400'
                         }`}>
-                          {isFuturo ? 'Scadenza' : m.versamentoIVA > 0 ? 'Versato' : 'Non versato'}
+                          {isPrevisionale ? 'Stima F24' : isFuturo ? 'Scadenza' : m.versamentoIVA > 0 ? 'Versato' : 'Non versato'}
                         </span>
                       ) : (
                         <span className="text-slate-200 text-[10px]">—</span>
@@ -265,6 +314,12 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
             I valori sono calcolati sulle transazioni con aliquota IVA compilata in GV CashFlow.
             Verificare che tutte le transazioni rilevanti abbiano il campo IVA valorizzato.
           </li>
+          {vistaPrevisionale && (
+            <li className="flex items-start gap-2 text-violet-700 font-semibold">
+              <span className="text-violet-350 mt-0.5">•</span>
+              I campi contrassegnati con (*) indicano versamenti F24 stimati proiettati automaticamente in base ai saldi IVA precedenti.
+            </li>
+          )}
           <li className="flex items-start gap-2">
             <span className="text-slate-300 mt-0.5">•</span>
             Il documento è generato automaticamente a scopo informativo interno.

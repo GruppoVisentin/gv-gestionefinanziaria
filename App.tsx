@@ -45,6 +45,7 @@ import Footer from './components/Footer';
 import TermModal, { useTermModal } from './components/TermModal';
 import ImportPuntaNetModal from './components/ImportPuntaNetModal';
 import ImportStoricoModal from './components/ImportStoricoModal';
+import { generateDefault2025Snapshot } from './utils/gasCoreEngine';
 import { 
   FIXED_COST_CATEGORIES, 
   VARIABLE_COST_CATEGORIES, 
@@ -656,6 +657,7 @@ const App: React.FC = () => {
   const [budgetData, setBudgetData] = useState<Record<string, BudgetData>>({});
 
   const [oreStorico, setOreStorico] = useState<Record<string, number>>({});
+  const [oreOperaiStorico, setOreOperaiStorico] = useState<Record<string, any>>({});
 
   // SV-B: Tipologie e Cantieri Previsionali
   const [tipologieCantiere, setTipologieCantiere] = useState<TipologiaCantiere[]>([]);
@@ -753,6 +755,7 @@ const App: React.FC = () => {
     spSnapshots,
     budgetData,
     oreCantiereStorico: oreStorico,
+    oreOperaiStorico,
     tipologieCantiere,
     cantieriPrev,
     rimanenze,
@@ -765,7 +768,7 @@ const App: React.FC = () => {
   }), [
     transactions, projects, fixedCategories, variableCategories, incomeCategories, 
     supplierPresets, initialData, responsiblesList, ceManualData, spSnapshots, 
-    budgetData, oreStorico, tipologieCantiere, cantieriPrev, rimanenze,
+    budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze,
     regolePuntaNet, mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP
   ]);
 
@@ -826,9 +829,25 @@ const App: React.FC = () => {
     }
     if (data.operators) setResponsiblesList(data.operators);
     if (data.ceManualData) setCeManualData(data.ceManualData);
-    if (data.spSnapshots) setSpSnapshots(data.spSnapshots);
+    if (data.spSnapshots && data.spSnapshots.length > 0) {
+      const txs = data.transactions || [];
+      const initData = data.initialData || { accounts: [], previousFinancing: 0, loans: [], accontiClienti: 0, altriDebitiBT: 0, mutuiBT: 0 };
+      const migratedSnaps = data.spSnapshots.map(s => {
+        if (s.dataRiferimento === '2025-12-31' && (s.capitaleSociale === 100000 || s.capitaleSociale === 0 || s.tfr === 0 || s.partecipazioni !== 698659 || s.liquidita !== 832211)) {
+          return generateDefault2025Snapshot(txs, initData);
+        }
+        return s;
+      });
+      setSpSnapshots(migratedSnaps);
+    } else {
+      const txs = data.transactions || [];
+      const initData = data.initialData || { accounts: [], previousFinancing: 0, loans: [], accontiClienti: 0, altriDebitiBT: 0, mutuiBT: 0 };
+      const defaultSnap = generateDefault2025Snapshot(txs, initData);
+      setSpSnapshots([defaultSnap]);
+    }
     if (data.budgetData) setBudgetData(data.budgetData);
     if (data.oreCantiereStorico) setOreStorico(data.oreCantiereStorico);
+    if (data.oreOperaiStorico) setOreOperaiStorico(data.oreOperaiStorico);
     if (data.tipologieCantiere) setTipologieCantiere(data.tipologieCantiere);
     if (data.cantieriPrev) setCantieriPrev(data.cantieriPrev);
     if (data.rimanenze) setRimanenze(data.rimanenze);
@@ -897,6 +916,7 @@ const App: React.FC = () => {
         spSnapshots,
         budgetData,
         oreCantiereStorico: oreStorico,
+        oreOperaiStorico,
         tipologieCantiere,
         cantieriPrev,
         rimanenze,
@@ -926,7 +946,7 @@ const App: React.FC = () => {
   }, [
     fileHandle, backupFileHandle, transactions, projects, fixedCategories, variableCategories,
     incomeCategories, supplierPresets, initialData, saldoInizialeCF, responsiblesList, ceManualData,
-    spSnapshots, budgetData, oreStorico, tipologieCantiere, cantieriPrev, rimanenze, regolePuntaNet,
+    spSnapshots, budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze, regolePuntaNet,
     mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP
   ]);
 
@@ -1223,6 +1243,7 @@ const App: React.FC = () => {
       spSnapshots: getLocal('spSnapshots') || [],
       budgetData: getLocal('budgetData') || {},
       oreCantiereStorico: getLocal('gv_ore_cantiere') || {},
+      oreOperaiStorico: getLocal('gv_ore_operai') || {},
       tipologieCantiere: getLocal('tipologieCantiere') || [],
       cantieriPrev: getLocal('cantieriPrev') || [],
       rimanenze: getLocal('rimanenze') || {}
@@ -1883,6 +1904,7 @@ const App: React.FC = () => {
             />
           </div>
         );
+      case AppView.BILANCIO_RIEPILOGO:
       case AppView.CE_RICLASSIFICATO:
       case AppView.STATO_PATRIMONIALE:
       case AppView.BUDGET:
@@ -1893,6 +1915,7 @@ const App: React.FC = () => {
           <BilancioView 
             transactions={transactions}
             initialData={initialData}
+            saldoInizialeCF={saldoInizialeCF}
             ceManualData={ceManualData}
             onManualDataChange={(anno, data) => {
               setCeManualData(prev => ({
@@ -1911,6 +1934,8 @@ const App: React.FC = () => {
             }}
             oreStorico={oreStorico}
             setOreStorico={setOreStorico}
+            oreOperaiStorico={oreOperaiStorico}
+            setOreOperaiStorico={setOreOperaiStorico}
             rimanenze={rimanenze}
             onRimanenzeChange={handleRimanenzeChange}
             onGoToManuale={handleGoToManuale}
@@ -1921,7 +1946,7 @@ const App: React.FC = () => {
             projects={projects}
             initialTab={
               view === AppView.CE_RICLASSIFICATO ? 'pl' :
-              view === AppView.STATO_PATRIMONIALE ? 'summary' :
+              view === AppView.STATO_PATRIMONIALE ? 'sp' :
               view === AppView.BUDGET ? 'budget' :
               view === AppView.RATING_BANCHE ? 'rating' :
               view === AppView.ANALISI_INDICI ? 'analisi' :
@@ -1951,7 +1976,7 @@ const App: React.FC = () => {
     { view: AppView.HOME, label: 'Home', icon: LayoutGrid },
     { view: AppView.DASHBOARD, label: 'Dashboard', icon: LayoutDashboard },
     { view: AppView.TIMELINE, label: 'Cash Flow', icon: CalendarClock },
-    { view: AppView.STATO_PATRIMONIALE, label: 'Bilancio', icon: Building2 },
+    { view: AppView.BILANCIO_RIEPILOGO, label: 'Bilancio', icon: Building2 },
     { view: AppView.PROJECTS, label: 'Commesse', icon: Briefcase },
     { view: AppView.GUIDA_KPI, label: 'Guida', icon: BookOpen },
     { view: AppView.SETTINGS, label: 'Config.', icon: Settings },
@@ -2013,7 +2038,7 @@ const App: React.FC = () => {
       )}
 
       {/* --- TOP BAR (Sfondo Grigio Scuro) --- */}
-      <div className="bg-[#222222] py-1 border-b border-white/10 shrink-0 sticky top-0 z-[60] font-sans">
+      <div className="bg-[#222222] py-1 border-b border-white/10 shrink-0 z-[60] font-sans">
         <div className="max-w-[1600px] mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4">
           
           {/* Logo Testuale */}
@@ -2064,7 +2089,7 @@ const App: React.FC = () => {
       </div>
 
       {/* --- HEADER PRINCIPALE (Sfondo Bianco) --- */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-[55] shadow-sm font-sans shrink-0">
+      <header className="bg-white border-b border-slate-200 z-[55] shadow-sm font-sans shrink-0">
         <div className="max-w-[1600px] mx-auto px-4 flex flex-col md:flex-row items-center justify-between py-4 md:h-20 gap-4">
           
           {/* Logo Azienda e Pallini */}

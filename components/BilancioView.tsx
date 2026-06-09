@@ -7,7 +7,8 @@ import {
   RimanenzeData, 
   InitialBalanceBreakdown,
   AppView,
-  Project
+  Project,
+  SaldoInizialeCashFlow
 } from '../types';
 import CEView from './CEView';
 import SPView from './SPView';
@@ -30,6 +31,7 @@ import {
 interface BilancioViewProps {
   transactions: Transaction[];
   initialData: InitialBalanceBreakdown;
+  saldoInizialeCF: SaldoInizialeCashFlow;
   ceManualData: Record<string, Partial<CEData>>;
   onManualDataChange: (anno: number, data: Partial<CEData>) => void;
   spSnapshots: SPSnapshot[];
@@ -38,6 +40,8 @@ interface BilancioViewProps {
   onBudgetChange: (anno: number, data: BudgetData) => void;
   oreStorico: Record<string, number>;
   setOreStorico: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  oreOperaiStorico: Record<string, any>;
+  setOreOperaiStorico: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   rimanenze: RimanenzeData;
   onRimanenzeChange: (anno: number, data: any) => void;
   onGoToManuale: (section?: string, tab?: 'manuale' | 'glossario') => void;
@@ -208,6 +212,8 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             onUpdateSnapshots={props.onUpdateSnapshots}
             ceManualData={props.ceManualData}
             onGoToManuale={props.onGoToManuale}
+            saldoInizialeCF={props.saldoInizialeCF}
+            rimanenze={props.rimanenze}
           />
         )}
         {activeTab === 'budget' && (
@@ -232,12 +238,15 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             ceManualData={props.ceManualData}
             oreStorico={props.oreStorico}
             setOreStorico={props.setOreStorico}
+            oreOperaiStorico={props.oreOperaiStorico}
+            setOreOperaiStorico={props.setOreOperaiStorico}
             rimanenze={props.rimanenze}
             onGoToManuale={props.onGoToManuale}
             aliquotaIRES={props.aliquotaIRES}
             aliquotaIRAP={props.aliquotaIRAP}
             onChangeAliquotaIRES={props.onChangeAliquotaIRES}
             onChangeAliquotaIRAP={props.onChangeAliquotaIRAP}
+            initialData={props.initialData}
           />
         )}
         {activeTab === 'iva' && (

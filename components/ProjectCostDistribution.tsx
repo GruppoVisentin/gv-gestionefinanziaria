@@ -21,6 +21,7 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
   
   // Form State
   const [estDate, setEstDate] = useState('');
+  const [estRevenue, setEstRevenue] = useState('');
   const [estLabor, setEstLabor] = useState('');
   const [estLaborType, setEstLaborType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL'); // New State
   const [estMaterials, setEstMaterials] = useState('');
@@ -126,6 +127,7 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
   // Handlers
   const handleEditClick = (p: Project) => {
       setEstDate(p.estimatedStartDate || '');
+      setEstRevenue(p.estimatedRevenue?.toString() || '');
       setEstLabor(p.estimatedLabor?.toString() || '');
       setEstLaborType(p.laborType || 'INTERNAL'); // Load saved type or default
       setEstMaterials(p.estimatedMaterials?.toString() || '');
@@ -141,6 +143,7 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
           onUpdateProject({
               ...projectToUpdate,
               estimatedStartDate: estDate,
+              estimatedRevenue: parseFloat(estRevenue) || 0,
               estimatedLabor: parseFloat(estLabor) || 0,
               laborType: estLaborType, // Save type
               estimatedMaterials: parseFloat(estMaterials) || 0,
@@ -184,6 +187,12 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Data Inizio Lavori Presunta</label>
                             <input type="date" value={estDate} onChange={e => setEstDate(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-slate-500" />
                             <p className="text-[10px] text-slate-400 mt-1">Questa data serve da riferimento per distribuire i costi nel tempo.</p>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-emerald-600 uppercase mb-1 flex items-center gap-1">Ricavo Stimato (Budget)</label>
+                            <input type="number" step="0.01" value={estRevenue} onChange={e => setEstRevenue(e.target.value)} className="w-full border border-emerald-300 rounded-lg p-2 outline-none focus:border-emerald-500 bg-emerald-50" placeholder="0.00" />
+                            <p className="text-[10px] text-slate-500 mt-1 font-medium">Distribuito linearmente nei primi 6 mesi</p>
                         </div>
 
                         <div>
@@ -268,8 +277,12 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
                                             <span className="font-mono font-medium">{new Date(p.estimatedStartDate!).toLocaleDateString('it-IT')}</span>
                                         </div>
                                         <div className="flex justify-between text-xs text-slate-500">
-                                            <span>Totale Stima:</span>
-                                            <span className="font-mono font-bold text-slate-700">{CURRENCY_FORMATTER.format(totalEst)}</span>
+                                            <span>Ricavo Stimato:</span>
+                                            <span className="font-mono font-bold text-emerald-600">{CURRENCY_FORMATTER.format(p.estimatedRevenue || 0)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs text-slate-500">
+                                            <span>Totale Costi:</span>
+                                            <span className="font-mono font-bold text-rose-600">{CURRENCY_FORMATTER.format(totalEst)}</span>
                                         </div>
                                         
                                         {/* Labor Type Badge */}

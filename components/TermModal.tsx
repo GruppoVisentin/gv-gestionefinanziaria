@@ -4,12 +4,13 @@ import { getTermine, GLOSSARIO, CATEGORIE_GLOSSARIO } from '../content/glossary'
 
 interface TermModalProps {
   termId: string;
+  customTip?: string;
   onClose: () => void;
 }
 
 const formatEuro = (s: string) => s;
 
-const TermModal: React.FC<TermModalProps> = ({ termId, onClose }) => {
+const TermModal: React.FC<TermModalProps> = ({ termId, customTip, onClose }) => {
   const termine = getTermine(termId);
 
   // Chiudi con Escape
@@ -42,36 +43,35 @@ const TermModal: React.FC<TermModalProps> = ({ termId, onClose }) => {
   return (
     // Overlay
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto"
       onClick={onClose}
     >
       {/* Modal */}
       <div
-        className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl my-8 flex flex-col max-h-[calc(100vh-4rem)] overflow-hidden relative"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="sticky top-0 bg-white z-10 px-8 pt-8 pb-4 border-b border-slate-100">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-full ${categoriaColor[termine.categoria]}`}>
-                  {categoriaLabel}
-                </span>
-              </div>
-              <h2 className="text-2xl font-black text-slate-900">{termine.nome}</h2>
-              <p className="text-xs text-slate-400 mt-1 italic">{termine.origine}</p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-slate-100 rounded-xl transition-colors flex-shrink-0"
-            >
-              <X size={18} className="text-slate-500" />
-            </button>
-          </div>
-        </div>
+        {/* Pulsante chiusura fisso in alto a destra per sicurezza */}
+        <button
+          onClick={onClose}
+          className="absolute top-6 right-6 p-2 hover:bg-slate-100 rounded-xl transition-colors z-20"
+        >
+          <X size={18} className="text-slate-500" />
+        </button>
 
-        <div className="px-8 py-6 space-y-6">
+        {/* Tutto il contenuto (Header + Body) scorre insieme per evitare tagli del titolo */}
+        <div className="flex-1 overflow-y-auto px-8 py-8 space-y-6">
+          
+          {/* Header integrato nello scroll */}
+          <div className="border-b border-slate-100 pb-4 pr-10">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-full ${categoriaColor[termine.categoria]}`}>
+                {categoriaLabel}
+              </span>
+            </div>
+            <h2 className="text-2xl font-black text-slate-900 leading-tight">{termine.nome}</h2>
+            <p className="text-xs text-slate-400 mt-1 italic">{termine.origine}</p>
+          </div>
 
           {/* Definizione */}
           <div>
@@ -83,6 +83,21 @@ const TermModal: React.FC<TermModalProps> = ({ termId, onClose }) => {
               {termine.definizione}
             </p>
           </div>
+
+          {/* Valori Correnti Calcolati */}
+          {customTip && (
+            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5 space-y-2">
+              <div className="flex items-center gap-2">
+                <Calculator size={14} className="text-indigo-600" />
+                <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">
+                  Valori Correnti Calcolati (Consuntivo vs Previsionale)
+                </span>
+              </div>
+              <p className="text-xs text-indigo-900 font-mono whitespace-pre-line leading-relaxed font-bold">
+                {customTip}
+              </p>
+            </div>
+          )}
 
           {/* Formula */}
           {(termine.formulaTestuale || termine.formulaPassaggi) && (
