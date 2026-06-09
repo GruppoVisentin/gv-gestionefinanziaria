@@ -1,13 +1,12 @@
 import sharp from 'sharp';
 import fs from 'fs';
 
-async function padIcon(size) {
-  const originalPath = `public/icon-${size}.png`;
-  const tempPath = `public/icon-${size}-temp.png`;
+async function processIcon(size, oldSuffix, newSuffix) {
+  const originalPath = `public/icon-${size}${oldSuffix}.png`;
+  const targetPath = `public/icon-${size}${newSuffix}.png`;
   
-  // Calculate padding (15% on each side means the inner image is 70% of the total size)
-  const innerSize = Math.round(size * 0.7);
-  const padding = Math.round(size * 0.15);
+  const innerSize = Math.round(size * 0.8);
+  const padding = Math.round((size - innerSize) / 2);
   
   try {
     await sharp(originalPath)
@@ -17,24 +16,25 @@ async function padIcon(size) {
         bottom: padding,
         left: padding,
         right: padding,
-        background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent
+        background: { r: 37, g: 99, b: 235, alpha: 1 } // un bel blu, tipo #2563eb
       })
-      .toFile(tempPath);
+      .flatten({ background: { r: 37, g: 99, b: 235 } }) 
+      .resize(size, size) // force exact size in case of rounding errors
+      .toFile(targetPath);
       
-    fs.renameSync(tempPath, originalPath);
-    console.log(`Successfully padded icon-${size}.png`);
+    console.log(`Successfully processed icon-${size}.png`);
   } catch (e) {
     console.error(`Failed for size ${size}`, e);
   }
 }
 
-async function padAppleIcon() {
+async function processAppleIcon(oldSuffix, newSuffix) {
   const size = 180;
-  const originalPath = `public/apple-touch-icon.png`;
-  const tempPath = `public/apple-touch-icon-temp.png`;
+  const originalPath = `public/apple-touch-icon${oldSuffix}.png`;
+  const targetPath = `public/apple-touch-icon${newSuffix}.png`;
   
-  const innerSize = Math.round(size * 0.7);
-  const padding = Math.round(size * 0.15);
+  const innerSize = Math.round(size * 0.8);
+  const padding = Math.round((size - innerSize) / 2);
   
   try {
     await sharp(originalPath)
@@ -44,17 +44,22 @@ async function padAppleIcon() {
         bottom: padding,
         left: padding,
         right: padding,
-        background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent
+        background: { r: 37, g: 99, b: 235, alpha: 1 } // #2563eb
       })
-      .toFile(tempPath);
+      .flatten({ background: { r: 37, g: 99, b: 235 } })
+      .resize(size, size)
+      .toFile(targetPath);
       
-    fs.renameSync(tempPath, originalPath);
-    console.log(`Successfully padded apple-touch-icon.png`);
+    console.log(`Successfully processed apple-touch-icon.png`);
   } catch (e) {
     console.error(`Failed for apple touch icon`, e);
   }
 }
 
-Promise.all([padIcon(192), padIcon(512), padAppleIcon()]).then(() => {
-  console.log('All icons padded successfully.');
+Promise.all([
+  processIcon(192, '-v5', '-v6'),
+  processIcon(512, '-v5', '-v6'),
+  processAppleIcon('-v5', '-v6')
+]).then(() => {
+  console.log('All icons processed successfully.');
 });
