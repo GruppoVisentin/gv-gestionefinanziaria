@@ -66,12 +66,12 @@ export const GLOSSARIO: TermineGlossario[] = [
     nome: 'Primo Margine',
     categoria: 'ce',
     origine: 'Detto anche "Gross Profit" o "Margine Lordo" — è il primo livello di redditività dopo i costi direttamente legati alla produzione',
-    definizione: 'Quanto resta del fatturato dopo aver pagato tutto ciò che serve direttamente per fare i lavori: manodopera operativa, materiali, subappalti, noleggi, carburanti. Non include ancora i costi della struttura aziendale (ufficio, tecnici, commercialista).',
-    formulaTestuale: 'Primo Margine = Ricavi Totali − Costi Variabili',
+    definizione: 'Quanto resta del Valore della Produzione dopo aver pagato tutto ciò che serve direttamente per fare i lavori: manodopera operativa, materiali, subappalti, noleggi, carburanti. Non include ancora i costi della struttura aziendale.',
+    formulaTestuale: 'Primo Margine = Valore della Produzione (Ricavi ± Variazione Rimanenze) − Costi Variabili',
     formulaPassaggi: [
-      { label: 'Parti dal totale ricavi', formula: 'Ricavi Core + Altri Ricavi' },
+      { label: 'Parti dal Valore della Produzione', formula: 'Ricavi Core + Altri Ricavi ± Variazione Rimanenze' },
       { label: 'Sottrai tutti i costi variabili di cantiere', formula: '− Stipendi Operativi − Contributi Operativi − Materiali − Subappalti − Noleggi − Carburanti − Professionisti Cantiere' },
-      { label: 'Il risultato è il Primo Margine', formula: '= Ricavi − Costi Variabili' },
+      { label: 'Il risultato è il Primo Margine', formula: '= Valore Produzione − Costi Variabili' },
     ],
     esempioNumerico: {
       dati: 'Fatturato €800.000, Costi Variabili totali: Stipendi operativi €120k + Contributi €40k + Materiali €220k + Subappalti €100k + Noleggi €20k',
@@ -128,17 +128,23 @@ export const GLOSSARIO: TermineGlossario[] = [
     formulaTestuale: 'EBIT = EBITDA − Ammortamenti',
     formulaPassaggi: [
       { label: 'Parti dall\'EBITDA', formula: 'Margine Operativo Lordo' },
-      { label: 'Sottrai la quota di ammortamento del periodo', formula: '− Ammortamenti (inseriti manualmente nel CE)' },
+      { label: 'Sottrai la quota di ammortamento del periodo', formula: '− Ammortamenti (inseriti manualmente nel CE annuale)' },
       { label: 'Il risultato è l\'EBIT', formula: '= Risultato Operativo Netto' },
     ],
     esempioNumerico: {
       dati: 'EBITDA €160.000, Ammortamenti annui €18.000 (escavatore €12k + software €6k)',
       calcolo: '160.000 − 18.000',
-      risultato: 'EBIT = €142.000 → 17,75% sul fatturato',
+      risultato: 'EBIT = €142.000 — 17,75% sul fatturato',
     },
     doveAppareNellApp: ['CEView — riga EBIT', 'AnalisiView — Previsione Fiscale (base IRES)'],
+    sogliaEdilizia: {
+      ottimo: '> 10%',
+      buono: '5—10%',
+      attenzione: '2—5%',
+      critico: '< 2%',
+    },
     connessoCon: ['ebitda', 'ammortamento', 'ebt'],
-    erroreComune: 'Gli ammortamenti nel CE dell\'app si inseriscono manualmente ogni anno nella voce [STRUTTURA] Ammortamenti — se non li inserisci, EBIT = EBITDA.',
+    erroreComune: 'Gli ammortamenti nel CE dell\'app si inseriscono manualmente nella voce [STRUTTURA] Ammortamenti per rettificare l\'EBIT — se non li inserisci, EBIT = EBITDA. Nota: nello Stato Patrimoniale, invece, l\'ammortamento dei cespiti è calcolato automaticamente dal motore dell\'app.',
   },
 
   {
@@ -248,8 +254,8 @@ export const GLOSSARIO: TermineGlossario[] = [
       calcolo: '120.000 ÷ 10',
       risultato: '€12.000/anno di ammortamento — nessuna uscita di cassa, solo costo contabile',
     },
-    doveAppareNellApp: ['CEView — riga Ammortamenti (voce manuale)'],
-    erroreComune: 'L\'acquisto dell\'escavatore va registrato come [INVESTIMENTI] Acquisto Attrezzature → ceType CAPEX. L\'ammortamento va inserito manualmente ogni anno come [STRUTTURA] Ammortamenti → ceType ammortamento. Sono due operazioni distinte.',
+    doveAppareNellApp: ['CEView — riga Ammortamenti (voce manuale)', 'SPView — Svalutazione Immobilizzazioni (calcolo automatico)'],
+    erroreComune: 'L\'acquisto dell\'escavatore va registrato come [INVESTIMENTI] Acquisto Attrezzature → ceType CAPEX. L\'ammortamento va inserito manualmente ogni anno nel CE. Attenzione: nello Stato Patrimoniale l\'app svaluta i cespiti in automatico, non serve inserire nulla a mano per lo SP.',
     connessoCon: ['capex', 'ebit', 'break_even'],
   },
 

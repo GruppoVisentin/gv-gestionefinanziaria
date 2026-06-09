@@ -100,8 +100,8 @@ export const HELP_CONTENT: Record<string, SezioneHelp> = {
       {
         titolo: 'Inserire un finanziamento ricevuto senza registrare il mutuo',
         sbagliato: 'Registro il finanziamento come entrata ma non aggiungo il mutuo nella configurazione',
-        corretto: 'Aggiungi il mutuo nella sezione "Finanziamenti Attivi" con tutti i dettagli — l\'app calcola automaticamente le rate future come uscite previsionali',
-        perche: 'Se non registri il mutuo, le rate future non compaiono nel previsionale e la liquidità futura appare gonfiata.',
+        corretto: 'Aggiungi il mutuo nella sezione "Finanziamenti Attivi" — l\'app calcolerà automaticamente le rate future come uscite previsionali',
+        perche: 'Se non registri il mutuo, le rate future non compaiono nel previsionale. NOTA: le uscite per mutui già registrate come transazioni sostituiscono le rate previste dal piano di ammortamento nel passato, evitando doppie conteggiature.',
       },
       {
         titolo: 'Confondere Previsionale e Consuntivo',
@@ -141,9 +141,9 @@ export const HELP_CONTENT: Record<string, SezioneHelp> = {
       'Calcolare le imposte stimate (tab Previsione Fiscale in AnalisiView)',
     ],
     comeSiCompila: [
-      'Il CE si popola automaticamente dalle transazioni — l\'unica voce manuale sono gli Ammortamenti',
-      'Inserisci gli ammortamenti nella riga "Ammortamenti (Manuale)" ogni mese o una volta a fine anno',
-      'Le imposte (IRES/IRAP) sono manuali oppure stimate automaticamente nella Previsione Fiscale',
+      'Il CE si popola automaticamente dalle transazioni per i flussi di cassa',
+      'Le Variazioni Rimanenze (WIP) modificano automaticamente il Valore della Produzione e i margini a cascata',
+      'Gli ammortamenti annuali si inseriscono manualmente nel CE per rettificare l\'EBIT (diversi dal Net Book Value dello Stato Patrimoniale che è automatico)',
       'Per confrontare con il commercialista: attiva il toggle "Per Competenza" e inserisci le rimanenze nella sezione Rettifiche di Fine Anno',
     ],
     erroriComuni: [
@@ -156,8 +156,8 @@ export const HELP_CONTENT: Record<string, SezioneHelp> = {
       {
         titolo: 'Dimenticare di inserire gli ammortamenti',
         sbagliato: 'Non inserisco mai gli ammortamenti perché non capisco come calcolarli',
-        corretto: 'Chiedi al commercialista il piano di ammortamento dei cespiti. Inserisci la quota annua divisa per 12 ogni mese, oppure tutto in dicembre.',
-        perche: 'Senza ammortamenti, EBIT = EBITDA e l\'utile è sovrastimato. Il CE dell\'app non coinciderà mai con quello del commercialista.',
+        corretto: 'Inserisci la quota annua divisa per 12 ogni mese, oppure tutto in dicembre, nella riga manuale del CE.',
+        perche: 'Senza ammortamenti manuali, EBIT = EBITDA nel CE. Nota: nello Stato Patrimoniale, invece, l\'app svaluta automaticamente i cespiti calcolando il Net Book Value.',
       },
     ],
     esempiVisivi: [
@@ -197,7 +197,7 @@ export const HELP_CONTENT: Record<string, SezioneHelp> = {
     comeSiCompila: [
       'Non c\'è nulla da compilare — tutto si calcola dai dati delle transazioni',
       'Per il Costo Orario: inserisci le ore lavorate in cantiere quel mese (dai cartellini) nel campo apposito',
-      'Per la Previsione Fiscale: inserisci le aliquote se diverse dai default (IRES 24%, IRAP 3,9%)',
+      'Per la Previsione Fiscale: l\'app calcola automaticamente IRES/IRAP stimati e rileva in automatico Acconti o Imposte Storiche già versate (categoria Fisco) per darti il saldo esatto ancora da versare',
       'Per i preventivi: inserisci il costo diretto stimato e il margine desiderato — il prezzo minimo è automatico',
     ],
     erroriComuni: [
@@ -291,7 +291,7 @@ export const HELP_CONTENT: Record<string, SezioneHelp> = {
     comeSiCompila: [
       'Crea uno snapshot per ogni chiusura di esercizio (31/12) con i dati del bilancio depositato',
       'Puoi creare snapshot intermedi (es. 30/06) per monitoraggi infra-annuali',
-      'I dati vengono dal bilancio — chiedili al commercialista',
+      'I cespiti si svalutano dinamicamente: inserisci il valore di acquisto e l\'app calcolerà il Net Book Value (NBV) e il Fondo Ammortamento in automatico per lo snapshot corrente',
       'Verifica sempre che la quadratura sia confermata (Attivo = Passivo + PN)',
     ],
     erroriComuni: [
