@@ -179,7 +179,27 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   ]);
   
   // Ensure we sort alphabetically
-  const projects: string[] = Array.from<string>(allProjects).sort();
+  availableProjects?.forEach(p => {
+    if (p.status === 'ACTIVE' && p.estimatedStartDate) {
+      allProjects.add(p.name.trim());
+    }
+  });
+
+  const projectNames: string[] = Array.from<string>(allProjects).sort();
+
+  const calculateProjectRevenueForMonth = (projectName: string | null, monthIndex: number) => {
+      let total = 0;
+      availableProjects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
+          if (projectName && p.name.trim() !== projectName) return;
+          const start = new Date(p.estimatedStartDate!);
+          const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
+          const targetMonthGlobal = currentYear * 12 + monthIndex;
+          const diff = targetMonthGlobal - startMonthGlobal;
+
+          if (diff >= 0 && diff < 6) total += (p.estimatedRevenue || 0) / 6;
+      });
+      return total;
+  };
 
   // Helper: Is a forecast paid?
   const isForecastPaid = (forecastId: string) => {
@@ -225,7 +245,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
   // Get Monthly Totals (Gross) — esclude forecast già incassati come consuntivo
   const getMonthlyTotal = (monthIndex: number, isForecast: boolean) => {
-    return incomeTransactions
+    let total = incomeTransactions
       .filter(t => {
         const tDate = new Date(t.date);
         const tForecast = !!t.isForecast;
@@ -237,6 +257,11 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         );
       })
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
+
+    if (isForecast) {
+        total += calculateProjectRevenueForMonth(null, monthIndex);
+    }
+    return total;
   };
 
   // Get Annual Totals per Row — esclude forecast già incassati
@@ -246,7 +271,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     else if (key === 'INVESTMENT') sourceList = investmentTransactions;
     else sourceList = operationalTransactions;
 
-    return sourceList.filter(t => {
+    let rowTotal = sourceList.filter(t => {
       const tDate = new Date(t.date);
       const tProj = t.project?.trim() || 'Generale';
       const tForecast = !!t.isForecast;
@@ -258,16 +283,30 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         tForecast === isForecast
       );
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
+
+    if (isForecast && key !== 'FINANCING' && key !== 'INVESTMENT') {
+        for (let m = 0; m < 12; m++) {
+            rowTotal += calculateProjectRevenueForMonth(key, m);
+        }
+    }
+    return rowTotal;
   };
 
   // Get Grand Annual Total — esclude forecast già incassati
   const getGrandAnnualTotal = (isForecast: boolean) => {
-    return incomeTransactions.filter(t => {
+    let total = incomeTransactions.filter(t => {
       const tDate = new Date(t.date);
       const tForecast = !!t.isForecast;
       if (tForecast && isForecast && isForecastPaid(t.id)) return false;
       return tDate.getFullYear() === currentYear && tForecast === isForecast;
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
+
+    if (isForecast) {
+        for (let m = 0; m < 12; m++) {
+            total += calculateProjectRevenueForMonth(null, m);
+        }
+    }
+    return total;
   };
 
   const handleSelectForecast = (forecast: Transaction, monthIndex: number) => {
@@ -614,6 +653,22 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
               {/* Previsione Column */}
               <td className={`px-1 py-3 text-center border-r border-slate-100 align-top relative group ${forecastBg} ${COL_SUB_WIDTH}`}>
                 <div className="flex flex-col gap-1 items-center w-full min-h-[30px]">
+                  {(() => {
+                      let projectRevenue = 0;
+                      if (rowType === 'standard' && key !== 'FINANCING' && key !== 'INVESTMENT') {
+                          projectRevenue = calculateProjectRevenueForMonth(key, mIdx);
+                      }
+                      return projectRevenue > 0 ? (
+                          <div className="relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border transition-all bg-emerald-50 text-emerald-600 border-emerald-50 shadow-sm" title="Ricavo stimato da Wizard Commessa">
+                              <span className="text-[11px] font-mono font-medium leading-none flex items-center gap-1">
+                                  {CURRENCY_FORMATTER.format(projectRevenue)}
+                              </span>
+                              <span className="text-[9px] opacity-80 truncate w-full text-center mt-0.5 max-w-[90px] font-bold text-emerald-700">
+                                  Ricavo Stimato
+                              </span>
+                          </div>
+                      ) : null;
+                  })()}
                   {forecasts.map(t => {
                     const paid = isForecastPaid(t.id);
                     return (
@@ -1177,7 +1232,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     doc.setFontSize(10);
     doc.text(`Data generazione: ${today}`, pageWidth - 15, 30, { align: 'right' });
 
-    const rows: { key: string, label: string }[] = projects.map(p => ({ key: p, label: p }));
+    const rows: { key: string, label: string }[] = projectNames.map(p => ({ key: p, label: p }));
     rows.push({ key: 'INVESTMENT', label: 'RITORNO DA INVESTIMENTI' });
     rows.push({ key: 'FINANCING', label: 'FINANZIAMENTI BANCARI' });
 
@@ -1336,7 +1391,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
             </tr>
           </thead>
           <tbody>
-            {projects.length === 0 && financingTransactions.length === 0 && investmentTransactions.length === 0 ? (
+            {projectNames.length === 0 && financingTransactions.length === 0 && investmentTransactions.length === 0 ? (
               <tr>
                 <td colSpan={27} className="px-6 py-12 text-center text-slate-400">
                   Nessuna entrata registrata.
@@ -1345,7 +1400,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
             ) : (
               <>
                 {/* 1. Standard Projects */}
-                {projects.map((proj, idx) => renderRow(proj, proj, 'standard', idx))}
+                {projectNames.map((proj, idx) => renderRow(proj, proj, 'standard', idx))}
 
                 {/* 2. Distinct Investment Row */}
                 {renderRow('INVESTMENT', 'RITORNO DA INVESTIMENTI', 'investment', 98)}

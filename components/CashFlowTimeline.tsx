@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project } from '../types';
 import { fetchEuriborRates } from '../services/geminiService';
 import { CURRENCY_FORMATTER } from '../constants';
-import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Database, Search, RefreshCw, Pencil, CheckCircle2 } from 'lucide-react';
+import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Database, Search, RefreshCw, Pencil, CheckCircle2, Building2 } from 'lucide-react';
 import PDFExportButton from './PDFExportButton';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';

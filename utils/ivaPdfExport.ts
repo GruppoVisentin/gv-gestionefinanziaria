@@ -64,7 +64,7 @@ export const exportIVAPDF = ({
   pdf.text('1. QUADRO DI SINTESI ANNUALE', 15, currentY);
   currentY += 4;
 
-  const kpiData = [
+  const kpiData: any[] = [
     [
       { content: 'Totale IVA Esigibile (su ricavi incassati)', styles: { fontStyle: 'normal' } },
       { content: formatEuro(riepilogo.totaleIvaIncassata), styles: { fontStyle: 'bold', textColor: [37, 99, 235] } },

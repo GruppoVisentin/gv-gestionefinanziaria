@@ -2247,18 +2247,32 @@ const App: React.FC = () => {
             onSetFileFEA2={setFileFEA2}
             onAggiornaBozza={setBozzaImportPuntaNet}
             onImport={(txs) => {
-              setTransactions(prev => [...prev, ...txs]);
-              setBozzaImportPuntaNet([]); // Pulisce la bozza dopo l'import
+              setTransactions(prev => {
+                const newTxs = [...prev, ...txs];
+                // Note: triggerImmediateSave here might use a slightly stale importSessions if onSalvaSessione was just called.
+                // But it's better than not saving at all. We will also save on SalvaSessione.
+                triggerImmediateSave(newTxs, undefined);
+                return newTxs;
+              });
+              // Non puliamo la bozza qui e non chiudiamo il modal: lasciamo che l'utente veda lo step "completato"
+            }}
+            onSalvaRegole={setRegolePuntaNet}
+            onSalvaMappingConti={setMappingContiPuntaNet}
+            onSalvaSessione={s => {
+              setImportSessions(prev => {
+                const newSessions = [s, ...prev];
+                triggerImmediateSave(undefined, newSessions);
+                return newSessions;
+              });
+            }}
+            onClose={() => {
+              setBozzaImportPuntaNet([]);
               setFileBanca(null);
               setFileFEP(null);
               setFileFEA(null);
               setFileFEA2(null);
               setShowImportPuntaNet(false);
             }}
-            onSalvaRegole={setRegolePuntaNet}
-            onSalvaMappingConti={setMappingContiPuntaNet}
-            onSalvaSessione={s => setImportSessions(prev => [s, ...prev])}
-            onClose={() => setShowImportPuntaNet(false)}
           />
         )}
 

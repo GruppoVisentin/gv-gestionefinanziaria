@@ -539,6 +539,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     ebitdaTot,
     ebitdaPercent: fatturato > 0 ? ebitdaTot / fatturato : 0,
     ebitTot,
+    ebtTot: sum12(ebt),
     utileNettoTot,
     utileNettoPercent: fatturato > 0 ? utileNettoTot / fatturato : 0,
     costiStudioTot,
