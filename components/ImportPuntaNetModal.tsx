@@ -519,23 +519,33 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   };
 
   const importa = () => {
-    const daImportare = righe.filter(r => r.confermata && r.categoria && r.ceType && !r.isDuplicato);
-    const daSospendere = righe.filter(r => (!r.confermata || !r.categoria || !r.ceType) && !r.isDuplicato);
-    const duplicati = righe.filter(r => r.isDuplicato);
+    try {
+      const daImportare = righe.filter(r => r.confermata && r.categoria && r.ceType && !r.isDuplicato);
+      const daSospendere = righe.filter(r => (!r.confermata || !r.categoria || !r.ceType) && !r.isDuplicato);
+      const duplicati = righe.filter(r => r.isDuplicato);
 
-    const sessionId = crypto.randomUUID();
-    const dates = daImportare.map(r => r.riga.data.getTime());
-    const minDate = new Date(Math.min(...dates)).toISOString().split('T')[0];
-    const maxDate = new Date(Math.max(...dates)).toISOString().split('T')[0];
+      if (daImportare.length === 0) {
+        setErrore("Nessuna transazione valida da importare. Verifica che le righe confermate abbiano una categoria assegnata.");
+        return;
+      }
 
-    const session: ImportSession = {
-      id: sessionId,
-      timestamp: new Date().toISOString(),
-      nomeFile: fileBanca?.name || 'Punta Net Import',
-      transazioniImportate: daImportare.length,
-      periodoInizio: minDate,
-      periodoFine: maxDate
-    };
+      const sessionId = crypto.randomUUID();
+      
+      const dates = daImportare.map(r => {
+        const t = r.riga.data.getTime();
+        return isNaN(t) ? Date.now() : t;
+      });
+      const minDate = dates.length > 0 ? new Date(Math.min(...dates)).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      const maxDate = dates.length > 0 ? new Date(Math.max(...dates)).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
+      const session: ImportSession = {
+        id: sessionId,
+        timestamp: new Date().toISOString(),
+        nomeFile: fileBanca?.name || 'Punta Net Import',
+        transazioniImportate: daImportare.length,
+        periodoInizio: minDate,
+        periodoFine: maxDate
+      };
 
     // Salva nuove regole
     const nuoveRegole: RegolaMapping[] = [];
@@ -598,14 +608,18 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       return tx;
     });
 
-    onSalvaSessione(session);
-    onImport(transactions);
-    onAggiornaBozza(daSospendere);
+      onSalvaSessione(session);
+      onImport(transactions);
+      onAggiornaBozza(daSospendere);
 
-    setImportateCount(daImportare.length);
-    setSospesCount(daSospendere.length);
-    setDuplicatiIgnorati(duplicati.length);
-    setStep('completato');
+      setImportateCount(daImportare.length);
+      setSospesCount(daSospendere.length);
+      setDuplicatiIgnorati(duplicati.length);
+      setStep('completato');
+    } catch (err: any) {
+      console.error(err);
+      setErrore(err?.message || "Errore imprevisto durante l'importazione.");
+    }
   };
 
   // ─── STATISTICHE ─────────────────────────────────────────────
