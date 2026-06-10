@@ -349,21 +349,22 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             transactionTotal += calculateLoanRepaymentForMonth(monthIndex).total;
         }
 
-        // Add Taxes
+        // Add Tax Estimates
         const ivaMese = taxForecasts.posIva.mensile[monthIndex];
         if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
             transactionTotal += ivaMese.versamentoIVA;
         }
 
         if (monthIndex === 5) {
-            const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 - IRPEF / IRES / IRAP');
             if (!paidJune) {
-                transactionTotal += taxForecasts.prevFiscale.accontoGiugno;
-                transactionTotal += taxForecasts.prevFiscale.saldoAprilem;
+                transactionTotal += taxForecasts.prevFiscale.accontoGiugno + taxForecasts.prevFiscale.saldoAprilem;
             }
         } else if (monthIndex === 10) {
-            const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-            if (!paidNov) transactionTotal += taxForecasts.prevFiscale.accontoNovembre;
+            const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 - IRPEF / IRES / IRAP');
+            if (!paidNov) {
+                transactionTotal += taxForecasts.prevFiscale.accontoNovembre;
+            }
         }
     }
 
@@ -418,13 +419,13 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                 }
             }
         }
-        if (category === '[FISCO] F24 — IRPEF / IRES / IRAP') {
-            const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+        if (category === '[FISCO] F24 - IRPEF / IRES / IRAP') {
+            const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 - IRPEF / IRES / IRAP');
             if (!paidJune) {
                 total += taxForecasts.prevFiscale.accontoGiugno;
                 total += taxForecasts.prevFiscale.saldoAprilem;
             }
-            const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 - IRPEF / IRES / IRAP');
             if (!paidNov) total += taxForecasts.prevFiscale.accontoNovembre;
         }
     }
@@ -509,29 +510,32 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             }
         });
         // Loans
-        // BUG-01 Fix: Check if loans have transactions
-        const hasLoanTransactions = expenseTransactions.some(t => {
+        const hasLoanTransactionsGlobal = expenseTransactions.some(t => {
           const tDate = new Date(t.date);
           return (
             tDate.getFullYear() === currentYear &&
             (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
           );
         });
-        if (!hasLoanTransactions) {
+        if (!hasLoanTransactionsGlobal) {
             for (let m = 0; m < 12; m++) {
                 total += calculateLoanRepaymentForMonth(m).total;
             }
         }
+        
+        // Add Tax Estimates
         for (let m = 0; m < 12; m++) {
             const ivaMese = taxForecasts.posIva.mensile[m];
-            if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) total += ivaMese.versamentoIVA;
+            if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
+                total += ivaMese.versamentoIVA;
+            }
         }
-        const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+        const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 - IRPEF / IRES / IRAP');
         if (!paidJune) {
             total += taxForecasts.prevFiscale.accontoGiugno;
             total += taxForecasts.prevFiscale.saldoAprilem;
         }
-        const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+        const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 - IRPEF / IRES / IRAP');
         if (!paidNov) total += taxForecasts.prevFiscale.accontoNovembre;
     }
     return total;

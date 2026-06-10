@@ -269,13 +269,14 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     let sourceList;
     if (key === 'FINANCING') sourceList = financingTransactions;
     else if (key === 'INVESTMENT') sourceList = investmentTransactions;
+    else if (key === 'OTHER') sourceList = operationalTransactions.filter(t => !t.project || !allProjects.has(t.project));
     else sourceList = operationalTransactions;
 
     let rowTotal = sourceList.filter(t => {
       const tDate = new Date(t.date);
       const tProj = t.project?.trim() || 'Generale';
       const tForecast = !!t.isForecast;
-      const matchKey = (key === 'FINANCING' || key === 'INVESTMENT') ? true : tProj === key;
+      const matchKey = (key === 'FINANCING' || key === 'INVESTMENT' || key === 'OTHER') ? true : tProj === key;
       if (tForecast && isForecast && isForecastPaid(t.id)) return false; // escludi se già incassato
       return (
         matchKey &&
@@ -284,7 +285,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       );
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
 
-    if (isForecast && key !== 'FINANCING' && key !== 'INVESTMENT') {
+    if (isForecast && key !== 'FINANCING' && key !== 'INVESTMENT' && key !== 'OTHER') {
         for (let m = 0; m < 12; m++) {
             rowTotal += calculateProjectRevenueForMonth(key, m);
         }
@@ -409,7 +410,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     const isInvestment = addingForecast.key === 'INVESTMENT';
 
     let category = '[CANTIERE] SAL — Stato Avanzamento Lavori';
-    let project = addingForecast.key;
+    let project = addingForecast.key === 'OTHER' ? '' : addingForecast.key;
     const matchedProj = availableProjects.find(p => p.name === project);
     if (matchedProj && matchedProj.metodoPagamento === 'acconto') {
         category = '[CANTIERE] Anticipi da Clienti su Commessa';
@@ -521,7 +522,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       const isInvestment = activeCell.key === 'INVESTMENT';
 
       let category = '[CANTIERE] SAL — Stato Avanzamento Lavori';
-      let project = activeCell.key;
+      let project = activeCell.key === 'OTHER' ? '' : activeCell.key;
       const matchedProj = availableProjects.find(p => p.name === project);
       if (matchedProj && matchedProj.metodoPagamento === 'acconto') {
           category = '[CANTIERE] Anticipi da Clienti su Commessa';
@@ -582,7 +583,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       setActiveCell(null);
   };
 
-  const renderRow = (key: string, label: string, rowType: 'standard' | 'financing' | 'investment', idx: number) => {
+  const renderRow = (key: string, label: string, rowType: 'standard' | 'financing' | 'investment' | 'other', idx: number) => {
     const annualForecast = getRowAnnualTotal(key, true);
     const annualActual = getRowAnnualTotal(key, false);
     
@@ -619,6 +620,15 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         actualItemClass = 'text-amber-800';
         icon = <TrendingUp size={16} className="text-amber-600" />;
         subLabel = 'Dividendi, Cedole, Gain';
+    } else if (rowType === 'other') {
+        rowBgClass = 'bg-slate-50 hover:bg-slate-100 border-b border-slate-200';
+        stickyBgClass = 'bg-slate-50 shadow-[4px_0_4px_-2px_rgba(0,0,0,0.1)]';
+        textClass = 'text-slate-600';
+        forecastBg = 'bg-transparent';
+        actualBg = 'bg-white';
+        forecastItemClass = 'bg-slate-50 text-slate-500 border-slate-100';
+        actualItemClass = 'text-slate-600';
+        icon = <MoreHorizontal size={16} className="text-slate-400" />;
     } else {
         rowBgClass = 'border-b border-emerald-100 hover:bg-emerald-100 transition-colors bg-emerald-50';
         stickyBgClass = 'bg-inherit shadow-[4px_0_4px_-2px_rgba(0,0,0,0.05)]';
@@ -655,7 +665,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                 <div className="flex flex-col gap-1 items-center w-full min-h-[30px]">
                   {(() => {
                       let projectRevenue = 0;
-                      if (rowType === 'standard' && key !== 'FINANCING' && key !== 'INVESTMENT') {
+                      if (rowType === 'standard') {
                           projectRevenue = calculateProjectRevenueForMonth(key, mIdx);
                       }
                       return projectRevenue > 0 ? (
@@ -1156,6 +1166,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   const getRowLabel = (key: string) => {
     if (key === 'FINANCING') return 'Finanziamenti Bancari';
     if (key === 'INVESTMENT') return 'Ritorno da Investimenti';
+    if (key === 'OTHER') return 'Altre Entrate';
     return key;
   };
 
@@ -1235,6 +1246,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     const rows: { key: string, label: string }[] = projectNames.map(p => ({ key: p, label: p }));
     rows.push({ key: 'INVESTMENT', label: 'RITORNO DA INVESTIMENTI' });
     rows.push({ key: 'FINANCING', label: 'FINANZIAMENTI BANCARI' });
+    rows.push({ key: 'OTHER', label: 'ALTRE ENTRATE' });
 
     const tableData = rows.map(row => {
       const prev = getRowAnnualTotal(row.key, true);
@@ -1407,6 +1419,9 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
                 {/* 3. Distinct Financing Row */}
                 {renderRow('FINANCING', 'FINANZIAMENTI BANCARI', 'financing', 99)}
+
+                {/* 4. Other Incomes Row */}
+                {renderRow('OTHER', 'ALTRE ENTRATE', 'other', 100)}
               </>
             )}
             
