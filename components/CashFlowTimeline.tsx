@@ -389,11 +389,6 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       const tDate = new Date(t.date);
       const tForecast = !!t.isForecast;
 
-      if (tForecast && isForecast) {
-          const isPaid = transactions.some(act => !act.isForecast && act.linkedForecastId === t.id);
-          if (isPaid) return false;
-      }
-
       return (
         tDate.getMonth() === monthIndex &&
         tDate.getFullYear() === currentYear &&
@@ -411,8 +406,19 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
     if (isForecast) {
-        const { totalPayment } = calculateLoanRepaymentForMonth(monthIndex);
-        expense += totalPayment;
+        const hasLoanTransactions = transactions.some(t => {
+          const tDate = new Date(t.date);
+          return (
+            tDate.getMonth() === monthIndex &&
+            tDate.getFullYear() === currentYear &&
+            (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
+          );
+        });
+
+        if (!hasLoanTransactions) {
+            const { totalPayment } = calculateLoanRepaymentForMonth(monthIndex);
+            expense += totalPayment;
+        }
 
         income += calculateProjectRevenueForMonth(monthIndex);
 
@@ -447,11 +453,6 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         const tDate = new Date(t.date);
         const tForecast = !!t.isForecast;
 
-        if (tForecast && isForecast) {
-             const isPaid = transactions.some(act => !act.isForecast && act.linkedForecastId === t.id);
-             if (isPaid) return false;
-        }
-
         return (
           tDate.getFullYear() === currentYear && 
           tForecast === isForecast
@@ -467,8 +468,19 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         let annualAutoCosts = 0;
         let annualAutoIncome = 0;
         for (let i = 0; i < 12; i++) {
-            const { totalPayment } = calculateLoanRepaymentForMonth(i);
-            annualAutoCosts += totalPayment;
+            const hasLoanTransactions = transactions.some(t => {
+                const tDate = new Date(t.date);
+                return (
+                    tDate.getMonth() === i &&
+                    tDate.getFullYear() === currentYear &&
+                    (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
+                );
+            });
+
+            if (!hasLoanTransactions) {
+                const { totalPayment } = calculateLoanRepaymentForMonth(i);
+                annualAutoCosts += totalPayment;
+            }
             
             annualAutoIncome += calculateProjectRevenueForMonth(i);
 

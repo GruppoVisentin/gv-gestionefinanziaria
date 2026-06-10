@@ -249,7 +249,6 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       .filter(t => {
         const tDate = new Date(t.date);
         const tForecast = !!t.isForecast;
-        if (tForecast && isForecast && isForecastPaid(t.id)) return false; // escludi se già incassato
         return (
           tDate.getMonth() === monthIndex &&
           tDate.getFullYear() === currentYear &&
@@ -277,7 +276,6 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       const tProj = t.project?.trim() || 'Generale';
       const tForecast = !!t.isForecast;
       const matchKey = (key === 'FINANCING' || key === 'INVESTMENT' || key === 'OTHER') ? true : tProj === key;
-      if (tForecast && isForecast && isForecastPaid(t.id)) return false; // escludi se già incassato
       return (
         matchKey &&
         tDate.getFullYear() === currentYear &&
@@ -298,7 +296,6 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     let total = incomeTransactions.filter(t => {
       const tDate = new Date(t.date);
       const tForecast = !!t.isForecast;
-      if (tForecast && isForecast && isForecastPaid(t.id)) return false;
       return tDate.getFullYear() === currentYear && tForecast === isForecast;
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
 
