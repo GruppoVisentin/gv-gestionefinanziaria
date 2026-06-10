@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Transaction, TransactionType, Project, LoanDetails, AppView, RinegoziazioneMutuo, InitialBalanceBreakdown, ExistingLoan } from '../types';
 import { fetchEuriborRates } from '../services/geminiService';
 import { CURRENCY_FORMATTER, DATE_FORMATTER, CATEGORY_TO_CE_TYPE } from '../constants';
-import { Plus, X, ArrowRight, Save, Landmark, TrendingUp, Pencil, Trash2, Calendar, FileText, User, Shield, Search, RefreshCw, ListFilter } from 'lucide-react';
+import { Plus, X, ArrowRight, Save, Landmark, TrendingUp, Pencil, Trash2, Calendar, FileText, User, Shield, Search, RefreshCw, ListFilter, MoreHorizontal } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { HelpButton } from './HelpPanel';
