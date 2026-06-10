@@ -80,7 +80,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
   const forecastFormRef = useRef<HTMLDivElement>(null);
 
   const taxForecasts = useMemo(() => {
-    const ceData = buildCEData(transactions, currentYear, undefined, 'cassa', projects, initialData);
+    const ceData = buildCEData(transactions, currentYear, undefined, 'competenza', projects, initialData);
     const ceMetrics = calcCEMetrics(ceData, transactions, projects, initialData);
     const prevFiscale = calcPrevisioneFiscale(transactions, currentYear, ceMetrics, undefined, 0.24, 0.039, true, initialData);
     const posIva = calcPosizIoneIVA(transactions, currentYear, true);

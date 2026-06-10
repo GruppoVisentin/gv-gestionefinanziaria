@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project } from '../types';
 import { fetchEuriborRates } from '../services/geminiService';
-import { CURRENCY_FORMATTER } from '../constants';
+import { CURRENCY_FORMATTER, variable_cost_categories } from '../constants';
 import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Database, Search, RefreshCw, Pencil, CheckCircle2, Building2 } from 'lucide-react';
 import PDFExportButton from './PDFExportButton';
 import { HelpButton } from './HelpPanel';
@@ -239,7 +239,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
   // --- CALCULATION LOGIC FOR TAXES & VAT ---
   const taxForecasts = useMemo(() => {
-    const ceData = buildCEData(transactions, currentYear, undefined, 'cassa', projects, initialData);
+    const ceData = buildCEData(transactions, currentYear, undefined, 'competenza', projects, initialData);
     const ceMetrics = calcCEMetrics(ceData, transactions, projects, initialData);
     const prevFiscale = calcPrevisioneFiscale(transactions, currentYear, ceMetrics, undefined, 0.24, 0.039, true, initialData);
     const posIva = calcPosizIoneIVA(transactions, currentYear, true);
@@ -416,7 +416,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
         income += calculateProjectRevenueForMonth(monthIndex);
 
-        ['[CONSULENZE] Professionisti Esterni di Cantiere', '[PERSONALE] Subappalti Manodopera', '[FORNITORI] Fornitori Materiali', '[FORNITORI] Subappalti su Cantieri'].forEach(cat => {
+        variable_cost_categories.forEach(cat => {
             expense += calculateProjectCostForMonth(cat, monthIndex);
         });
 
@@ -472,7 +472,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
             
             annualAutoIncome += calculateProjectRevenueForMonth(i);
 
-            ['[CONSULENZE] Professionisti Esterni di Cantiere', '[PERSONALE] Subappalti Manodopera', '[FORNITORI] Fornitori Materiali', '[FORNITORI] Subappalti su Cantieri'].forEach(cat => {
+            variable_cost_categories.forEach(cat => {
                 annualAutoCosts += calculateProjectCostForMonth(cat, i);
             });
             
