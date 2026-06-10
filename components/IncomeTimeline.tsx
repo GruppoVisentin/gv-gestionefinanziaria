@@ -172,13 +172,9 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   // 3. Identify unique "Commesse" (Projects) from Operational Transactions only
   const transactionProjects = operationalTransactions.map(t => t.project?.trim() || 'Generale');
   const explicitProjects = availableProjects.map(p => p.name.trim());
-  // Aggiunge 'Generale' solo se esistono transazioni senza commessa assegnata
-  const hasTransazioniGenerali = operationalTransactions.some(
-    t => !t.project?.trim()
-  );
+  
   const allProjects = new Set([
-    ...(hasTransazioniGenerali ? ['Generale'] : []),
-    ...transactionProjects.filter(p => p !== 'Generale'),
+    ...transactionProjects,
     ...explicitProjects
   ]);
   
