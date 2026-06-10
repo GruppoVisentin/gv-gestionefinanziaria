@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project } from '../types';
 import { fetchEuriborRates } from '../services/geminiService';
-import { CURRENCY_FORMATTER, variable_cost_categories } from '../constants';
+import { CURRENCY_FORMATTER, VARIABLE_COST_CATEGORIES } from '../constants';
 import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Database, Search, RefreshCw, Pencil, CheckCircle2, Building2 } from 'lucide-react';
 import PDFExportButton from './PDFExportButton';
 import { HelpButton } from './HelpPanel';
@@ -416,7 +416,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
         income += calculateProjectRevenueForMonth(monthIndex);
 
-        variable_cost_categories.forEach(cat => {
+        VARIABLE_COST_CATEGORIES.forEach(cat => {
             expense += calculateProjectCostForMonth(cat, monthIndex);
         });
 
@@ -472,7 +472,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
             
             annualAutoIncome += calculateProjectRevenueForMonth(i);
 
-            variable_cost_categories.forEach(cat => {
+            VARIABLE_COST_CATEGORIES.forEach(cat => {
                 annualAutoCosts += calculateProjectCostForMonth(cat, i);
             });
             
