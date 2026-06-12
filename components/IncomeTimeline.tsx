@@ -8,6 +8,7 @@ import autoTable from 'jspdf-autotable';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { exportMonthlyReportPDF } from '../utils/monthlyPdfExport';
+import { parseUTCDate } from '../utils/gasCoreEngine';
 
 interface IncomeTimelineProps {
   transactions: Transaction[];
@@ -214,7 +215,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     else sourceList = operationalTransactions;
 
     return sourceList.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseUTCDate(t.date);
       const tProj = t.project?.trim() || 'Generale';
       const tForecast = !!t.isForecast;
       
@@ -222,8 +223,8 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
       return (
         matchKey &&
-        tDate.getMonth() === monthIndex &&
-        tDate.getFullYear() === currentYear &&
+        tDate.getUTCMonth() === monthIndex &&
+        tDate.getUTCFullYear() === currentYear &&
         tForecast === isForecast
       );
     });
@@ -247,11 +248,11 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   const getMonthlyTotal = (monthIndex: number, isForecast: boolean) => {
     let total = incomeTransactions
       .filter(t => {
-        const tDate = new Date(t.date);
+        const tDate = parseUTCDate(t.date);
         const tForecast = !!t.isForecast;
         return (
-          tDate.getMonth() === monthIndex &&
-          tDate.getFullYear() === currentYear &&
+          tDate.getUTCMonth() === monthIndex &&
+          tDate.getUTCFullYear() === currentYear &&
           tForecast === isForecast
         );
       })
@@ -272,13 +273,13 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     else sourceList = operationalTransactions;
 
     let rowTotal = sourceList.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseUTCDate(t.date);
       const tProj = t.project?.trim() || 'Generale';
       const tForecast = !!t.isForecast;
       const matchKey = (key === 'FINANCING' || key === 'INVESTMENT' || key === 'OTHER') ? true : tProj === key;
       return (
         matchKey &&
-        tDate.getFullYear() === currentYear &&
+        tDate.getUTCFullYear() === currentYear &&
         tForecast === isForecast
       );
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
@@ -294,9 +295,9 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   // Get Grand Annual Total — esclude forecast già incassati
   const getGrandAnnualTotal = (isForecast: boolean) => {
     let total = incomeTransactions.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseUTCDate(t.date);
       const tForecast = !!t.isForecast;
-      return tDate.getFullYear() === currentYear && tForecast === isForecast;
+      return tDate.getUTCFullYear() === currentYear && tForecast === isForecast;
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
 
     if (isForecast) {

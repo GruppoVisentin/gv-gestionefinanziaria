@@ -167,7 +167,7 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
             Regime rilevato: <span className="font-black uppercase">{riepilogo.frequenzaLiquidazione}</span> — 
             basato sui versamenti F24 IVA registrati nell'anno.
             {riepilogo.frequenzaLiquidazione === 'trimestrale' && (
-              <> I mesi di versamento trimestrale sono Aprile, Luglio, Ottobre e Dicembre (con maggiorazione 1%).</>
+              <> I mesi di versamento trimestrale sono Maggio, Agosto, Novembre (con maggiorazione 1%) e l'acconto di Dicembre.</>
             )}
             {' '}I valori si basano solo sulle transazioni con IVA compilata — verifica che il campo aliquota IVA sia valorizzato su tutte le transazioni rilevanti.
           </p>
@@ -328,7 +328,7 @@ const IVAView: React.FC<IVAViewProps> = ({ transactions, onGoToManuale }) => {
           <li className="flex items-start gap-2">
             <span className="text-slate-300 mt-0.5">•</span>
             {riepilogo.frequenzaLiquidazione === 'trimestrale'
-              ? 'Scadenze versamento trimestrale: entro il 16 aprile, 16 luglio, 16 ottobre e 27 dicembre (con maggiorazione 1% per differimento).'
+              ? 'Scadenze versamento trimestrale: entro il 16 maggio, 16 agosto, 16 novembre (con maggiorazione 1% per differimento) e acconto entro il 27 dicembre.'
               : 'Scadenze versamento mensile: entro il 16 di ogni mese successivo al periodo di riferimento.'}
           </li>
           <li className="flex items-start gap-2">

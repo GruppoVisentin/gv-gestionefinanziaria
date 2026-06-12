@@ -276,7 +276,8 @@ export const getDynamicDepreciation = (
         
         if (tYear === anno) {
           const startMonth = tDate.getUTCMonth();
-          const monthlyAmount = annualDepreciation / (12 - startMonth);
+          const firstYearQuota = annualDepreciation * ((12 - startMonth) / 12);
+          const monthlyAmount = firstYearQuota / (12 - startMonth);
           for (let m = startMonth; m < 12; m++) {
             depreciation[m] += monthlyAmount;
           }
@@ -459,7 +460,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     } else {
       proiezioneOneriFin += ce.oneriFin[m] > 0 
         ? ce.oneriFin[m] 
-        : (forecastOneriFinByMonth[m] + dynamicInterests[m]);
+        : (forecastOneriFinByMonth[m] > 0 ? forecastOneriFinByMonth[m] : dynamicInterests[m]);
     }
   }
 
@@ -647,7 +648,7 @@ export interface PrevisioneFiscale {
   // ACCONTI
   accontoGiugno: number;               // 40% del totale — scadenza 30 giugno
   accontoNovembre: number;             // 60% del totale — scadenza 30 novembre
-  saldoAprilem: number;                // saldo anno precedente — scadenza 30 aprile (anno successivo)
+  saldoGiugnom: number;                // saldo anno precedente — scadenza 30 giugno (anno successivo)
 
   // CONFRONTO CON IMPOSTE GIÀ VERSATE
   impostePagate: number;               // F24 IRES/IRAP già registrati nel cash flow
@@ -693,8 +694,8 @@ export const calcPrevisioneFiscale = (
   // Costo del personale dipendente (escluso dall'IRAP)
   const costoPersonaleDipendente = transactions
     .filter(tx => {
-      const d = new Date(tx.date);
-      const matchesYear = d.getFullYear() === anno;
+      const d = parseUTCDate(tx.date);
+      const matchesYear = d.getUTCFullYear() === anno;
       if (!matchesYear) return false;
       if (!includeForecast && tx.isForecast) return false;
       return (tx.category?.includes('[PERSONALE] Stipendi') ||
@@ -702,31 +703,21 @@ export const calcPrevisioneFiscale = (
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
-  // Costi operativi totali e ammortamenti per IRAP
-  const ammortamentiAnnoIRAP = transactions
-    .filter(tx => {
-      const d = new Date(tx.date);
-      const matchesYear = d.getFullYear() === anno;
-      if (!matchesYear) return false;
-      if (!includeForecast && tx.isForecast) return false;
-      return tx.ceType === 'ammortamento';
-    })
-    .reduce((s, tx) => s + Math.abs(tx.amount), 0);
-
   const compensoAmministratoriIRAP = transactions
     .filter(tx => {
-      const d = new Date(tx.date);
-      const matchesYear = d.getFullYear() === anno;
+      const d = parseUTCDate(tx.date);
+      const matchesYear = d.getUTCFullYear() === anno;
       if (!matchesYear) return false;
       if (!includeForecast && tx.isForecast) return false;
       return tx.category === '[PERSONALE] Compenso Amministratori';
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
-  // costiFissiTot include ammortamenti
+  // costiFissiTot include ammortamenti. Ai fini IRAP per le S.R.L.,
+  // l'ammortamento civilistico (imm. materiali/immateriali) è pienamente deducibile.
   const costiOperativiTotali = includeForecast
-    ? (ceMetrics.proiezioneCostiVariabili + (ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio - ammortamentiAnnoIRAP))
-    : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + (ceMetrics.costiFissiTot - ammortamentiAnnoIRAP));
+    ? (ceMetrics.proiezioneCostiVariabili + ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio)
+    : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + ceMetrics.costiFissiTot);
 
   const costiDeducibiliIRAP = costiOperativiTotali - costoPersonaleDipendente - compensoAmministratoriIRAP;
   const baseImponibileIRAP = Math.max(0, valoreProduzione - costiDeducibiliIRAP);
@@ -744,24 +735,24 @@ export const calcPrevisioneFiscale = (
   const accontoGiugno   = baseAcconti * 0.40;
   const accontoNovembre = baseAcconti * 0.60;
   
-  // Saldo Aprile/Giugno: Imposte Storiche (anno prec) meno quanto già versato nell'anno precedente
+  // Saldo Giugno: Imposte Storiche (anno prec) meno quanto già versato nell'anno precedente
   const accontiPagatiAnnoPrec = transactions
     .filter(tx => {
-      const d = new Date(tx.date);
-      const matchesYear = d.getFullYear() === (anno - 1);
+      const d = parseUTCDate(tx.date);
+      const matchesYear = d.getUTCFullYear() === (anno - 1);
       if (!matchesYear) return false;
       if (!includeForecast && tx.isForecast) return false;
       return tx.category === '[FISCO] F24 — IRPEF / IRES / IRAP';
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
-  const saldoAprilem = Math.max(0, imposteStoriche - accontiPagatiAnnoPrec);
+  const saldoGiugnom = Math.max(0, imposteStoriche - accontiPagatiAnnoPrec);
 
   // Imposte già versate (F24 IRES/IRAP registrati nel cash flow)
   const impostePagate = transactions
     .filter(tx => {
-      const d = new Date(tx.date);
-      const matchesYear = d.getFullYear() === anno;
+      const d = parseUTCDate(tx.date);
+      const matchesYear = d.getUTCFullYear() === anno;
       if (!matchesYear) return false;
       if (!includeForecast && tx.isForecast) return false;
       return tx.category === '[FISCO] F24 — IRPEF / IRES / IRAP';
@@ -790,7 +781,7 @@ export const calcPrevisioneFiscale = (
     totaleImposteStimate,
     accontoGiugno,
     accontoNovembre,
-    saldoAprilem,
+    saldoGiugnom,
     impostePagate,
     residuoDaVersare,
     utileDopoImposte,
@@ -812,11 +803,29 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
   const pfn           = sp.mutuiLT + sp.leasingLT + sp.fidiRT + (sp.mutuiBT || 0) - sp.liquidita;
   const ebitda        = ceMetrics.ebitdaTot;
 
-  const acquistiFornitoriAnno = transactions
-    .filter(tx => 
-      tx.ceType === 'costo_variabile' && 
-      new Date(tx.date).getFullYear() === new Date(sp.dataRiferimento).getFullYear()
-    )
+  const dataSnapObj = parseUTCDate(sp.dataRiferimento);
+  const annoSnap = dataSnapObj.getUTCFullYear();
+  const mesiTrascorsiSnap = dataSnapObj.getUTCMonth() + 1;
+
+  const fatturatoPeriodo = transactions
+    .filter(tx => {
+      const d = parseUTCDate(tx.date);
+      return d.getUTCFullYear() === annoSnap && 
+             d <= dataSnapObj &&
+             !tx.isForecast &&
+             tx.ceType &&
+             (tx.ceType === 'ricavo_core' || tx.ceType === 'ricavo_altro' || tx.ceType === 'ricavo_immobiliare');
+    })
+    .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+
+  const acquistiFornitoriPeriodo = transactions
+    .filter(tx => {
+      const d = parseUTCDate(tx.date);
+      return d.getUTCFullYear() === annoSnap && 
+             d <= dataSnapObj &&
+             !tx.isForecast &&
+             tx.ceType === 'costo_variabile';
+    })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
   return {
@@ -827,10 +836,10 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
     currentRatio:       totPassivoBT > 0 ? totAttivoCirc / totPassivoBT : 0,
     soliditaPatr:       totAttivo > 0 ? totPN / totAttivo : 0,
     coperturInteressi:  ceMetrics.oneriFin > 0 ? ebitda / ceMetrics.oneriFin : 0,
-    dso:                ceMetrics.fatturato > 0
-                          ? (sp.creditiClienti / ceMetrics.fatturato) * (365 * Math.max(1, ceMetrics.mesiTrascorsi) / 12) : 0,
-    dpo:                acquistiFornitoriAnno > 0
-                          ? (sp.debitiFornitori / acquistiFornitoriAnno) * (365 * Math.max(1, ceMetrics.mesiTrascorsi) / 12) : 0,
+    dso:                fatturatoPeriodo > 0
+                          ? (sp.creditiClienti / fatturatoPeriodo) * (365 * mesiTrascorsiSnap / 12) : 0,
+    dpo:                acquistiFornitoriPeriodo > 0
+                          ? (sp.debitiFornitori / acquistiFornitoriPeriodo) * (365 * mesiTrascorsiSnap / 12) : 0,
     quadratura:         Math.abs(totAttivo - totPassivo) < 1,
   };
 };
@@ -1003,11 +1012,11 @@ export const calcPosizIoneIVA = (
     const txMese = txAnno.filter(tx => parseUTCDate(tx.date).getUTCMonth() === mese);
 
     const ivaIncassata = txMese
-      .filter(tx => tx.type === 'INCOME' && (tx.vatRate || 0) > 0 && tx.ceType !== 'solo_cashflow' && tx.ceType !== 'capex')
+      .filter(tx => tx.type === 'INCOME' && (tx.vatRate || 0) > 0 && tx.ceType !== 'solo_cashflow')
       .reduce((s, tx) => s + tx.amount * (tx.vatRate! / 100), 0);
 
     const ivaPagata = txMese
-      .filter(tx => tx.type === 'EXPENSE' && (tx.vatRate || 0) > 0 && tx.ceType !== 'solo_cashflow' && tx.ceType !== 'capex')
+      .filter(tx => tx.type === 'EXPENSE' && (tx.vatRate || 0) > 0 && tx.ceType !== 'solo_cashflow')
       .reduce((s, tx) => s + tx.amount * (tx.vatRate! / 100), 0);
 
     // Solo i versamenti F24 reali

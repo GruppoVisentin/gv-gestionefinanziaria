@@ -30,6 +30,7 @@ import {
   validaFileFEA
 } from '../utils/puntaNetImporter';
 import { Transaction, BankAccount, ImportSession, Project } from '../types';
+import { parseUTCDate } from '../utils/gasCoreEngine';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, CATEGORY_TO_CE_TYPE } from '../constants';
 import * as XLSX from 'xlsx';
 
@@ -579,9 +580,9 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       }
 
       // Reconciliation for INCOME and EXPENSE
-      const txDate = new Date(tx.date);
-      const txMonth = txDate.getMonth();
-      const txYear = txDate.getFullYear();
+      const txDate = parseUTCDate(tx.date);
+      const txMonth = txDate.getUTCMonth();
+      const txYear = txDate.getUTCFullYear();
       const txProj = tx.project?.trim() || 'Generale';
       const txCat = tx.category;
 
@@ -589,8 +590,8 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         if (!f.isForecast || f.type !== tx.type) return false;
         if (linkedForecastIds.has(f.id)) return false;
 
-        const fDate = new Date(f.date);
-        if (fDate.getMonth() !== txMonth || fDate.getFullYear() !== txYear) return false;
+        const fDate = parseUTCDate(f.date);
+        if (fDate.getUTCMonth() !== txMonth || fDate.getUTCFullYear() !== txYear) return false;
 
         const fProj = f.project?.trim() || 'Generale';
         if (fProj !== txProj) return false;

@@ -8,7 +8,7 @@ import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { exportMonthlyReportPDF } from '../utils/monthlyPdfExport';
 import { exportCashFlowProjectionPDF } from '../utils/cashFlowPdfExport';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate } from '../utils/gasCoreEngine';
 
 interface CashFlowTimelineProps {
   transactions: Transaction[];
@@ -133,13 +133,17 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     if (!details) return { principal: 0, interest: 0, total: 0 };
     
     const yr = targetYear ?? currentYear;
-    // I-1 fix: usa giorno 15 (coerente con ExpenseTimeline) per corretta gestione preammortamento
-    const targetDate = new Date(yr, targetMonthIndex, 15);
-    const intStart = new Date(details.interestStartDate);
-    const princStart = new Date(details.principalStartDate);
-    const end = details.endDate ? new Date(details.endDate) : new Date(princStart.getFullYear() + 20, princStart.getMonth(), 1);
+    const targetDate = new Date(Date.UTC(yr, targetMonthIndex, 15));
+    const intStart = details.interestStartDate ? parseUTCDate(details.interestStartDate) : undefined;
+    const princStart = details.principalStartDate ? parseUTCDate(details.principalStartDate) : intStart;
+    
+    if (!intStart || targetDate < intStart) return { principal: 0, interest: 0, total: 0 };
+    
+    const end = details.endDate 
+      ? parseUTCDate(details.endDate) 
+      : new Date(Date.UTC((princStart ? princStart.getUTCFullYear() : yr) + 20, princStart ? princStart.getUTCMonth() : 0, 15));
 
-    if (targetDate < intStart || targetDate > end) return { principal: 0, interest: 0, total: 0 };
+    if (targetDate > end) return { principal: 0, interest: 0, total: 0 };
 
     // Determina il tasso applicabile per questa specifica data (considerando rinegoziazioni)
     let currentRate = details.interestRate;
@@ -147,8 +151,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     
     if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
       const rinegValide = [...details.rinegoziazioni]
-        .filter(r => new Date(r.dataInizio) <= targetDate)
-        .sort((a, b) => new Date(b.dataInizio).getTime() - new Date(a.dataInizio).getTime());
+        .filter(r => parseUTCDate(r.dataInizio) <= targetDate)
+        .sort((a, b) => parseUTCDate(b.dataInizio).getTime() - parseUTCDate(a.dataInizio).getTime());
       
       if (rinegValide.length > 0) {
         currentRate = rinegValide[0].nuovoTasso;
@@ -158,8 +162,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
     const monthlyRate = (currentRate / 100) / 12;
 
-    // I-1 fix: gestione periodo preammortamento (solo interessi tra intStart e princStart)
-    const amortizationStart = !isNaN(princStart.getTime()) ? princStart : intStart;
+    const amortizationStart = (princStart && !isNaN(princStart.getTime())) ? princStart : intStart;
     if (targetDate >= intStart && targetDate < amortizationStart) {
       const onlyInterest = principal * monthlyRate;
       return {
@@ -171,7 +174,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       };
     }
 
-    const n = (end.getFullYear() - amortizationStart.getFullYear()) * 12 + (end.getMonth() - amortizationStart.getMonth());
+    const n = (end.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (end.getUTCMonth() - amortizationStart.getUTCMonth());
     
     if (n <= 0) return { principal: 0, interest: 0, total: 0 };
 
@@ -180,15 +183,17 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       ? principal * (monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
       : principal / n;
 
-    const monthsPassed = (targetDate.getFullYear() - amortizationStart.getFullYear()) * 12 + (targetDate.getMonth() - amortizationStart.getMonth());
-    if (monthsPassed < 0) return { principal: 0, interest: 0, total: 0 };
+    const monthsPassed = (targetDate.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (targetDate.getUTCMonth() - amortizationStart.getUTCMonth());
+    if (monthsPassed <= 0 || monthsPassed > n) return { principal: 0, interest: 0, total: 0 };
+
+    const paymentsMade = monthsPassed - 1;
 
     const residualCapital = monthlyRate > 0
-      ? principal * (Math.pow(1 + monthlyRate, n) - Math.pow(1 + monthlyRate, monthsPassed)) / (Math.pow(1 + monthlyRate, n) - 1)
-      : Math.max(0, principal - (principal / n * monthsPassed));
+      ? principal * (Math.pow(1 + monthlyRate, n) - Math.pow(1 + monthlyRate, paymentsMade)) / (Math.pow(1 + monthlyRate, n) - 1)
+      : Math.max(0, principal - (principal / n * paymentsMade));
 
     const interestPayment = Math.max(0, residualCapital * monthlyRate);
-    const principalPayment = targetDate >= amortizationStart ? Math.min(residualCapital, rataFissa - interestPayment) : 0;
+    const principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
 
     return {
       principal: principalPayment,
@@ -222,7 +227,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
       if (initialData && initialData.loans) {
           initialData.loans
-             .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+             .filter(l => !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === currentYear))
              .forEach(loan => {
                 const comps = calculateLoanComponents(loan.originalAmount, loan.details, monthIndex, targetYear);
                 totalPayment += comps.total;
@@ -250,8 +255,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const { avgMonthlyExpense, safetyThreshold } = useMemo(() => {
     const totalAnnualExpense = transactions
       .filter(t => {
-        const tDate = new Date(t.date);
-        return t.type === TransactionType.EXPENSE && tDate.getFullYear() === currentYear;
+        const tDate = parseUTCDate(t.date);
+        return t.type === TransactionType.EXPENSE && tDate.getUTCFullYear() === currentYear;
       })
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
@@ -281,7 +286,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     for (let anno = ANNO_BASE; anno < currentYear; anno++) {
       transactions.forEach(t => {
         if (!!t.isForecast) return;
-        if (new Date(t.date).getFullYear() !== anno) return;
+        if (parseUTCDate(t.date).getUTCFullYear() !== anno) return;
         if (t.type === TransactionType.INCOME) {
           saldo += getGrossAmount(t);
         } else {
@@ -321,7 +326,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     for (let anno = annoPartenza; anno < currentYear; anno++) {
       transactions.forEach(t => {
         if (!t.isForecast) return;
-        if (new Date(t.date).getFullYear() !== anno) return;
+        if (parseUTCDate(t.date).getUTCFullYear() !== anno) return;
         if (t.type === TransactionType.INCOME) {
           saldo += getGrossAmount(t);
         } else {
@@ -342,7 +347,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
   const totalInitialBalance = currentYear <= ANNO_BASE ? saldoInizialeCF.saldoManualeConsuntivo : saldoInizialeConsuntivo;
   const totalLoanDebtStart = (initialData.loans || [])
-                             .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && new Date(t.date).getFullYear() === currentYear))
+                             .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && parseUTCDate(t.date).getUTCFullYear() === currentYear))
                              .reduce((sum, l) => sum + l.originalAmount, 0) + 
                              (initialData.previousFinancing || 0) +
                              (initialData.accontiClienti || 0) +
@@ -386,12 +391,12 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
   const calculateMonthlyFlow = (monthIndex: number, isForecast: boolean) => {
     const monthlyTransactions = transactions.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseUTCDate(t.date);
       const tForecast = !!t.isForecast;
 
       return (
-        tDate.getMonth() === monthIndex &&
-        tDate.getFullYear() === currentYear &&
+        tDate.getUTCMonth() === monthIndex &&
+        tDate.getUTCFullYear() === currentYear &&
         tForecast === isForecast
       );
     });
@@ -407,10 +412,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
     if (isForecast) {
         const hasLoanTransactions = transactions.some(t => {
-          const tDate = new Date(t.date);
+          const tDate = parseUTCDate(t.date);
           return (
-            tDate.getMonth() === monthIndex &&
-            tDate.getFullYear() === currentYear &&
+            tDate.getUTCMonth() === monthIndex &&
+            tDate.getUTCFullYear() === currentYear &&
             (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
           );
         });
@@ -433,13 +438,13 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         }
 
         if (monthIndex === 5) {
-            const paidJune = transactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            const paidJune = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
             if (!paidJune) {
                 expense += taxForecasts.prevFiscale.accontoGiugno;
-                expense += taxForecasts.prevFiscale.saldoAprilem;
+                expense += taxForecasts.prevFiscale.saldoGiugnom;
             }
         } else if (monthIndex === 10) {
-            const paidNov = transactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            const paidNov = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
             if (!paidNov) expense += taxForecasts.prevFiscale.accontoNovembre;
         }
     }
@@ -450,11 +455,11 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const calculateYearFlow = (isForecast: boolean) => {
     let totalFlow = transactions
       .filter(t => {
-        const tDate = new Date(t.date);
+        const tDate = parseUTCDate(t.date);
         const tForecast = !!t.isForecast;
 
         return (
-          tDate.getFullYear() === currentYear && 
+          tDate.getUTCFullYear() === currentYear && 
           tForecast === isForecast
         );
       })
@@ -469,10 +474,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         let annualAutoIncome = 0;
         for (let i = 0; i < 12; i++) {
             const hasLoanTransactions = transactions.some(t => {
-                const tDate = new Date(t.date);
+                const tDate = parseUTCDate(t.date);
                 return (
-                    tDate.getMonth() === i &&
-                    tDate.getFullYear() === currentYear &&
+                    tDate.getUTCMonth() === i &&
+                    tDate.getUTCFullYear() === currentYear &&
                     (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
                 );
             });
@@ -495,13 +500,13 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
             }
 
             if (i === 5) {
-                const paidJune = transactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                const paidJune = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
                 if (!paidJune) {
                     annualAutoCosts += taxForecasts.prevFiscale.accontoGiugno;
-                    annualAutoCosts += taxForecasts.prevFiscale.saldoAprilem;
+                    annualAutoCosts += taxForecasts.prevFiscale.saldoGiugnom;
                 }
             } else if (i === 10) {
-                const paidNov = transactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                const paidNov = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
                 if (!paidNov) annualAutoCosts += taxForecasts.prevFiscale.accontoNovembre;
             }
             totalFlow += annualAutoIncome;
@@ -558,12 +563,12 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
   // New Loans taken this year (Forecast - only unpaid ones, escludi anche quelli con loanSourceId collegato o descrizione uguale)
   const newLoansAmountForecast = transactions
-    .filter(t => t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear && !transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId) || act.description.toLowerCase().trim() === t.description.toLowerCase().trim())))
+    .filter(t => t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && parseUTCDate(t.date).getUTCFullYear() === currentYear && !transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId) || act.description.toLowerCase().trim() === t.description.toLowerCase().trim())))
     .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
   // New Loans Actual
   const newLoansAmountActual = transactions
-    .filter(t => !t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && new Date(t.date).getFullYear() === currentYear)
+    .filter(t => !t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && parseUTCDate(t.date).getUTCFullYear() === currentYear)
     .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
   // Remaining Debt Forecast = Start Debt + Unpaid Forecast Loans + Actual Loans - Principal Repaid
@@ -596,7 +601,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     // Existing loans — escludi quelli che hanno transazioni collegate nell'anno corrente (evita doppio conteggio)
     if (initialData?.loans) {
       initialData.loans
-        .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+        .filter(l => !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === currentYear))
         .forEach(loan => {
           const comps = calculateLoanComponents(loan.originalAmount, loan.details, i);
           actualTotalPrincipalRepaid += comps.principal;
@@ -654,7 +659,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       // N8 fix: escludi ammortamenti (non monetari) e distribuzioni utili dal saldo storico
       const previousNetFlow = transactions
         .filter(t => {
-          const tYear = new Date(t.date).getFullYear();
+          const tYear = parseUTCDate(t.date).getUTCFullYear();
           return (
             !t.isForecast &&
             tYear < currentYear &&
@@ -1803,10 +1808,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 title={`Dettaglio Debito Residuo:\n${
                   [
                     ...(initialData.loans || [])
-                      .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && new Date(t.date).getFullYear() === currentYear))
+                      .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && parseUTCDate(t.date).getUTCFullYear() === currentYear))
                       .map(l => `• ${l.name} (Pregresso): ${CURRENCY_FORMATTER.format(l.originalAmount)}`),
                     ...(transactions
-                      .filter(t => t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails && new Date(t.date).getFullYear() === currentYear && !(t.isForecast && transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || act.loanSourceId === t.loanSourceId || act.description.toLowerCase().trim() === t.description.toLowerCase().trim()))))
+                      .filter(t => t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails && parseUTCDate(t.date).getUTCFullYear() === currentYear && !(t.isForecast && transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || act.loanSourceId === t.loanSourceId || act.description.toLowerCase().trim() === t.description.toLowerCase().trim()))))
                       .map(t => `• ${t.description} (${t.isForecast ? 'Prev.' : 'Cons.'}): ${CURRENCY_FORMATTER.format(t.amount)}`))
                   ].join('\n')
                 }`}
@@ -1851,10 +1856,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 title={`Dettaglio Debito Residuo:\n${
                   [
                     ...(initialData.loans || [])
-                      .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && new Date(t.date).getFullYear() === currentYear))
+                      .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && parseUTCDate(t.date).getUTCFullYear() === currentYear))
                       .map(l => `• ${l.name} (Pregresso): ${CURRENCY_FORMATTER.format(l.originalAmount)}`),
                     ...(transactions
-                      .filter(t => !t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails && new Date(t.date).getFullYear() === currentYear)
+                      .filter(t => !t.isForecast && t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails && parseUTCDate(t.date).getUTCFullYear() === currentYear)
                       .map(t => `• ${t.description} (Cons.): ${CURRENCY_FORMATTER.format(t.amount)}`))
                   ].join('\n')
                 }`}

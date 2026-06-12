@@ -87,8 +87,11 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
     // EBITDA / Oneri Fin.
     let ebitdaOneriHealth: 'green' | 'orange' | 'red' = 'red';
     let ebitdaOneriScore = 0;
-    const ebitdaOneriRatio = ceMetrics.oneriFin > 0 ? (ceMetrics.ebitdaTot / ceMetrics.oneriFin) : 0;
-    if (ceMetrics.oneriFin > 0) {
+    if (ceMetrics.oneriFin <= 0) {
+      ebitdaOneriHealth = 'green';
+      ebitdaOneriScore = 1;
+    } else {
+      const ebitdaOneriRatio = ceMetrics.ebitdaTot / ceMetrics.oneriFin;
       if (ebitdaOneriRatio >= 3) {
         ebitdaOneriHealth = 'green';
         ebitdaOneriScore = 1;

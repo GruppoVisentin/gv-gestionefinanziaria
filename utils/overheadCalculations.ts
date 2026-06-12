@@ -123,12 +123,25 @@ export const calculateOverheadRates = (
 
   // Calcolo dinamico interessi previsionali sui finanziamenti attivi
   const dynamicInterests = getDynamicLoansInterests(transactions, anno, initialData);
-  const sumDynamicInterests = dynamicInterests.reduce((a, b) => a + b, 0);
+
+  const forecastOneriFinByMonth = Array(12).fill(0);
+  txAnnoPrev
+    .filter(tx => tx.ceType === 'onere_finanziario')
+    .forEach(tx => {
+      const m = parseUTCDate(tx.date).getUTCMonth();
+      forecastOneriFinByMonth[m] += Math.abs(tx.amount);
+    });
+
+  let totaleOneriFinPrev = 0;
+  for (let m = 0; m < 12; m++) {
+    totaleOneriFinPrev += forecastOneriFinByMonth[m] > 0 
+      ? forecastOneriFinByMonth[m] 
+      : (dynamicInterests[m] || 0);
+  }
 
   const totaleCostiDirettiPrev    = sumByTypePrev(['costo_variabile']);
   const totaleCostiStudioPrev     = sumByTypePrev(['costo_studio']);
   const totaleOverheadPuroPrev    = sumByTypePrev(['costo_fisso']);
-  const totaleOneriFinPrev        = sumByTypePrev(['onere_finanziario']) + sumDynamicInterests;
   const totaleOverheadCompletoPrev = totaleCostiStudioPrev + totaleOverheadPuroPrev;
   const fatturatoPrev             = sumByTypePrev(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare']);
 

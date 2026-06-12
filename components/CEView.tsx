@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, CEData, CERow, BudgetData, RimanenzeAnno, RimanenzeData, AppView, Project, InitialBalanceBreakdown } from '../types';
-import { buildCEData, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, getDynamicLoansInterests, calculateRepayment } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, getDynamicLoansInterests, calculateRepayment, parseUTCDate } from '../utils/gasCoreEngine';
 import { exportCEPDF } from '../utils/cePdfExport';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import CalcoloDrawer, { FormulaStep } from './CalcoloDrawer';
@@ -106,7 +106,7 @@ const CEView: React.FC<CEViewProps> = ({
   const metrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
 
   const txAnno = useMemo(() => 
-    (transactions || []).filter(tx => new Date(tx.date).getFullYear() === selectedYear),
+    (transactions || []).filter(tx => parseUTCDate(tx.date).getUTCFullYear() === selectedYear),
     [transactions, selectedYear]
   );
 
@@ -174,14 +174,14 @@ const CEView: React.FC<CEViewProps> = ({
     const utile = metrics.utileNettoTot;
 
     const txAnnoContribuenti = transactions.filter(tx =>
-      new Date(tx.date).getFullYear() === selectedYear &&
+      parseUTCDate(tx.date).getUTCFullYear() === selectedYear &&
       !tx.isForecast && tx.ceType
     );
 
     const today = new Date();
     // Proiezioni: consuntivi + previsionali non ancora saldati
     const txAnnoProiezioniBase = transactions.filter(tx => {
-      if (new Date(tx.date).getFullYear() !== selectedYear) return false;
+      if (parseUTCDate(tx.date).getUTCFullYear() !== selectedYear) return false;
       if (!tx.ceType) return false;
       if (!tx.isForecast) return true;
       const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
@@ -192,7 +192,7 @@ const CEView: React.FC<CEViewProps> = ({
       const txs = transactions.filter(tx => {
         const type = getDynamicCEType(tx, projects);
         return tx.isForecast && 
-          new Date(tx.date).getFullYear() === selectedYear && 
+          parseUTCDate(tx.date).getUTCFullYear() === selectedYear && 
           type && types.includes(type);
       });
       const sum = txs.reduce((s, tx) => {
@@ -695,7 +695,7 @@ const CEView: React.FC<CEViewProps> = ({
       });
       if (initialData?.loans) {
         initialData.loans
-          .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === selectedYear))
+          .filter(l => !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === selectedYear))
           .forEach(l => {
             loans.push({ name: l.name, amount: l.originalAmount, details: l.details });
           });
@@ -705,8 +705,8 @@ const CEView: React.FC<CEViewProps> = ({
         const d = new Date(selectedYear, month, 15);
         const hasActualOneriFin = transactions.some(t => 
           !t.isForecast && 
-          new Date(t.date).getFullYear() === selectedYear && 
-          new Date(t.date).getMonth() === month &&
+          parseUTCDate(t.date).getUTCFullYear() === selectedYear && 
+          parseUTCDate(t.date).getUTCMonth() === month &&
           getDynamicCEType(t, projects) === 'onere_finanziario'
         );
 
@@ -739,7 +739,7 @@ const CEView: React.FC<CEViewProps> = ({
 
     // Solo Previsionali
     const txAnnoSoloPrevisionaliBase = transactions.filter(tx => 
-      new Date(tx.date).getFullYear() === selectedYear && 
+      parseUTCDate(tx.date).getUTCFullYear() === selectedYear && 
       tx.isForecast && 
       tx.ceType
     );
@@ -760,7 +760,7 @@ const CEView: React.FC<CEViewProps> = ({
       });
       if (initialData?.loans) {
         initialData.loans
-          .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === selectedYear))
+          .filter(l => !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === selectedYear))
           .forEach(l => {
             loans.push({ name: l.name, amount: l.originalAmount, details: l.details });
           });

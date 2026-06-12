@@ -14,7 +14,7 @@ export const calcOutstandingInvoices = (
       // Try to extract invoice number (e.g., "FEA 12/2025" or "12/2025")
       const match = tx.description.match(/FEA\s+n\.\s*(\d+)\/(\d{4})/i) || 
                     tx.description.match(/FEA\s+(\d+)\/(\d{4})/i) ||
-                    tx.description.match(/(\d{1,4})\/(\d{4})/);
+                    tx.description.match(/(?:[Ff]attura|[Ff]att\.?|[Nn]\.?)\s*(\d{1,4})\/(\d{4})/i);
       if (match) {
         paidFEAs.add(`${match[1]}/${match[2]}`);
       }
@@ -36,7 +36,7 @@ export const calcOutstandingInvoices = (
   transactions.forEach(tx => {
     if (tx.type === 'EXPENSE' && tx.date <= snapshotDate) {
       // Extract FEP number (e.g. FEP 60/2026/E)
-      const match = tx.description.match(/FEP\s+n\.\s*([\w\/\-\.]+)/i) || 
+      const match = tx.description.match(/(?:[Pp]agamento|[Rr]ilevata)?\s*FEP\s+n\.\s*([\w\/\-\.]+)/i) || 
                     tx.description.match(/FEP\s+([\w\/\-\.]+)/i);
       if (match) {
         paidFEPs.add(match[1].trim().toUpperCase());

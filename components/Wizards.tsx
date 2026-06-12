@@ -32,6 +32,7 @@ import {
   CURRENCY_FORMATTER 
 } from '../constants';
 import TipologiaGantt from './TipologiaGantt';
+import { parseUTCDate } from '../utils/gasCoreEngine';
 
 // ─── UTILS ───────────────────────────────────────────────────────
 
@@ -62,14 +63,14 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
   const categorieGiaImportate = useMemo(() => 
     new Set(
       transactions
-        .filter(tx => tx.isForecast && new Date(tx.date).getFullYear() === targetYear)
+        .filter(tx => tx.isForecast && parseUTCDate(tx.date).getUTCFullYear() === targetYear)
         .map(tx => tx.category)
     ),
     [transactions, targetYear]
   );
 
   const existingForecastsCount = useMemo(() => 
-    transactions.filter(tx => tx.isForecast && new Date(tx.date).getFullYear() === targetYear).length,
+    transactions.filter(tx => tx.isForecast && parseUTCDate(tx.date).getUTCFullYear() === targetYear).length,
     [transactions, targetYear]
   );
 
@@ -78,7 +79,7 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
     const esclusi: CEType[] = ['onere_finanziario', 'ammortamento', 'solo_cashflow', 'capex', 'distribuzione_utile'];
     
     // All transactions in source year (consuntivi + previsionali)
-    const allSourceYear = transactions.filter(tx => new Date(tx.date).getFullYear() === sourceYear);
+    const allSourceYear = transactions.filter(tx => parseUTCDate(tx.date).getUTCFullYear() === sourceYear);
     const consuntivi = allSourceYear.filter(tx => !tx.isForecast && tx.ceType && !esclusi.includes(tx.ceType));
     const previsionali = allSourceYear.filter(tx => tx.isForecast && tx.ceType && !esclusi.includes(tx.ceType));
     
@@ -99,18 +100,18 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
     
     // Cerca PRIMA i consuntivi, poi i previsionali (i consuntivi hanno priorità)
     const consuntivi = transactions.filter(tx => {
-      const d = new Date(tx.date);
+      const d = parseUTCDate(tx.date);
       return !tx.isForecast && 
-             d.getFullYear() === sourceYear && 
+             d.getUTCFullYear() === sourceYear && 
              tx.ceType && 
              !esclusi.includes(tx.ceType) &&
              !categorieGiaImportate.has(tx.category);
     });
 
     const previsionali = transactions.filter(tx => {
-      const d = new Date(tx.date);
+      const d = parseUTCDate(tx.date);
       return tx.isForecast && 
-             d.getFullYear() === sourceYear && 
+             d.getUTCFullYear() === sourceYear && 
              tx.ceType && 
              !esclusi.includes(tx.ceType) &&
              !categorieGiaImportate.has(tx.category);
@@ -129,8 +130,8 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
     const historical = Array.from(map.values());
 
     const proposed = historical.map(tx => {
-      const d = new Date(tx.date);
-      const newDate = new Date(targetYear, d.getMonth(), d.getDate()).toISOString().split('T')[0];
+      const d = parseUTCDate(tx.date);
+      const newDate = new Date(Date.UTC(targetYear, d.getUTCMonth(), d.getUTCDate())).toISOString().split('T')[0];
       return {
         id: generateId(),
         date: newDate,
@@ -153,8 +154,8 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
     setProposedTransactions(prev => prev.map(tx => {
       if (tx.id === id) {
         if (field === 'month') {
-          const d = new Date(tx.date!);
-          const newDate = new Date(targetYear, value, d.getDate()).toISOString().split('T')[0];
+          const d = parseUTCDate(tx.date!);
+          const newDate = new Date(Date.UTC(targetYear, value, d.getUTCDate())).toISOString().split('T')[0];
           return { ...tx, date: newDate };
         }
         return { ...tx, [field]: value };
@@ -363,7 +364,7 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
                           </td>
                           <td className="py-2 px-4">
                             <select 
-                              value={new Date(tx.date!).getMonth()} 
+                              value={parseUTCDate(tx.date!).getUTCMonth()} 
                               onChange={e => handleUpdateProposed(tx.id!, 'month', parseInt(e.target.value))}
                               className="text-[11px] bg-transparent border-none p-0 font-medium text-slate-600 outline-none"
                             >
@@ -803,7 +804,7 @@ export const CantiereWizard: React.FC<CantiereWizardProps> = ({
   const [isAdding, setIsAdding] = useState<CantierePrev | null>(null);
 
   const filteredCantieri = useMemo(() => 
-    cantieriPrev.filter(c => new Date(c.dataInizio).getFullYear() === targetYear),
+    cantieriPrev.filter(c => parseUTCDate(c.dataInizio).getUTCFullYear() === targetYear),
     [cantieriPrev, targetYear]
   );
 

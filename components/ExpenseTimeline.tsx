@@ -7,7 +7,7 @@ import autoTable from 'jspdf-autotable';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { exportMonthlyReportPDF } from '../utils/monthlyPdfExport';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate } from '../utils/gasCoreEngine';
 
 interface ExpenseTimelineProps {
   transactions: Transaction[];
@@ -133,12 +133,12 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
 
   const getCellTransactions = (category: string, monthIndex: number, isForecast: boolean) => {
     return expenseTransactions.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseUTCDate(t.date);
       const tForecast = !!t.isForecast;
       return (
         t.category === category &&
-        tDate.getMonth() === monthIndex &&
-        tDate.getFullYear() === currentYear &&
+        tDate.getUTCMonth() === monthIndex &&
+        tDate.getUTCFullYear() === currentYear &&
         tForecast === isForecast
       );
     });
@@ -148,8 +148,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
   const calculateProjectCostForMonth = (category: string, monthIndex: number) => {
       let total = 0;
       projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
-          const start = new Date(p.estimatedStartDate!);
-          const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
+          const start = parseUTCDate(p.estimatedStartDate!);
+          const startMonthGlobal = start.getUTCFullYear() * 12 + start.getUTCMonth();
           const targetMonthGlobal = currentYear * 12 + monthIndex;
           const diff = targetMonthGlobal - startMonthGlobal;
 
@@ -174,10 +174,10 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
   ) => {
       if (!details || !details.interestStartDate) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
 
-      const targetDate = new Date(currentYear, targetMonthIndex, 15);
-      const intStart = new Date(details.interestStartDate);
-      const princStart = details.principalStartDate ? new Date(details.principalStartDate) : intStart;
-      const end = details.endDate ? new Date(details.endDate) : new Date(intStart.getFullYear() + 20, intStart.getMonth(), intStart.getDate());
+      const targetDate = new Date(Date.UTC(currentYear, targetMonthIndex, 15));
+      const intStart = parseUTCDate(details.interestStartDate);
+      const princStart = details.principalStartDate ? parseUTCDate(details.principalStartDate) : intStart;
+      const end = details.endDate ? parseUTCDate(details.endDate) : new Date(Date.UTC(intStart.getUTCFullYear() + 20, intStart.getUTCMonth(), intStart.getUTCDate()));
 
       if (targetDate < intStart || targetDate > end) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
 
@@ -188,8 +188,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
         // Ordina per data e prendi l'ultima rinegoziazione valida per targetDate
         const rinegValide = [...details.rinegoziazioni]
-          .filter(r => new Date(r.dataInizio) <= targetDate)
-          .sort((a, b) => new Date(b.dataInizio).getTime() - new Date(a.dataInizio).getTime());
+          .filter(r => parseUTCDate(r.dataInizio) <= targetDate)
+          .sort((a, b) => parseUTCDate(b.dataInizio).getTime() - parseUTCDate(a.dataInizio).getTime());
         
         if (rinegValide.length > 0) {
           currentRate = rinegValide[0].nuovoTasso;
@@ -210,22 +210,24 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
           };
       }
 
-      const n = (end.getFullYear() - amortizationStart.getFullYear()) * 12 + (end.getMonth() - amortizationStart.getMonth());
+      const n = (end.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (end.getUTCMonth() - amortizationStart.getUTCMonth());
       if (n <= 0) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
 
       const rataFissa = i > 0
         ? principal * (i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1)
         : principal / n;
 
-      const monthsPassed = (targetDate.getFullYear() - amortizationStart.getFullYear()) * 12 + (targetDate.getMonth() - amortizationStart.getMonth());
-      if (monthsPassed < 0) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
+      const monthsPassed = (targetDate.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (targetDate.getUTCMonth() - amortizationStart.getUTCMonth());
+      if (monthsPassed <= 0 || monthsPassed > n) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
+
+      const paymentsMade = monthsPassed - 1;
 
       const residualCapital = i > 0
-        ? principal * (Math.pow(1 + i, n) - Math.pow(1 + i, monthsPassed)) / (Math.pow(1 + i, n) - 1)
-        : Math.max(0, principal - (principal / n * monthsPassed));
+        ? principal * (Math.pow(1 + i, n) - Math.pow(1 + i, paymentsMade)) / (Math.pow(1 + i, n) - 1)
+        : Math.max(0, principal - (principal / n * paymentsMade));
 
       const interestPayment = Math.max(0, residualCapital * i);
-      const principalPayment = targetDate >= amortizationStart ? Math.min(residualCapital, rataFissa - interestPayment) : 0;
+      const principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
 
       return {
         total: Math.round((principalPayment + interestPayment) * 100) / 100,
@@ -275,7 +277,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       // 2. From Existing Loans (Initial Balance)
       if (initialData?.loans) {
           initialData.loans
-            .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+            .filter(l => !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === currentYear))
             .forEach(l => {
               const comps = calculateRepayment(l.originalAmount, l.details, monthIndex);
               total += comps.total;
@@ -308,11 +310,11 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
   const getMonthlyTotal = (monthIndex: number, isForecast: boolean) => {
     let transactionTotal = expenseTransactions
       .filter(t => {
-        const tDate = new Date(t.date);
+        const tDate = parseUTCDate(t.date);
         const tForecast = !!t.isForecast;
         return (
-          tDate.getMonth() === monthIndex &&
-          tDate.getFullYear() === currentYear &&
+          tDate.getUTCMonth() === monthIndex &&
+          tDate.getUTCFullYear() === currentYear &&
           tForecast === isForecast &&
           t.ceType !== 'ammortamento' && // N5 fix: ammortamenti non monetari esclusi
           (fixedCategories.includes(t.category) || variableCategories.includes(t.category))
@@ -337,10 +339,10 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
         // If there are manual/imported actuals or manual forecasts for '[FINANZA] Interessi Passivi Finanziamenti' or '[FINANZA] Quota Capitale Rate Finanziamenti',
         // we shouldn't add the calculated repayments to avoid double counting.
         const hasLoanTransactions = expenseTransactions.some(t => {
-          const tDate = new Date(t.date);
+          const tDate = parseUTCDate(t.date);
           return (
-            tDate.getMonth() === monthIndex &&
-            tDate.getFullYear() === currentYear &&
+            tDate.getUTCMonth() === monthIndex &&
+            tDate.getUTCFullYear() === currentYear &&
             (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
           );
         });
@@ -356,12 +358,12 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
         }
 
         if (monthIndex === 5) {
-            const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
             if (!paidJune) {
-                transactionTotal += taxForecasts.prevFiscale.accontoGiugno + taxForecasts.prevFiscale.saldoAprilem;
+                transactionTotal += taxForecasts.prevFiscale.accontoGiugno + taxForecasts.prevFiscale.saldoGiugnom;
             }
         } else if (monthIndex === 10) {
-            const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
             if (!paidNov) {
                 transactionTotal += taxForecasts.prevFiscale.accontoNovembre;
             }
@@ -373,11 +375,11 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
 
   const getCategoryAnnualTotal = (category: string, isForecast: boolean) => {
     let total = expenseTransactions.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseUTCDate(t.date);
       const tForecast = !!t.isForecast;
       return (
         t.category === category &&
-        tDate.getFullYear() === currentYear &&
+        tDate.getUTCFullYear() === currentYear &&
         tForecast === isForecast &&
         t.ceType !== 'ammortamento' // N5 fix: ammortamenti non monetari esclusi
       );
@@ -390,8 +392,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
         if (isInterestCategory(category)) {
             // BUG-01 Fix: Only add calculations if there are no manual transactions for interests in the whole year
             const hasInterests = expenseTransactions.some(t => {
-              const tDate = new Date(t.date);
-              return tDate.getFullYear() === currentYear && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
+              const tDate = parseUTCDate(t.date);
+              return tDate.getUTCFullYear() === currentYear && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
             });
             if (!hasInterests) {
                 for (let m = 0; m < 12; m++) {
@@ -402,8 +404,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
         if (isPrincipalCategory(category)) {
             // BUG-01 Fix: Only add calculations if there are no manual transactions for principal in the whole year
             const hasPrincipal = expenseTransactions.some(t => {
-              const tDate = new Date(t.date);
-              return tDate.getFullYear() === currentYear && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
+              const tDate = parseUTCDate(t.date);
+              return tDate.getUTCFullYear() === currentYear && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
             });
             if (!hasPrincipal) {
                 for (let m = 0; m < 12; m++) {
@@ -420,12 +422,12 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             }
         }
         if (category === '[FISCO] F24 — IRPEF / IRES / IRAP') {
-            const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
             if (!paidJune) {
                 total += taxForecasts.prevFiscale.accontoGiugno;
-                total += taxForecasts.prevFiscale.saldoAprilem;
+                total += taxForecasts.prevFiscale.saldoGiugnom;
             }
-            const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
             if (!paidNov) total += taxForecasts.prevFiscale.accontoNovembre;
         }
     }
@@ -434,11 +436,11 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
 
   const getSectionAnnualTotal = (categories: string[], isForecast: boolean) => {
     let total = expenseTransactions.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseUTCDate(t.date);
       const tForecast = !!t.isForecast;
       return (
         categories.includes(t.category) &&
-        tDate.getFullYear() === currentYear &&
+        tDate.getUTCFullYear() === currentYear &&
         tForecast === isForecast
       );
     }).reduce((sum, t) => sum + getGrossAmount(t), 0);
@@ -450,8 +452,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             }
             if (isInterestCategory(cat)) {
                 const hasInterests = expenseTransactions.some(t => {
-                  const tDate = new Date(t.date);
-                  return tDate.getFullYear() === currentYear && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
+                  const tDate = parseUTCDate(t.date);
+                  return tDate.getUTCFullYear() === currentYear && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
                 });
                 if (!hasInterests) {
                     for (let m = 0; m < 12; m++) {
@@ -461,8 +463,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             }
             if (isPrincipalCategory(cat)) {
                 const hasPrincipal = expenseTransactions.some(t => {
-                  const tDate = new Date(t.date);
-                  return tDate.getFullYear() === currentYear && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
+                  const tDate = parseUTCDate(t.date);
+                  return tDate.getUTCFullYear() === currentYear && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
                 });
                 if (!hasPrincipal) {
                     for (let m = 0; m < 12; m++) {
@@ -479,12 +481,12 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                 }
             }
             if (cat === '[FISCO] F24 — IRPEF / IRES / IRAP') {
-                const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
                 if (!paidJune) {
                     total += taxForecasts.prevFiscale.accontoGiugno;
-                    total += taxForecasts.prevFiscale.saldoAprilem;
+                    total += taxForecasts.prevFiscale.saldoGiugnom;
                 }
-                const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
                 if (!paidNov) total += taxForecasts.prevFiscale.accontoNovembre;
             }
         });
@@ -494,9 +496,9 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
 
   const getGrandAnnualTotal = (isForecast: boolean) => {
     let total = expenseTransactions.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseUTCDate(t.date);
       const tForecast = !!t.isForecast;
-      return tDate.getFullYear() === currentYear && 
+      return tDate.getUTCFullYear() === currentYear && 
              tForecast === isForecast &&
              t.ceType !== 'ammortamento' && // N5 fix: ammortamenti non monetari esclusi
              (fixedCategories.includes(t.category) || variableCategories.includes(t.category));
@@ -511,9 +513,9 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
         });
         // Loans
         const hasLoanTransactionsGlobal = expenseTransactions.some(t => {
-          const tDate = new Date(t.date);
+          const tDate = parseUTCDate(t.date);
           return (
-            tDate.getFullYear() === currentYear &&
+            tDate.getUTCFullYear() === currentYear &&
             (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
           );
         });
@@ -530,12 +532,12 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                 total += ivaMese.versamentoIVA;
             }
         }
-        const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+        const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
         if (!paidJune) {
             total += taxForecasts.prevFiscale.accontoGiugno;
-            total += taxForecasts.prevFiscale.saldoAprilem;
+            total += taxForecasts.prevFiscale.saldoGiugnom;
         }
-        const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+        const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
         if (!paidNov) total += taxForecasts.prevFiscale.accontoNovembre;
     }
     return total;
@@ -1299,13 +1301,13 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                     let taxVal = 0;
                                                     let taxName = '';
                                                     if (mIdx === 5) {
-                                                        const paidJune = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                                                        const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
                                                         if (!paidJune) {
-                                                            taxVal = taxForecasts.prevFiscale.accontoGiugno + taxForecasts.prevFiscale.saldoAprilem;
+                                                            taxVal = taxForecasts.prevFiscale.accontoGiugno + taxForecasts.prevFiscale.saldoGiugnom;
                                                             taxName = 'Acconto 1 + Saldo';
                                                         }
                                                     } else if (mIdx === 10) {
-                                                        const paidNov = expenseTransactions.some(t => new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                                                        const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
                                                         if (!paidNov) {
                                                             taxVal = taxForecasts.prevFiscale.accontoNovembre;
                                                             taxName = 'Acconto 2';

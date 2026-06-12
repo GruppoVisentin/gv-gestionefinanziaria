@@ -286,20 +286,18 @@ export const findHeaderIndex = (headers: string[], keywords: string[], fallback:
 };
 
 export const estraiNumeroFattura = (descrizione: string, tipoMovimento: 'FEP' | 'FEA'): string | undefined => {
-  const descUpper = descrizione.toUpperCase();
   if (tipoMovimento === 'FEP') {
-    const m = descrizione.match(/(?:[Pp]agamento|[Rr]ilevata)\s+FEP\s+n\.\s*([\w\/\-\.]+)/i);
+    const m = descrizione.match(/(?:[Pp]agamento|[Rr]ilevata)?\s*FEP\s+n\.\s*([\w\/\-\.]+)/i) ||
+              descrizione.match(/FEP\s+([\w\/\-\.]+)/i);
     if (m) return m[1].trim();
   } else if (tipoMovimento === 'FEA') {
-    let m = descrizione.match(/[Ii]ncasso\s+FEA\s+n\.\s*(\d+)\s+(\d{4})/i);
+    let m = descrizione.match(/[Ii]ncasso\s+FEA\s+n\.\s*(\d+)\s+(\d{4})/i) ||
+            descrizione.match(/FEA\s+n\.\s*(\d+)\/(\d{4})/i) ||
+            descrizione.match(/FEA\s+(\d+)\/(\d{4})/i);
     if (m) {
       return `${m[1]}/${m[2]}`;
     }
-    m = descrizione.match(/FEA\s+n\.\s*(\d+)\/(\d{4})/i);
-    if (m) {
-      return `${m[1]}/${m[2]}`;
-    }
-    m = descrizione.match(/(\d{1,4})\/(\d{4})/);
+    m = descrizione.match(/(?:[Ff]attura|[Ff]att\.?|[Nn]\.?)\s*(\d{1,4})\/(\d{4})/i);
     if (m) {
       return `${m[1]}/${m[2]}`;
     }

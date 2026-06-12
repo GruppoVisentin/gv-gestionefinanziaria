@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, Project } from '../types';
 import { CURRENCY_FORMATTER } from '../constants';
+import { parseUTCDate } from './gasCoreEngine';
 
 interface CashFlowPdfOptions {
   transactions: Transaction[];
@@ -42,8 +43,8 @@ export const exportCashFlowProjectionPDF = ({
   const calculateMonthlyFlow = (monthIndex: number) => {
     // Determina se il mese ha dati consuntivi
     const hasActuals = transactions.some(t => {
-      const d = new Date(t.date);
-      return d.getMonth() === monthIndex && d.getFullYear() === currentYear && !t.isForecast;
+      const d = parseUTCDate(t.date);
+      return d.getUTCMonth() === monthIndex && d.getUTCFullYear() === currentYear && !t.isForecast;
     });
 
     // Usa consuntivi se: mese passato o corrente (con dati reali)
@@ -52,8 +53,8 @@ export const exportCashFlowProjectionPDF = ({
     if (useActuals) {
       // --- CONSUNTIVO ---
       const actualTransactions = transactions.filter(t => {
-        const d = new Date(t.date);
-        return d.getMonth() === monthIndex && d.getFullYear() === currentYear && !t.isForecast;
+        const d = parseUTCDate(t.date);
+        return d.getUTCMonth() === monthIndex && d.getUTCFullYear() === currentYear && !t.isForecast;
       });
       const aIncome = actualTransactions
         .filter(t => t.type === TransactionType.INCOME)
@@ -66,8 +67,8 @@ export const exportCashFlowProjectionPDF = ({
 
     // --- PREVISIONALE (mesi futuri senza consuntivi) ---
     const forecastTransactions = transactions.filter(t => {
-      const d = new Date(t.date);
-      if (d.getMonth() !== monthIndex || d.getFullYear() !== currentYear || !t.isForecast) return false;
+      const d = parseUTCDate(t.date);
+      if (d.getUTCMonth() !== monthIndex || d.getUTCFullYear() !== currentYear || !t.isForecast) return false;
       // Escludi forecast già liquidati
       return !transactions.some(act => !act.isForecast && act.linkedForecastId === t.id);
     });
@@ -84,11 +85,11 @@ export const exportCashFlowProjectionPDF = ({
     const calculateLoanRepayment = (mIdx: number) => {
       // BUG-01 Fix: If we already have manual transactions for interests or quota capitale in the month, skip prediction.
       const hasLoanTransactions = transactions.some(t => {
-        const tDate = new Date(t.date);
+        const tDate = parseUTCDate(t.date);
         return (
           t.type === TransactionType.EXPENSE &&
-          tDate.getMonth() === mIdx &&
-          tDate.getFullYear() === currentYear &&
+          tDate.getUTCMonth() === mIdx &&
+          tDate.getUTCFullYear() === currentYear &&
           (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
         );
       });
@@ -110,7 +111,7 @@ export const exportCashFlowProjectionPDF = ({
       });
       if (initialData.loans) {
         initialData.loans
-          .filter(l => !transactions.some(t => t.loanSourceId === l.id && new Date(t.date).getFullYear() === currentYear))
+          .filter(l => !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === currentYear))
           .forEach(loan => {
             const comps = calculateLoanComponents(loan.originalAmount, loan.details, mIdx);
             total += comps.total;
@@ -125,8 +126,8 @@ export const exportCashFlowProjectionPDF = ({
     const calculateProjectCostForMonth = (category: string, mIdx: number) => {
       let total = 0;
       projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
-        const start = new Date(p.estimatedStartDate!);
-        const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
+        const start = parseUTCDate(p.estimatedStartDate!);
+        const startMonthGlobal = start.getUTCFullYear() * 12 + start.getUTCMonth();
         const targetMonthGlobal = currentYear * 12 + mIdx;
         const diff = targetMonthGlobal - startMonthGlobal;
         if (category === '[CONSULENZE] Professionisti Esterni di Cantiere') {
@@ -153,10 +154,10 @@ export const exportCashFlowProjectionPDF = ({
   function calculateLoanComponents(principal: number, details: any, targetMonthIndex: number) {
     if (!details || !details.interestStartDate) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
 
-    const targetDate = new Date(currentYear, targetMonthIndex, 15);
-    const intStart = new Date(details.interestStartDate);
-    const princStart = details.principalStartDate ? new Date(details.principalStartDate) : intStart;
-    const end = details.endDate ? new Date(details.endDate) : new Date(intStart.getFullYear() + 20, intStart.getMonth(), intStart.getDate());
+    const targetDate = new Date(Date.UTC(currentYear, targetMonthIndex, 15));
+    const intStart = parseUTCDate(details.interestStartDate);
+    const princStart = details.principalStartDate ? parseUTCDate(details.principalStartDate) : intStart;
+    const end = details.endDate ? parseUTCDate(details.endDate) : new Date(Date.UTC(intStart.getUTCFullYear() + 20, intStart.getUTCMonth(), 15));
 
     if (targetDate < intStart || targetDate > end) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
 
@@ -167,8 +168,8 @@ export const exportCashFlowProjectionPDF = ({
     if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
       // Ordina per data e prendi l'ultima rinegoziazione valida per targetDate
       const rinegValide = [...details.rinegoziazioni]
-        .filter((r: any) => new Date(r.dataInizio) <= targetDate)
-        .sort((a: any, b: any) => new Date(b.dataInizio).getTime() - new Date(a.dataInizio).getTime());
+        .filter((r: any) => parseUTCDate(r.dataInizio) <= targetDate)
+        .sort((a: any, b: any) => parseUTCDate(b.dataInizio).getTime() - parseUTCDate(a.dataInizio).getTime());
       
       if (rinegValide.length > 0) {
         currentRate = rinegValide[0].nuovoTasso;
@@ -189,22 +190,24 @@ export const exportCashFlowProjectionPDF = ({
         };
     }
 
-    const n = (end.getFullYear() - amortizationStart.getFullYear()) * 12 + (end.getMonth() - amortizationStart.getMonth());
+    const n = (end.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (end.getUTCMonth() - amortizationStart.getUTCMonth());
     if (n <= 0) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
 
     const rataFissa = i > 0
       ? principal * (i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1)
       : principal / n;
 
-    const monthsPassed = (targetDate.getFullYear() - amortizationStart.getFullYear()) * 12 + (targetDate.getMonth() - amortizationStart.getMonth());
-    if (monthsPassed < 0) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
+    const monthsPassed = (targetDate.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (targetDate.getUTCMonth() - amortizationStart.getUTCMonth());
+    if (monthsPassed <= 0 || monthsPassed > n) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
+
+    const paymentsMade = monthsPassed - 1;
 
     const residualCapital = i > 0
-      ? principal * (Math.pow(1 + i, n) - Math.pow(1 + i, monthsPassed)) / (Math.pow(1 + i, n) - 1)
-      : Math.max(0, principal - (principal / n * monthsPassed));
+      ? principal * (Math.pow(1 + i, n) - Math.pow(1 + i, paymentsMade)) / (Math.pow(1 + i, n) - 1)
+      : Math.max(0, principal - (principal / n * paymentsMade));
 
     const interestPayment = Math.max(0, residualCapital * i);
-    const principalPayment = targetDate >= amortizationStart ? Math.min(residualCapital, rataFissa - interestPayment) : 0;
+    const principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
 
     return {
       total: Math.round((principalPayment + interestPayment) * 100) / 100,

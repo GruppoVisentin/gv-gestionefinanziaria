@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, SPSnapshot, AppView, CEData } from '../types';
-import { buildCEData, calcCEMetrics, calcSPMetrics, calculateRepayment, parseUTCDate, getDynamicDepreciation } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcSPMetrics, calculateRepayment, parseUTCDate, getDynamicDepreciation, generateDefault2025Snapshot } from '../utils/gasCoreEngine';
 import { exportSPPDF } from '../utils/spPdfExport';
 import PDFExportButton from './PDFExportButton';
 import * as XLSX from 'xlsx';
@@ -265,54 +265,55 @@ const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, o
   }, [transactions, initialData, saldoInizialeCF, targetYear, targetDateObj]);
 
   const ceMetrics = useMemo(() => {
-    const year = new Date(currentSnap.dataRiferimento).getFullYear();
+    const year = parseUTCDate(currentSnap.dataRiferimento).getUTCFullYear();
     const ceData = buildCEData(transactions, year, ceManualData[year.toString()]);
     return calcCEMetrics(ceData, transactions);
   }, [transactions, currentSnap.dataRiferimento, ceManualData]);
 
   const autoUtile = useMemo(() => {
-    return ceMetrics.utileNettoTot || 0;
-  }, [ceMetrics]);
+    const baseUtile = ceMetrics.utileNettoTot || 0;
+    const rimAnno = rimanenze[String(targetYear)];
+    if (rimAnno) {
+      const deltaWip = (rimAnno.wipFine || 0) - (rimAnno.wipInizio || 0);
+      const deltaMat = (rimAnno.materialiFine || 0) - (rimAnno.materialiInizio || 0);
+      return baseUtile + deltaWip + deltaMat;
+    }
+    return baseUtile;
+  }, [ceMetrics, rimanenze, targetYear]);
 
   const autoRimanenze = useMemo(() => {
     return rimanenze[String(targetYear)]?.wipFine || 0;
   }, [rimanenze, targetYear]);
 
   const autoFixedAssets = useMemo(() => {
-    let immobiliTerreni = 0;
-    let immMateriali = 0;
-    let immImmateriali = 0;
+    const prevYearSnap = snapshots.find(s => {
+      const d = parseUTCDate(s.dataRiferimento);
+      return d.getUTCFullYear() === targetYear - 1 && d.getUTCMonth() === 11 && d.getUTCDate() === 31;
+    }) || generateDefault2025Snapshot(transactions, initialData);
+
+    let immobiliTerreni = prevYearSnap ? (prevYearSnap.immobiliTerreni || 0) : 0;
+    let immMateriali = prevYearSnap ? (prevYearSnap.immMateriali || 0) : 0;
+    let immImmateriali = prevYearSnap ? (prevYearSnap.immImmateriali || 0) : 0;
 
     transactions.forEach(t => {
-      const d = new Date(t.date);
-      if (d <= targetDateObj) {
+      const d = parseUTCDate(t.date);
+      if (d.getUTCFullYear() === targetYear && d <= targetDateObj) {
         if (t.category === '[INVESTIMENTI] Acquisto Terreni per Sviluppo' || (t.description && t.description.toLowerCase().includes('acquisto terreni'))) {
-          immobiliTerreni += t.amount;
+          immobiliTerreni += Math.abs(t.amount);
         } else if (t.category === '[INVESTIMENTI] Acquisto Attrezzature e Macchinari' || (t.description && t.description.toLowerCase().includes('acquisto attrezzature'))) {
-          immMateriali += t.amount;
+          immMateriali += Math.abs(t.amount);
         }
       }
     });
 
-    let totalDepreciation = 0;
-    // Calculate accumulated depreciation for all years up to targetYear
-    const minYear = Math.min(...transactions.map(t => parseUTCDate(t.date).getUTCFullYear()));
-    if (isFinite(minYear)) {
-      for (let y = minYear; y <= targetYear; y++) {
-        const deprArray = getDynamicDepreciation(transactions, y);
-        if (y === targetYear) {
-          const targetMonth = targetDateObj.getUTCMonth();
-          totalDepreciation += deprArray.slice(0, targetMonth + 1).reduce((sum, v) => sum + v, 0);
-        } else {
-          totalDepreciation += deprArray.reduce((sum, v) => sum + v, 0);
-        }
-      }
-    }
+    const deprArray = getDynamicDepreciation(transactions, targetYear);
+    const targetMonth = targetDateObj.getUTCMonth();
+    const currentYearDepreciation = deprArray.slice(0, targetMonth + 1).reduce((sum, v) => sum + v, 0);
 
-    immMateriali = Math.max(0, immMateriali - totalDepreciation);
+    immMateriali = Math.max(0, immMateriali - currentYearDepreciation);
 
     return { immobiliTerreni, immMateriali, immImmateriali };
-  }, [transactions, targetDateObj, targetYear]);
+  }, [transactions, targetDateObj, targetYear, snapshots, initialData]);
 
   const autoMutui = useMemo(() => {
     let totOutstanding = 0;
@@ -350,25 +351,26 @@ const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, o
       const details = loan.details;
       if (!details || !details.interestStartDate) return;
         
-        const intStart = new Date(details.interestStartDate);
+        const intStart = parseUTCDate(details.interestStartDate);
         if (targetDateObj < intStart) return;
 
         let principal = loan.originalAmount;
-        let current = details.principalStartDate ? new Date(details.principalStartDate) : intStart;
+        let current = details.principalStartDate ? parseUTCDate(details.principalStartDate) : intStart;
         
         while (current <= targetDateObj) {
           const rep = calculateRepayment(loan.originalAmount, loan.details, current);
           principal -= rep.principal;
-          current.setMonth(current.getMonth() + 1);
+          const nextMonth = current.getUTCMonth() + 1;
+          current = new Date(Date.UTC(current.getUTCFullYear(), nextMonth, 15));
         }
 
         let principalNext12 = 0;
-        const currentNext = new Date(targetDateObj);
-        currentNext.setMonth(currentNext.getMonth() + 1);
+        let currentNext = new Date(Date.UTC(targetDateObj.getUTCFullYear(), targetDateObj.getUTCMonth() + 1, 15));
         for (let m = 0; m < 12; m++) {
           const rep = calculateRepayment(loan.originalAmount, loan.details, currentNext);
           principalNext12 += rep.principal;
-          currentNext.setMonth(currentNext.getMonth() + 1);
+          const nextMonth = currentNext.getUTCMonth() + 1;
+          currentNext = new Date(Date.UTC(currentNext.getUTCFullYear(), nextMonth, 15));
         }
 
         totShortTerm += Math.round(principalNext12 * 100) / 100;

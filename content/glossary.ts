@@ -718,7 +718,7 @@ export const GLOSSARIO: TermineGlossario[] = [
     nome: 'IRES — Imposta sul Reddito delle Società',
     categoria: 'fiscale',
     origine: 'Istituita nel 2003 in sostituzione dell\'IRPEG — è la principale imposta sui profitti delle società di capitali italiane',
-    definizione: 'È l\'imposta sui profitti delle Srl e SpA italiane. Si calcola sul reddito imponibile (approssimativamente l\'EBIT rettificato con le variazioni fiscali). L\'aliquota è fissa al 24% dal 2017. Si paga in due acconti (giugno e novembre) più un saldo ad aprile dell\'anno successivo.',
+    definizione: 'È l\'imposta sui profitti delle Srl e SpA italiane. Si calcola sul reddito imponibile (approssimativamente l\'EBIT rettificato con le variazioni fiscali). L\'aliquota è fissa al 24% dal 2017. Si paga in due acconti (giugno e novembre) più il saldo entro il 30 giugno dell\'anno successivo.',
     formulaTestuale: 'IRES Stimata = Base Imponibile × 24%',
     esempioNumerico: {
       dati: 'EBIT €142.000 + Variazione Rimanenze €15.000 = Base Imponibile €157.000',

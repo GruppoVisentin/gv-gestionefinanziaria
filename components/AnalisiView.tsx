@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, CEData, AppView, RimanenzeData, InitialBalanceBreakdown } from '../types';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, parseUTCDate } from '../utils/gasCoreEngine';
 import { exportAnalisiPDF } from '../utils/analisiPdfExport';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import { HelpButton } from './HelpPanel';
@@ -119,7 +119,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
   const currentYear = new Date().getFullYear();
   const availableYears = useMemo(() => {
     const yearsFromTx = new Set<number>(
-      (transactions || []).map(tx => new Date(tx.date).getFullYear())
+      (transactions || []).map(tx => parseUTCDate(tx.date).getUTCFullYear())
     );
     // Always include current and past 2 years
     [currentYear - 2, currentYear - 1, currentYear].forEach(y => yearsFromTx.add(y));
@@ -217,9 +217,9 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     const isWholeYear = meseOrario === 0;
 
     const actualTxs = (transactions || []).filter(tx => {
-      const d = new Date(tx.date);
-      const matchYear = d.getFullYear() === anno;
-      const matchMonth = isWholeYear ? true : d.getMonth() + 1 === meseOrario;
+      const d = parseUTCDate(tx.date);
+      const matchYear = d.getUTCFullYear() === anno;
+      const matchMonth = isWholeYear ? true : d.getUTCMonth() + 1 === meseOrario;
       return matchYear 
           && matchMonth 
           && !tx.isForecast 
@@ -227,9 +227,9 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     });
 
     const forecastTxs = (transactions || []).filter(tx => {
-      const d = new Date(tx.date);
-      const matchYear = d.getFullYear() === anno;
-      const matchMonth = isWholeYear ? true : d.getMonth() + 1 === meseOrario;
+      const d = parseUTCDate(tx.date);
+      const matchYear = d.getUTCFullYear() === anno;
+      const matchMonth = isWholeYear ? true : d.getUTCMonth() + 1 === meseOrario;
       return matchYear 
           && matchMonth 
           && tx.isForecast 
@@ -383,7 +383,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
       .filter(tx => 
         tx.ceType === 'costo_studio' && 
         tx.isForecast &&
-        new Date(tx.date).getFullYear() === anno &&
+        parseUTCDate(tx.date).getUTCFullYear() === anno &&
         (tx.category?.toLowerCase().includes('compenso amministratori') || 
          tx.category?.toLowerCase().includes('soci'))
       )
@@ -392,8 +392,8 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
 
   const metricsPrev = useMemo(() => {
     const txPrev = (transactions || []).filter(tx => {
-      const d = new Date(tx.date);
-      return d.getFullYear() === anno && tx.ceType && tx.isForecast;
+      const d = parseUTCDate(tx.date);
+      return d.getUTCFullYear() === anno && tx.ceType && tx.isForecast;
     });
 
     const sumByType = (types: string[]) =>
