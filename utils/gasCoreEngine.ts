@@ -200,24 +200,7 @@ export const getDynamicLoansInterests = (
   const interests = Array(12).fill(0);
   const loansMap = new Map<string, { id: string; name: string; amount: number; details: any }>();
 
-  // 1. Loans from transaction inputs
-  transactions.forEach(t => {
-    if (t.type === 'INCOME' && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
-      const isForecast = t.isForecast;
-      const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
-      if (!(isForecast && hasLinked)) {
-        const id = t.loanSourceId || t.id;
-        loansMap.set(id, {
-          id: id,
-          name: t.description,
-          amount: t.amount,
-          details: t.loanDetails
-        });
-      }
-    }
-  });
-
-  // 2. Loans from initial state (historical)
+  // 1. Loans from initial state (historical)
   if (initialData && initialData.loans) {
     initialData.loans.forEach(l => {
       loansMap.set(l.id, {
@@ -228,6 +211,28 @@ export const getDynamicLoansInterests = (
       });
     });
   }
+
+  // 2. Loans from transaction inputs
+  transactions.forEach(t => {
+    if (t.type === 'INCOME' && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
+      const isForecast = t.isForecast;
+      const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
+      if (!(isForecast && hasLinked)) {
+        const id = t.loanSourceId || t.id;
+        if (!loansMap.has(id)) {
+          const existsByName = Array.from(loansMap.values()).some(l => l.name.toLowerCase().trim() === t.description.toLowerCase().trim());
+          if (!existsByName) {
+            loansMap.set(id, {
+              id: id,
+              name: t.description,
+              amount: t.amount,
+              details: t.loanDetails
+            });
+          }
+        }
+      }
+    }
+  });
 
   const loans = Array.from(loansMap.values());
 
@@ -261,24 +266,7 @@ export const getDynamicLoansPrincipals = (
   const principals = Array(12).fill(0);
   const loansMap = new Map<string, { id: string; name: string; amount: number; details: any }>();
 
-  // 1. Loans from transaction inputs
-  transactions.forEach(t => {
-    if (t.type === 'INCOME' && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
-      const isForecast = t.isForecast;
-      const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
-      if (!(isForecast && hasLinked)) {
-        const id = t.loanSourceId || t.id;
-        loansMap.set(id, {
-          id: id,
-          name: t.description,
-          amount: t.amount,
-          details: t.loanDetails
-        });
-      }
-    }
-  });
-
-  // 2. Loans from initial state (historical)
+  // 1. Loans from initial state (historical)
   if (initialData && initialData.loans) {
     initialData.loans.forEach(l => {
       loansMap.set(l.id, {
@@ -289,6 +277,28 @@ export const getDynamicLoansPrincipals = (
       });
     });
   }
+
+  // 2. Loans from transaction inputs
+  transactions.forEach(t => {
+    if (t.type === 'INCOME' && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
+      const isForecast = t.isForecast;
+      const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
+      if (!(isForecast && hasLinked)) {
+        const id = t.loanSourceId || t.id;
+        if (!loansMap.has(id)) {
+          const existsByName = Array.from(loansMap.values()).some(l => l.name.toLowerCase().trim() === t.description.toLowerCase().trim());
+          if (!existsByName) {
+            loansMap.set(id, {
+              id: id,
+              name: t.description,
+              amount: t.amount,
+              details: t.loanDetails
+            });
+          }
+        }
+      }
+    }
+  });
 
   const loans = Array.from(loansMap.values());
 

@@ -697,7 +697,12 @@ const CEView: React.FC<CEViewProps> = ({
           const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
           if (!(isForecast && hasLinked)) {
             const loanId = t.loanSourceId || t.id;
-            loansMap.set(loanId, { id: loanId, name: t.description, amount: t.amount, details: t.loanDetails });
+            if (!loansMap.has(loanId)) {
+              const existsByName = Array.from(loansMap.values()).some(l => l.name.toLowerCase().trim() === t.description.toLowerCase().trim());
+              if (!existsByName) {
+                loansMap.set(loanId, { id: loanId, name: t.description, amount: t.amount, details: t.loanDetails });
+              }
+            }
           }
         }
       });
@@ -765,7 +770,12 @@ const CEView: React.FC<CEViewProps> = ({
           const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
           if (!(isForecast && hasLinked)) {
             const loanId = t.loanSourceId || t.id;
-            loansMap.set(loanId, { id: loanId, name: t.description, amount: t.amount, details: t.loanDetails });
+            if (!loansMap.has(loanId)) {
+              const existsByName = Array.from(loansMap.values()).some(l => l.name.toLowerCase().trim() === t.description.toLowerCase().trim());
+              if (!existsByName) {
+                loansMap.set(loanId, { id: loanId, name: t.description, amount: t.amount, details: t.loanDetails });
+              }
+            }
           }
         }
       });
