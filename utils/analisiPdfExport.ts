@@ -752,22 +752,24 @@ export const exportAnalisiPDF = (data: AnalisiPdfData) => {
 
   autoTable(doc, {
     startY: y,
-    head: [['Macrocategoria', 'Incidenza GV (%)', 'Benchmark Settore', 'Valutazione e Azioni Raccomandate']],
+    head: [['Macro Voce Spesa', 'Incidenza', 'Valutazione', 'Azione Correttiva Suggerita']],
     body: [
-      ['Costi Variabili (Diretti)', '80.11%', '25% - 30% (Margin)', '🔴 Sotto media. Alta dipendenza da subappalti e fluttuazioni prezzi.'],
-      ['Incidenza Subappalti', '45.24%', '25% - 35%', '⚠️ Elevata. Terzializzazione spinta: riduce i fissi ma erode il margine.'],
-      ['Personale Interno', '6.98%', '15% - 20%', '🟢 Ottima efficienza. Struttura molto leggera, basso rischio di inattività.'],
-      ['Costi Studio / Soci', '8.46%', '8% - 12%', '🟢 Congruo. Compenso soci (4.3%) allineato con le prassi di mercato.'],
-      ['Overhead Struttura Fissa', '2.42%', '6% - 10%', '🟢 Eccellente. Struttura snella che compensa la pressione del primo margine.'],
-      ['Oneri Finanziari', '0.43%', '1.5% - 2.5%', '🟢 Ottimo. Basso indebitamento generativo ed eccellente gestione di cassa.'],
+      ['Costi Variabili (Diretti)', '80.11%', '🔴 Elevata', 'Negoziare contratti quadro annuali sui materiali; bloccare prezzi dei subappalti.'],
+      ['Subappalti di Cantiere', '45.24%', '⚠️ Alta dipendenza', 'Inserire clausole di "Prezzo Chiuso" non revisionabile con i subappaltatori.'],
+      ['Materiali e Noli', '23.26%', '🟢 Congruo', 'Pianificare ordini cumulativi per ottenere sconti di volume dai distributori.'],
+      ['Manodopera Operativa', '6.98%', '🟢 Molto efficiente', 'Ottimo bilanciamento. Mantenere la struttura snella per minimizzare i tempi morti.'],
+      ['Costi Studio / Tecnici', '8.46%', '🟢 Standard', 'Monitorare ore non produttive di ufficio. Ottimizzazione software BIM.'],
+      ['Compenso Amministratori', '4.30%', '🟢 Congruo', 'Allineato alle prassi. Vincolare futuri aumenti alla crescita dell\'utile.'],
+      ['Overhead Struttura Fissa', '2.42%', '🟢 Eccellente', 'Mantenere la sede e le licenze snelle. Ottimo controllo di gestione.'],
+      ['Oneri Finanziari', '0.43%', '🟢 Eccellente', 'Rinegoziare commissioni fisse sui fidi e tassi per le fideiussioni d\'appalto.'],
     ],
     theme: 'grid',
     headStyles: { fillColor: C.slate700, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
     styles: { fontSize: 8, cellPadding: 3.5 },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 40 },
-      1: { halign: 'center', fontStyle: 'bold', cellWidth: 25 },
-      2: { halign: 'center', cellWidth: 30 },
+      0: { fontStyle: 'bold', cellWidth: 45 },
+      1: { halign: 'center', cellWidth: 20 },
+      2: { halign: 'center', fontStyle: 'bold', cellWidth: 35 },
       3: { fontSize: 7.5, textColor: C.slate600 as [number,number,number] },
     }
   });
