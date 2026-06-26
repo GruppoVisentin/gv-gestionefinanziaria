@@ -256,6 +256,10 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
           ))
       );
 
+      // Track nomi già inclusi dalle transazioni per evitare duplicazione con initialData
+      const nomesFromIncomeLoans = new Set(incomeLoans.map(t => t.description.toLowerCase().trim()));
+      const idsFromIncomeLoans = new Set(incomeLoans.map(t => t.loanSourceId || t.id));
+
       incomeLoans.forEach(t => {
           const comps = calculateRepayment(t.amount, t.loanDetails!, monthIndex);
           total += comps.total;
@@ -275,9 +279,18 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       });
 
       // 2. From Existing Loans (Initial Balance)
+      // Escludi prestiti già calcolati tramite transazioni INCOME (per id O per nome)
       if (initialData?.loans) {
           initialData.loans
-            .filter(l => !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === currentYear))
+            .filter(l => {
+              // Escludi se c'è una transazione con loanSourceId corrispondente nell'anno corrente
+              const hasLinkedTx = transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === currentYear);
+              if (hasLinkedTx) return false;
+              // Escludi se già calcolato via incomeLoans (per id o per nome — prevenzione doppio conteggio)
+              if (idsFromIncomeLoans.has(l.id)) return false;
+              if (nomesFromIncomeLoans.has(l.name.toLowerCase().trim())) return false;
+              return true;
+            })
             .forEach(l => {
               const comps = calculateRepayment(l.originalAmount, l.details, monthIndex);
               total += comps.total;

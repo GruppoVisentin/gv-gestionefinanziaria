@@ -223,6 +223,10 @@ export const getDynamicLoansInterests = (
   const interests = Array(12).fill(0);
   const loansMap = new Map<string, { id: string; name: string; amount: number; details: any }>();
 
+  // Track prestiti già aggiunti dalle transazioni per evitare duplicazione con initialData
+  const txLoanIds = new Set<string>();
+  const txLoanNames = new Set<string>();
+
   // 1. Loans from initial state (historical)
   if (initialData && initialData.loans) {
     initialData.loans.forEach(l => {
@@ -235,24 +239,31 @@ export const getDynamicLoansInterests = (
     });
   }
 
-  // 2. Loans from transaction inputs
+  // 2. Loans from transaction inputs — sovrascrivono initialData se stesso id/nome
   transactions.forEach(t => {
     if (t.type === 'INCOME' && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
       const isForecast = t.isForecast;
       const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
       if (!(isForecast && hasLinked)) {
         const id = t.loanSourceId || t.id;
-        if (!loansMap.has(id)) {
-          const existsByName = Array.from(loansMap.values()).some(l => l.name.toLowerCase().trim() === t.description.toLowerCase().trim());
-          if (!existsByName) {
-            loansMap.set(id, {
-              id: id,
-              name: t.description,
-              amount: t.amount,
-              details: t.loanDetails
-            });
+        const nameKey = t.description.toLowerCase().trim();
+        // Controlla se c'è già un prestito nell'initialData con lo stesso nome o id
+        // Se esiste, sovrascrivilo (la transazione è più recente/accurata)
+        // Prima rimuovi dal loansMap la versione initialData per evitare duplicazione
+        for (const [existingId, existingLoan] of loansMap.entries()) {
+          if (existingLoan.name.toLowerCase().trim() === nameKey && existingId !== id) {
+            loansMap.delete(existingId);
+            break;
           }
         }
+        txLoanIds.add(id);
+        txLoanNames.add(nameKey);
+        loansMap.set(id, {
+          id: id,
+          name: t.description,
+          amount: t.amount,
+          details: t.loanDetails
+        });
       }
     }
   });
@@ -301,24 +312,27 @@ export const getDynamicLoansPrincipals = (
     });
   }
 
-  // 2. Loans from transaction inputs
+  // 2. Loans from transaction inputs — sovrascrivono initialData se stesso id/nome
   transactions.forEach(t => {
     if (t.type === 'INCOME' && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
       const isForecast = t.isForecast;
       const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
       if (!(isForecast && hasLinked)) {
         const id = t.loanSourceId || t.id;
-        if (!loansMap.has(id)) {
-          const existsByName = Array.from(loansMap.values()).some(l => l.name.toLowerCase().trim() === t.description.toLowerCase().trim());
-          if (!existsByName) {
-            loansMap.set(id, {
-              id: id,
-              name: t.description,
-              amount: t.amount,
-              details: t.loanDetails
-            });
+        const nameKey = t.description.toLowerCase().trim();
+        // Rimuovi dal loansMap la versione initialData con stesso nome per evitare duplicazione
+        for (const [existingId, existingLoan] of loansMap.entries()) {
+          if (existingLoan.name.toLowerCase().trim() === nameKey && existingId !== id) {
+            loansMap.delete(existingId);
+            break;
           }
         }
+        loansMap.set(id, {
+          id: id,
+          name: t.description,
+          amount: t.amount,
+          details: t.loanDetails
+        });
       }
     }
   });
