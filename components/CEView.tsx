@@ -754,7 +754,7 @@ const CEView: React.FC<CEViewProps> = ({
 
     let virtualLoanInterestTxsSoloPrev: Transaction[] = [];
     if (cfg.ceTypes.includes('onere_finanziario') && selectedYear >= today.getFullYear()) {
-      const interests = getDynamicLoansInterests(transactions, selectedYear, initialData);
+      // interests variabile rimossa (dead code)
       
       const loansMap = new Map<string, { id: string; name: string; amount: number; details: any }>();
 
@@ -784,21 +784,30 @@ const CEView: React.FC<CEViewProps> = ({
 
       for (let month = 0; month < 12; month++) {
         const d = new Date(selectedYear, month, 15);
-        loans.forEach((l, idx) => {
-          const rep = calculateRepayment(l.amount, l.details, d);
-          if (rep.interest > 0) {
-            virtualLoanInterestTxsSoloPrev.push({
-              id: `virtual-interest-soloprev-${l.name}-${month}-${idx}`,
-              date: `${selectedYear}-${String(month + 1).padStart(2, '0')}-15`,
-              description: `[STIMA MUTUO] Interessi: ${l.name}`,
-              category: '[FINANZA] Interessi Passivi Finanziamenti',
-              ceType: 'onere_finanziario',
-              amount: rep.interest,
-              type: TransactionType.EXPENSE,
-              isForecast: true
-            });
-          }
-        });
+        // Guard: non aggiungere virtuali se c'è già una tx forecast di interesse per questo mese
+        const hasForecastOneriFin = transactions.some(t =>
+          t.isForecast &&
+          parseUTCDate(t.date).getUTCFullYear() === selectedYear &&
+          parseUTCDate(t.date).getUTCMonth() === month &&
+          getDynamicCEType(t, projects) === 'onere_finanziario'
+        );
+        if (!hasForecastOneriFin) {
+          loans.forEach((l, idx) => {
+            const rep = calculateRepayment(l.amount, l.details, d);
+            if (rep.interest > 0) {
+              virtualLoanInterestTxsSoloPrev.push({
+                id: `virtual-interest-soloprev-${l.name}-${month}-${idx}`,
+                date: `${selectedYear}-${String(month + 1).padStart(2, '0')}-15`,
+                description: `[STIMA MUTUO] Interessi: ${l.name}`,
+                category: '[FINANZA] Interessi Passivi Finanziamenti',
+                ceType: 'onere_finanziario',
+                amount: rep.interest,
+                type: TransactionType.EXPENSE,
+                isForecast: true
+              });
+            }
+          });
+        }
       }
     }
 

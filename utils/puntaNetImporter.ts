@@ -4,7 +4,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 const safeParseFloat = (val: any): number => {
-  if (typeof val === 'number') return val;
+  if (typeof val === 'number') {
+    if (!isFinite(val)) return NaN; // blocca Infinity, -Infinity e NaN nativi da celle Excel corrotte
+    return val;
+  }
   let str = String(val ?? '').trim();
   if (!str) return NaN;
   str = str.replace(/[^\d.,-]/g, ''); // Remove currency symbols, spaces, etc.

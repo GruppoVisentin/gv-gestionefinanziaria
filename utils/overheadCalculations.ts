@@ -2,6 +2,7 @@ import { Transaction, InitialBalanceBreakdown } from '../types';
 import { getDynamicLoansInterests } from './gasCoreEngine';
 
 export const parseUTCDate = (dateStr: string): Date => {
+  if (!dateStr) return new Date(NaN); // guard: evita crash su tx.date undefined/null
   const parts = dateStr.split('-');
   if (parts.length === 3) {
     const y = parseInt(parts[0], 10);
@@ -218,6 +219,7 @@ export const calcolaPreventivoCantiere = (
 
   // Il margine si calcola sul prezzo finale, non sul costo
   // Prezzo = CostoTotale / (1 - margine%)
+  // Se margine >= 1 (100%+) il denominatore sarebbe 0 o negativo — fallback a costoTotale
   const prezzoMinimo = margineTargetPercent < 1
     ? costoTotale / (1 - margineTargetPercent)
     : costoTotale;

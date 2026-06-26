@@ -21,7 +21,10 @@ const colEntrataCons = (m: number) => 4 + m * 5;
 const colUscitaCons  = (m: number) => 6 + m * 5;
 
 const safeParseFloat = (val: any): number => {
-  if (typeof val === 'number') return val;
+  if (typeof val === 'number') {
+    if (!isFinite(val)) return NaN; // blocca Infinity, -Infinity e NaN da celle Excel con formule /0
+    return val;
+  }
   if (typeof val !== 'string') return NaN;
   let str = val.trim();
   if (str === '-' || str === '') return 0;

@@ -256,8 +256,10 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
           ))
       );
 
+      // Normalizzatore per confronto nomi robusto (ignora spazi multipli e maiuscole)
+      const normalizeForCompare = (s: string) => s.toLowerCase().trim().replace(/\s+/g, ' ');
       // Track nomi già inclusi dalle transazioni per evitare duplicazione con initialData
-      const nomesFromIncomeLoans = new Set(incomeLoans.map(t => t.description.toLowerCase().trim()));
+      const nomesFromIncomeLoans = new Set(incomeLoans.map(t => normalizeForCompare(t.description)));
       const idsFromIncomeLoans = new Set(incomeLoans.map(t => t.loanSourceId || t.id));
 
       incomeLoans.forEach(t => {
@@ -288,7 +290,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
               if (hasLinkedTx) return false;
               // Escludi se già calcolato via incomeLoans (per id o per nome — prevenzione doppio conteggio)
               if (idsFromIncomeLoans.has(l.id)) return false;
-              if (nomesFromIncomeLoans.has(l.name.toLowerCase().trim())) return false;
+              if (nomesFromIncomeLoans.has(normalizeForCompare(l.name))) return false;
               return true;
             })
             .forEach(l => {
@@ -356,6 +358,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
           return (
             tDate.getUTCMonth() === monthIndex &&
             tDate.getUTCFullYear() === currentYear &&
+            !!t.isForecast === true && // solo forecast — evita che actual sopprima il previsionale
             (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
           );
         });
@@ -406,7 +409,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             // BUG-01 Fix: Only add calculations if there are no manual transactions for interests in the whole year
             const hasInterests = expenseTransactions.some(t => {
               const tDate = parseUTCDate(t.date);
-              return tDate.getUTCFullYear() === currentYear && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
+              return tDate.getUTCFullYear() === currentYear && !!t.isForecast === true && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
             });
             if (!hasInterests) {
                 for (let m = 0; m < 12; m++) {
@@ -418,7 +421,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             // BUG-01 Fix: Only add calculations if there are no manual transactions for principal in the whole year
             const hasPrincipal = expenseTransactions.some(t => {
               const tDate = parseUTCDate(t.date);
-              return tDate.getUTCFullYear() === currentYear && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
+              return tDate.getUTCFullYear() === currentYear && !!t.isForecast === true && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
             });
             if (!hasPrincipal) {
                 for (let m = 0; m < 12; m++) {
@@ -466,7 +469,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             if (isInterestCategory(cat)) {
                 const hasInterests = expenseTransactions.some(t => {
                   const tDate = parseUTCDate(t.date);
-                  return tDate.getUTCFullYear() === currentYear && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
+                  return tDate.getUTCFullYear() === currentYear && !!t.isForecast === true && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
                 });
                 if (!hasInterests) {
                     for (let m = 0; m < 12; m++) {
@@ -477,7 +480,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             if (isPrincipalCategory(cat)) {
                 const hasPrincipal = expenseTransactions.some(t => {
                   const tDate = parseUTCDate(t.date);
-                  return tDate.getUTCFullYear() === currentYear && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
+                  return tDate.getUTCFullYear() === currentYear && !!t.isForecast === true && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
                 });
                 if (!hasPrincipal) {
                     for (let m = 0; m < 12; m++) {
@@ -529,6 +532,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
           const tDate = parseUTCDate(t.date);
           return (
             tDate.getUTCFullYear() === currentYear &&
+            !!t.isForecast === true && // solo forecast — evita che actual sopprima il previsionale
             (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
           );
         });

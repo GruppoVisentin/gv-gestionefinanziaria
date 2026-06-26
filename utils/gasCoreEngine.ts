@@ -246,12 +246,12 @@ export const getDynamicLoansInterests = (
       const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
       if (!(isForecast && hasLinked)) {
         const id = t.loanSourceId || t.id;
-        const nameKey = t.description.toLowerCase().trim();
+        const nameKey = t.description.toLowerCase().trim().replace(/\s+/g, ' ');
         // Controlla se c'è già un prestito nell'initialData con lo stesso nome o id
         // Se esiste, sovrascrivilo (la transazione è più recente/accurata)
         // Prima rimuovi dal loansMap la versione initialData per evitare duplicazione
         for (const [existingId, existingLoan] of loansMap.entries()) {
-          if (existingLoan.name.toLowerCase().trim() === nameKey && existingId !== id) {
+          if (existingLoan.name.toLowerCase().trim().replace(/\s+/g, ' ') === nameKey && existingId !== id) {
             loansMap.delete(existingId);
             break;
           }
@@ -319,10 +319,10 @@ export const getDynamicLoansPrincipals = (
       const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
       if (!(isForecast && hasLinked)) {
         const id = t.loanSourceId || t.id;
-        const nameKey = t.description.toLowerCase().trim();
+        const nameKey = t.description.toLowerCase().trim().replace(/\s+/g, ' ');
         // Rimuovi dal loansMap la versione initialData con stesso nome per evitare duplicazione
         for (const [existingId, existingLoan] of loansMap.entries()) {
-          if (existingLoan.name.toLowerCase().trim() === nameKey && existingId !== id) {
+          if (existingLoan.name.toLowerCase().trim().replace(/\s+/g, ' ') === nameKey && existingId !== id) {
             loansMap.delete(existingId);
             break;
           }

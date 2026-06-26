@@ -418,6 +418,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
           return (
             tDate.getUTCMonth() === monthIndex &&
             tDate.getUTCFullYear() === currentYear &&
+            !!t.isForecast === true && // solo forecast — evita che actual sopprima il calcolo nel previsionale
             (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
           );
         });
@@ -480,6 +481,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 return (
                     tDate.getUTCMonth() === i &&
                     tDate.getUTCFullYear() === currentYear &&
+                    !!t.isForecast === true && // solo forecast — evita che actual sopprima il calcolo nel previsionale
                     (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
                 );
             });
@@ -511,9 +513,13 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 const paidNov = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
                 if (!paidNov) annualAutoCosts += taxForecasts.prevFiscale.accontoNovembre;
             }
-            totalFlow += annualAutoIncome;
-            totalFlow -= annualAutoCosts;
+            // ⚠️ FIX BUG CRITICO: NON sommare a totalFlow dentro il loop.
+            // annualAutoCosts/Income sono accumulatori — sommarli ad ogni iterazione
+            // moltiplica il valore (es. al mese 11 annualAutoIncome viene sommato 12 volte).
         }
+        // Somma UNA SOLA VOLTA fuori dal loop
+        totalFlow += annualAutoIncome;
+        totalFlow -= annualAutoCosts;
     }
 
     return totalFlow;
