@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { parseUTCDate } from '../utils/gasCoreEngine';
 import { FileCode, Receipt } from 'lucide-react';
 import { Transaction, TransactionType, AppView } from '../types';
 import SummaryCard from './SummaryCard';
@@ -24,40 +25,45 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, 
   // Filter out Forecasts for the main dashboard. Only show Actuals.
   const currentYear = new Date().getFullYear();
 
-  const actualTransactions = transactions.filter(t =>
-    !t.isForecast &&
-    t.ceType !== 'ammortamento' &&
-    new Date(t.date).getFullYear() === currentYear
-  );
+  const { actualTransactions, totalIncome, totalExpense, balance, expenseData } = useMemo(() => {
+    const actTxs = transactions.filter(t =>
+      !t.isForecast &&
+      t.ceType !== 'ammortamento' &&
+      parseUTCDate(t.date).getUTCFullYear() === currentYear
+    );
 
-  const totalIncome = actualTransactions
-    .filter(t => t.type === TransactionType.INCOME)
-    .reduce((sum, t) => sum + getGrossAmount(t), 0);
-
-  const totalExpense = actualTransactions
-    .filter(t => t.type === TransactionType.EXPENSE)
-    .reduce((sum, t) => sum + getGrossAmount(t), 0);
-
-  const balance = totalIncome - totalExpense;
-
-  // Prepare data for Pie Chart (Expenses by Category)
-  const expenseData = expenseCategories.map(cat => {
-    const value = actualTransactions
-      .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+    const inc = actTxs
+      .filter(t => t.type === TransactionType.INCOME)
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
-    return { name: cat, value };
-  }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
+
+    const exp = actTxs
+      .filter(t => t.type === TransactionType.EXPENSE)
+      .reduce((sum, t) => sum + getGrossAmount(t), 0);
+
+    const expData = expenseCategories.map(cat => {
+      const value = actTxs
+        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+      return { name: cat, value };
+    }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
+
+    return { actualTransactions: actTxs, totalIncome: inc, totalExpense: exp, balance: inc - exp, expenseData: expData };
+  }, [transactions, currentYear, expenseCategories]);
 
   // Prepare data for Bar Chart (Last 6 months)
-  const getMonthlyData = () => {
+  const monthlyData = useMemo(() => {
     const today = new Date();
     const data = [];
     for (let i = 5; i >= 0; i--) {
+      // Usiamo UTC local time matching per evitare sfasamenti sui fusi orari.
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const targetMonth = d.getMonth();
+      const targetYear = d.getFullYear();
       const monthLabel = d.toLocaleString('it-IT', { month: 'short' });
+      
       const monthTransactions = actualTransactions.filter(t => {
-        const tDate = new Date(t.date);
-        return tDate.getMonth() === d.getMonth() && tDate.getFullYear() === d.getFullYear();
+        const tDate = parseUTCDate(t.date);
+        return tDate.getUTCMonth() === targetMonth && tDate.getUTCFullYear() === targetYear;
       });
       
       const income = monthTransactions
@@ -71,9 +77,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, 
       data.push({ name: monthLabel, Entrate: income, Uscite: expense });
     }
     return data;
-  };
-
-  const monthlyData = getMonthlyData();
+  }, [actualTransactions]);
 
   const ivaData = calcPosizIoneIVA(transactions, currentYear);
 

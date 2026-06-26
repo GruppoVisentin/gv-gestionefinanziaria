@@ -267,28 +267,43 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
       return matchedTxs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
     });
 
-    const sumMatchedActual = matchedActualSalaries.reduce((a, b) => a + b, 0);
-    const sumMatchedPrev = matchedPrevSalaries.reduce((a, b) => a + b, 0);
+    let sumMatchedActual = matchedActualSalaries.reduce((a, b) => a + b, 0);
+    let sumMatchedPrev = matchedPrevSalaries.reduce((a, b) => a + b, 0);
 
-    // Fallback if no names matched
-    if (sumMatchedActual === 0 && list.length > 0) {
-      const totHours = list.reduce((a, b) => a + (b.oreConsuntivo || 0), 0);
-      matchedActualSalaries = list.map(w => {
-        if (totHours > 0) {
-          return totStipendiActual * ((w.oreConsuntivo || 0) / totHours);
-        }
-        return totStipendiActual / list.length;
-      });
-    }
+    const totalHoursActual = list.reduce((a, b) => a + (b.oreConsuntivo || 0), 0);
+    const totalHoursPrev = list.reduce((a, b) => a + (b.orePrevisionale || 0), 0);
 
-    if (sumMatchedPrev === 0 && list.length > 0) {
-      const totHoursPrev = list.reduce((a, b) => a + (b.orePrevisionale || 0), 0);
-      matchedPrevSalaries = list.map(w => {
-        if (totHoursPrev > 0) {
-          return totStipendiPrev * ((w.orePrevisionale || 0) / totHoursPrev);
-        }
-        return totStipendiPrev / list.length;
-      });
+    // Distribuzione stipendi non allocati e scaling al Ground Truth (Bilancio)
+    if (list.length > 0) {
+      const unallocatedActual = Math.max(0, totStipendiActual - sumMatchedActual);
+      if (unallocatedActual > 0) {
+        matchedActualSalaries = matchedActualSalaries.map((s, i) => {
+          if (totalHoursActual > 0) {
+            return s + unallocatedActual * ((list[i].oreConsuntivo || 0) / totalHoursActual);
+          }
+          return s + unallocatedActual / list.length;
+        });
+      }
+      const newSumActual = matchedActualSalaries.reduce((a, b) => a + b, 0);
+      if (newSumActual > 0 && Math.abs(newSumActual - totStipendiActual) > 0.01) {
+        const ratio = totStipendiActual / newSumActual;
+        matchedActualSalaries = matchedActualSalaries.map(s => s * ratio);
+      }
+
+      const unallocatedPrev = Math.max(0, totStipendiPrev - sumMatchedPrev);
+      if (unallocatedPrev > 0) {
+        matchedPrevSalaries = matchedPrevSalaries.map((s, i) => {
+          if (totalHoursPrev > 0) {
+            return s + unallocatedPrev * ((list[i].orePrevisionale || 0) / totalHoursPrev);
+          }
+          return s + unallocatedPrev / list.length;
+        });
+      }
+      const newSumPrev = matchedPrevSalaries.reduce((a, b) => a + b, 0);
+      if (newSumPrev > 0 && Math.abs(newSumPrev - totStipendiPrev) > 0.01) {
+        const ratio = totStipendiPrev / newSumPrev;
+        matchedPrevSalaries = matchedPrevSalaries.map(s => s * ratio);
+      }
     }
 
     const sumStipendiAllocatedActual = matchedActualSalaries.reduce((a, b) => a + b, 0);
@@ -318,10 +333,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
       };
     });
 
-    const totalHoursActual = list.reduce((a, b) => a + (b.oreConsuntivo || 0), 0);
     const averageCostoOrarioActual = totalHoursActual > 0 ? totCostoActual / totalHoursActual : 0;
-
-    const totalHoursPrev = list.reduce((a, b) => a + (b.orePrevisionale || 0), 0);
     const averageCostoOrarioPrev = totalHoursPrev > 0 ? totCostoPrev / totalHoursPrev : 0;
 
     const actualRates = workersCalculated.map(w => w.costoOrarioActual).filter(r => r > 0).sort((a, b) => a - b);
@@ -1977,13 +1989,13 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        {vistaPrevFiscale ? 'EBIT Proiettato' : 'EBIT per cassa'}
+                        {vistaPrevFiscale ? 'EBT Proiettato' : 'EBT per cassa'}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {vistaPrevFiscale ? 'EBIT stimato fine anno' : 'Da CE consuntivo'}
+                        {vistaPrevFiscale ? 'EBT stimato fine anno' : 'Da CE consuntivo'}
                       </p>
                     </div>
-                    <span className="text-sm font-black text-slate-700 font-mono">{formatEuro(previsioneFiscale.ebitCompetenza)}</span>
+                    <span className="text-sm font-black text-slate-700 font-mono">{formatEuro(previsioneFiscale.ebtCompetenza)}</span>
                   </div>
 
                   {previsioneFiscale.hasRimanenze && (

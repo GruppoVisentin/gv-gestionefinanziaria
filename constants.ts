@@ -71,6 +71,7 @@ export const FIXED_COST_CATEGORIES: string[] = [
   "[FISCO] Versamento IVA",
   "[FISCO] F24 — IRPEF / IRES / IRAP",
   "[FISCO] Ritenute su Bonifici (versate)",     // era: RITENUTE SU BONIFICI
+  "[FISCO] Ritenute Subite su Incassi",
 
   // ─── STRAORDINARI ─────────────────────────────────────────────
   "[STRAORDINARI] Sanzioni e Penali",           // era: SANZIONI
@@ -243,6 +244,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
   "[FISCO] Versamento IVA":                            'solo_cashflow',
   "[FISCO] F24 — IRPEF / IRES / IRAP":                'solo_cashflow',
   "[FISCO] Ritenute su Bonifici (versate)":            'solo_cashflow',
+  "[FISCO] Ritenute Subite su Incassi":                'solo_cashflow',
   "[FISCO] Ritenute d'Acconto su Professionisti":      'solo_cashflow',
 
   // CAPEX — SOLO CASH FLOW

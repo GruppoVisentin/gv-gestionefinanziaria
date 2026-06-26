@@ -175,17 +175,16 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     };
 
     if (applyToAllMonths && isForecast && !initialData) {
-        const selectedDate = new Date(date);
-        const year = selectedDate.getFullYear();
-        const day = selectedDate.getDate();
+        const parts = date.split('-');
+        const year = parseInt(parts[0], 10);
+        const day = parseInt(parts[2], 10);
 
         for (let i = 0; i < 12; i++) {
-            const safeDate = new Date(year, i, 1);
             const daysInMonth = new Date(year, i + 1, 0).getDate();
-            safeDate.setDate(Math.min(day, daysInMonth));
+            const safeDay = Math.min(day, daysInMonth);
 
             const mStr = String(i + 1).padStart(2, '0');
-            const dStr = String(safeDate.getDate()).padStart(2, '0');
+            const dStr = String(safeDay).padStart(2, '0');
             const dateStr = `${year}-${mStr}-${dStr}`;
 
             onSave({

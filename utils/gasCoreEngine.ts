@@ -106,51 +106,89 @@ export const calculateRepayment = (
 
   if (targetDate < intStart || targetDate > end) return { total: 0, principal: 0, interest: 0 };
 
-  let currentRate = details.interestRate;
-  if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
-    const rinegValide = [...details.rinegoziazioni]
-      .filter(r => parseUTCDate(r.dataInizio) <= targetDate)
-      .sort((a, b) => parseUTCDate(b.dataInizio).getTime() - parseUTCDate(a.dataInizio).getTime());
-    
-    if (rinegValide.length > 0) {
-      currentRate = rinegValide[0].nuovoTasso;
-    }
+  let rinegoziazioni: any[] = [];
+  if (details.rinegoziazioni && Array.isArray(details.rinegoziazioni)) {
+    rinegoziazioni = [...details.rinegoziazioni].sort((a, b) => parseUTCDate(a.dataInizio).getTime() - parseUTCDate(b.dataInizio).getTime());
   }
 
-  const i = (currentRate / 100) / 12;
   const amortizationStart = !isNaN(princStart.getTime()) ? princStart : intStart;
   
+  const getRateForDate = (d: Date) => {
+    let rate = details.interestRate;
+    for (const r of rinegoziazioni) {
+      if (parseUTCDate(r.dataInizio) <= d) {
+        rate = r.nuovoTasso;
+      }
+    }
+    return Math.max(0, rate); // Protezione da tassi negativi
+  };
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+
   if (targetDate >= intStart && targetDate < amortizationStart) {
+    const rate = getRateForDate(targetDate);
+    const prevMonthDate = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth() - 1, targetDate.getUTCDate()));
+    const startDateForCalc = prevMonthDate < intStart ? intStart : prevMonthDate;
+    const days = Math.round((targetDate.getTime() - startDateForCalc.getTime()) / msPerDay);
+    
+    // Pro rata giornaliero per pre-ammortamento
+    const dailyRate = (rate / 100) / 365;
     return { 
-      total: principal * i, 
+      total: principal * dailyRate * days, 
       principal: 0, 
-      interest: principal * i
+      interest: principal * dailyRate * days
     };
   }
 
   const n = (end.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (end.getUTCMonth() - amortizationStart.getUTCMonth());
   if (n <= 0) return { total: 0, principal: 0, interest: 0 };
 
-  const rataFissa = i > 0
-    ? principal * (i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1)
-    : principal / n;
-
   const monthsPassed = (targetDate.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (targetDate.getUTCMonth() - amortizationStart.getUTCMonth());
   if (monthsPassed <= 0 || monthsPassed > n) return { total: 0, principal: 0, interest: 0 };
 
-  const paymentsMade = monthsPassed - 1;
+  let residualCapital = principal;
+  let resPrinc = 0;
+  let resInt = 0;
 
-  const residualCapital = i > 0
-    ? principal * (Math.pow(1 + i, n) - Math.pow(1 + i, paymentsMade)) / (Math.pow(1 + i, n) - 1)
-    : Math.max(0, principal - (principal / n * paymentsMade));
+  // Simulazione stateful mese per mese
+  for (let m = 1; m <= monthsPassed; m++) {
+    const currentMonthDate = new Date(Date.UTC(amortizationStart.getUTCFullYear(), amortizationStart.getUTCMonth() + m, amortizationStart.getUTCDate()));
+    const rate = getRateForDate(currentMonthDate);
+    const i = (rate / 100) / 12;
+    const monthsRemaining = n - (m - 1);
+    
+    // Ricalcola la rata fissa sul capitale residuo
+    const rataFissa = i > 0
+      ? residualCapital * (i * Math.pow(1 + i, monthsRemaining)) / (Math.pow(1 + i, monthsRemaining) - 1)
+      : residualCapital / monthsRemaining;
 
-  const interestPayment = Math.max(0, residualCapital * i);
-  const principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
+    const prevMonthDate = new Date(Date.UTC(amortizationStart.getUTCFullYear(), amortizationStart.getUTCMonth() + m - 1, amortizationStart.getUTCDate()));
+    const startDateForCalc = prevMonthDate < intStart ? intStart : prevMonthDate;
+    const days = Math.round((currentMonthDate.getTime() - startDateForCalc.getTime()) / msPerDay);
+    const dailyRate = (rate / 100) / 365;
+
+    // Applica pro-rata al primo mese se inizia a ridosso
+    let interestPayment = m === 1 && startDateForCalc > prevMonthDate
+       ? residualCapital * dailyRate * days
+       : residualCapital * i;
+    
+    // Capitalizzazione mancata non implementata perché richiederebbe logica di accantonamento transazioni passate.
+    
+    let principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
+    if (principalPayment < 0) principalPayment = 0;
+
+    residualCapital -= principalPayment;
+    
+    if (m === monthsPassed) {
+      resPrinc = principalPayment;
+      resInt = interestPayment;
+    }
+  }
 
   return {
-    total: Math.round((principalPayment + interestPayment) * 100) / 100,
-    principal: Math.round(principalPayment * 100) / 100,
-    interest: Math.round(interestPayment * 100) / 100
+    total: Math.round((resPrinc + resInt) * 100) / 100,
+    principal: Math.round(resPrinc * 100) / 100,
+    interest: Math.round(resInt * 100) / 100
   };
 };
 
@@ -160,7 +198,7 @@ export const getDynamicLoansInterests = (
   initialData?: InitialBalanceBreakdown
 ): number[] => {
   const interests = Array(12).fill(0);
-  const loans: { name: string; amount: number; details: any }[] = [];
+  const loansMap = new Map<string, { id: string; name: string; amount: number; details: any }>();
 
   // 1. Loans from transaction inputs
   transactions.forEach(t => {
@@ -168,7 +206,9 @@ export const getDynamicLoansInterests = (
       const isForecast = t.isForecast;
       const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
       if (!(isForecast && hasLinked)) {
-        loans.push({
+        const id = t.loanSourceId || t.id;
+        loansMap.set(id, {
+          id: id,
           name: t.description,
           amount: t.amount,
           details: t.loanDetails
@@ -179,27 +219,33 @@ export const getDynamicLoansInterests = (
 
   // 2. Loans from initial state (historical)
   if (initialData && initialData.loans) {
-    initialData.loans
-      .filter(l => {
-        // Only include if no actual transaction in the current year exists for this loan
-        return !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === anno);
-      })
-      .forEach(l => {
-        loans.push({
-          name: l.name,
-          amount: l.originalAmount,
-          details: l.details
-        });
+    initialData.loans.forEach(l => {
+      loansMap.set(l.id, {
+        id: l.id,
+        name: l.name,
+        amount: l.originalAmount,
+        details: l.details
       });
+    });
   }
+
+  const loans = Array.from(loansMap.values());
 
   // Calculate interest for each month of the target year
   for (let month = 0; month < 12; month++) {
     const d = new Date(Date.UTC(anno, month, 15));
     let monthInterests = 0;
     loans.forEach(l => {
-      const rep = calculateRepayment(l.amount, l.details, d);
-      monthInterests += rep.interest;
+      const hasManualMonth = transactions.some(t => 
+        (t.loanSourceId === l.id || t.linkedForecastId === l.id) &&
+        parseUTCDate(t.date).getUTCFullYear() === anno &&
+        parseUTCDate(t.date).getUTCMonth() === month &&
+        t.category === '[FINANZA] Interessi Passivi Finanziamenti'
+      );
+      if (!hasManualMonth) {
+        const rep = calculateRepayment(l.amount, l.details, d);
+        monthInterests += rep.interest;
+      }
     });
     interests[month] = Math.round(monthInterests * 100) / 100;
   }
@@ -213,7 +259,7 @@ export const getDynamicLoansPrincipals = (
   initialData?: InitialBalanceBreakdown
 ): number[] => {
   const principals = Array(12).fill(0);
-  const loans: { name: string; amount: number; details: any }[] = [];
+  const loansMap = new Map<string, { id: string; name: string; amount: number; details: any }>();
 
   // 1. Loans from transaction inputs
   transactions.forEach(t => {
@@ -221,7 +267,9 @@ export const getDynamicLoansPrincipals = (
       const isForecast = t.isForecast;
       const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId)));
       if (!(isForecast && hasLinked)) {
-        loans.push({
+        const id = t.loanSourceId || t.id;
+        loansMap.set(id, {
+          id: id,
           name: t.description,
           amount: t.amount,
           details: t.loanDetails
@@ -232,26 +280,33 @@ export const getDynamicLoansPrincipals = (
 
   // 2. Loans from initial state (historical)
   if (initialData && initialData.loans) {
-    initialData.loans
-      .filter(l => {
-        return !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === anno);
-      })
-      .forEach(l => {
-        loans.push({
-          name: l.name,
-          amount: l.originalAmount,
-          details: l.details
-        });
+    initialData.loans.forEach(l => {
+      loansMap.set(l.id, {
+        id: l.id,
+        name: l.name,
+        amount: l.originalAmount,
+        details: l.details
       });
+    });
   }
+
+  const loans = Array.from(loansMap.values());
 
   // Calculate principal for each month of the target year
   for (let month = 0; month < 12; month++) {
     const d = new Date(Date.UTC(anno, month, 15));
     let monthPrincipals = 0;
     loans.forEach(l => {
-      const rep = calculateRepayment(l.amount, l.details, d);
-      monthPrincipals += rep.principal;
+      const hasManualMonth = transactions.some(t => 
+        (t.loanSourceId === l.id || t.linkedForecastId === l.id) &&
+        parseUTCDate(t.date).getUTCFullYear() === anno &&
+        parseUTCDate(t.date).getUTCMonth() === month &&
+        t.category === '[FINANZA] Quota Capitale Rate Finanziamenti'
+      );
+      if (!hasManualMonth) {
+        const rep = calculateRepayment(l.amount, l.details, d);
+        monthPrincipals += rep.principal;
+      }
     });
     principals[month] = Math.round(monthPrincipals * 100) / 100;
   }
@@ -410,20 +465,37 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
           const targetMonthGlobal = ce.anno * 12 + m;
           const diff = targetMonthGlobal - startMonthGlobal;
 
+          // Helper to check if user manually forecasted this type in this month
+          const hasManualForecastForCategory = (catMatch: string) => {
+              return transactions.some(tx => 
+                tx.isForecast && 
+                parseUTCDate(tx.date).getUTCFullYear() === ce.anno && 
+                parseUTCDate(tx.date).getUTCMonth() === m &&
+                tx.category === catMatch
+              );
+          };
+          const hasManualForecastForCEType = (ceTypeMatch: string) => {
+              return transactions.some(tx => 
+                tx.isForecast && 
+                parseUTCDate(tx.date).getUTCFullYear() === ce.anno && 
+                parseUTCDate(tx.date).getUTCMonth() === m &&
+                getDynamicCEType(tx, projects) === ceTypeMatch
+              );
+          };
+
           // Costs
           if (types.includes('costo_variabile')) {
-            if (diff >= 0 && diff < 6) sum -= (p.estimatedMaterials || 0) / 6;
-            if (p.laborType === 'EXTERNAL' && diff >= 0 && diff < 6) sum -= (p.estimatedLabor || 0) / 6;
-            if (diff >= 6 && diff < 18) sum -= (p.estimatedSubcontractors || 0) / 12;
+            if (diff >= 0 && diff < 6 && !hasManualForecastForCategory('[FORNITORI] Fornitori Materiali')) sum -= (p.estimatedMaterials || 0) / 6;
+            if (p.laborType === 'EXTERNAL' && diff >= 0 && diff < 6 && !hasManualForecastForCategory('[PERSONALE] Subappalti Manodopera')) sum -= (p.estimatedLabor || 0) / 6;
+            if (diff >= 6 && diff < 18 && !hasManualForecastForCategory('[FORNITORI] Subappalti su Cantieri')) sum -= (p.estimatedSubcontractors || 0) / 12;
           }
           if (types.includes('costo_studio')) {
-            if (diff >= -2 && diff < 0) sum -= (p.estimatedProfessionals || 0) / 2;
+            if (diff >= -2 && diff < 0 && !hasManualForecastForCategory('[CONSULENZE] Professionisti Esterni di Cantiere')) sum -= (p.estimatedProfessionals || 0) / 2;
           }
           
           // Revenues
           if (types.includes('ricavo_core')) {
-            // Assume revenue is spread over 6 months from start
-            if (diff >= 0 && diff < 6) {
+            if (diff >= 0 && diff < 6 && !hasManualForecastForCEType('ricavo_core')) {
               sum += (p.estimatedRevenue || 0) / 6;
             }
           }
@@ -631,9 +703,9 @@ export const calcEffettoRimanenze = (
 
 export interface PrevisioneFiscale {
   // BASE IMPONIBILE
-  ebitCompetenza: number;              // EBIT + variazione rimanenze
+  ebtCompetenza: number;               // EBT + variazione rimanenze (sostituisce EBIT)
   variazioneRimanenze: number;         // da modulo B
-  baseImponibileIRES: number;          // ebitCompetenza (semplificato)
+  baseImponibileIRES: number;          // ebtCompetenza (semplificato)
   baseImponibileIRAP: number;          // valore produzione netta (ricavi - costi operativi escluso personale)
   valoreProduzione: number;            // Ricavi + deltaWIP
   costiDeducibiliIRAP: number;         // costi operativi - personale dipendente - compensi amministratori
@@ -680,9 +752,10 @@ export const calcPrevisioneFiscale = (
     : 0;
 
   // Base imponibile IRES
-  // = EBIT di competenza + variazione rimanenze
-  const ebitCompetenza = includeForecast ? ceMetrics.proiezioneEbit : ceMetrics.ebitTot;
-  const baseImponibileIRES = Math.max(0, ebitCompetenza + variazioneRimanenze);
+  // = EBT di competenza + straordinario + variazione rimanenze
+  const ebtCompetenza = includeForecast ? ceMetrics.proiezioneEbt : ceMetrics.ebtTot;
+  const straordinarioCompetenza = includeForecast ? ceMetrics.proiezioneStraordinario : ceMetrics.straordinario;
+  const baseImponibileIRES = Math.max(0, ebtCompetenza + straordinarioCompetenza + variazioneRimanenze);
 
   // Base imponibile IRAP
   const deltaWip = rimanenze
@@ -719,7 +792,7 @@ export const calcPrevisioneFiscale = (
     ? (ceMetrics.proiezioneCostiVariabili + ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio)
     : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + ceMetrics.costiFissiTot);
 
-  const costiDeducibiliIRAP = costiOperativiTotali - costoPersonaleDipendente - compensoAmministratoriIRAP;
+  const costiDeducibiliIRAP = Math.max(0, costiOperativiTotali - costoPersonaleDipendente - compensoAmministratoriIRAP);
   const baseImponibileIRAP = Math.max(0, valoreProduzione - costiDeducibiliIRAP);
 
   // Calcolo imposte
@@ -729,8 +802,8 @@ export const calcPrevisioneFiscale = (
 
   // Acconti (Metodo Storico o Previsionale)
   const imposteStoriche = initialData?.imposteAnnoPrecedente || 0;
-  // Se l'utente ha inserito le tasse storiche, le usiamo come base per gli acconti (salvo ricalcolo volontario, usiamo il max per prudenza)
-  const baseAcconti = imposteStoriche > 0 ? imposteStoriche : totaleImposteStimate;
+  // Se l'utente ha inserito le tasse storiche, le usiamo come base per gli acconti
+  const baseAcconti = (initialData?.imposteAnnoPrecedente !== undefined) ? Math.max(0, imposteStoriche) : totaleImposteStimate;
 
   const accontoGiugno   = baseAcconti * 0.40;
   const accontoNovembre = baseAcconti * 0.60;
@@ -746,6 +819,7 @@ export const calcPrevisioneFiscale = (
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
+  const creditoPregresso = Math.max(0, accontiPagatiAnnoPrec - imposteStoriche);
   const saldoGiugnom = Math.max(0, imposteStoriche - accontiPagatiAnnoPrec);
 
   // Imposte già versate (F24 IRES/IRAP registrati nel cash flow)
@@ -759,7 +833,11 @@ export const calcPrevisioneFiscale = (
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
-  const residuoDaVersare = Math.max(0, totaleImposteStimate - impostePagate);
+  const tasseTotaliDovuteQuestAnno = saldoGiugnom + totaleImposteStimate;
+  const tasseTotaliGiaCopertedaCreditiOPagamenti = creditoPregresso + impostePagate;
+  const residuoDaVersare = Math.max(0, tasseTotaliDovuteQuestAnno - tasseTotaliGiaCopertedaCreditiOPagamenti);
+
+  const accontiPagatiAnnoCorrente = Math.max(0, impostePagate + creditoPregresso - saldoGiugnom);
 
   // Utile netto stimato dopo imposte
   // Corretto: dobbiamo includere anche gli oneri finanziari, proventi finanziari e voci straordinarie per calcolare l'utile netto finale
@@ -768,7 +846,7 @@ export const calcPrevisioneFiscale = (
     : (ceMetrics.ebtTot + variazioneRimanenze - totaleImposteStimate);
 
   return {
-    ebitCompetenza,
+    ebtCompetenza,
     variazioneRimanenze,
     baseImponibileIRES,
     baseImponibileIRAP,

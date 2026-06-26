@@ -131,7 +131,8 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
 
     const proposed = historical.map(tx => {
       const d = parseUTCDate(tx.date);
-      const newDate = new Date(Date.UTC(targetYear, d.getUTCMonth(), d.getUTCDate())).toISOString().split('T')[0];
+      const dDay = Math.min(d.getUTCDate(), new Date(Date.UTC(targetYear, d.getUTCMonth() + 1, 0)).getUTCDate());
+      const newDate = new Date(Date.UTC(targetYear, d.getUTCMonth(), dDay)).toISOString().split('T')[0];
       return {
         id: generateId(),
         date: newDate,
@@ -155,7 +156,8 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
       if (tx.id === id) {
         if (field === 'month') {
           const d = parseUTCDate(tx.date!);
-          const newDate = new Date(Date.UTC(targetYear, value, d.getUTCDate())).toISOString().split('T')[0];
+          const dDay = Math.min(d.getUTCDate(), new Date(Date.UTC(targetYear, value + 1, 0)).getUTCDate());
+          const newDate = new Date(Date.UTC(targetYear, value, dDay)).toISOString().split('T')[0];
           return { ...tx, date: newDate };
         }
         return { ...tx, [field]: value };
@@ -171,7 +173,7 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
   const handleAddManual = () => {
     const newTx: Partial<Transaction> = {
       id: generateId(),
-      date: new Date(targetYear, 0, 1).toISOString().split('T')[0],
+      date: `${targetYear}-01-01`,
       amount: 0,
       vatRate: 22,
       type: TransactionType.EXPENSE,
@@ -862,7 +864,7 @@ export const CantiereWizard: React.FC<CantiereWizardProps> = ({
                         <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                           <span className="text-slate-600">{tipologia?.nome || 'Nessuna Tipologia'}</span>
                           <span>•</span>
-                          <span>Inizio: {new Date(c.dataInizio).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</span>
+                          <span>Inizio: {parseUTCDate(c.dataInizio).toLocaleDateString('it-IT', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
                           <span>•</span>
                           <span className="text-slate-900">Totale: {CURRENCY_FORMATTER.format(totalCosti)}</span>
                         </div>

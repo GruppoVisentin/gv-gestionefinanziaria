@@ -886,7 +886,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                   
                                   {rinegoziazioni.map((r, i) => (
                                     <div key={i} className="text-[9px] bg-amber-50 p-1 rounded border border-amber-100 flex justify-between items-center">
-                                      <span>{new Date(r.dataInizio).toLocaleDateString()} → {r.nuovoTasso}% ({r.nuovoTipoTasso})</span>
+                                      <span>{parseUTCDate(r.dataInizio).toLocaleDateString('it-IT', { timeZone: 'UTC' })} → {r.nuovoTasso}% ({r.nuovoTipoTasso})</span>
                                       <button type="button" onClick={() => setRinegoziazioni(prev => prev.filter((_, j) => j !== i))} className="text-red-400"><X size={10} /></button>
                                     </div>
                                   ))}
@@ -1199,7 +1199,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       head: [['Data', 'Descrizione / Cliente', 'Commessa', 'Imponibile', 'IVA %', 'Totale Lordo']],
       body: txs.length > 0
         ? txs.map(t => [
-            new Date(t.date).toLocaleDateString('it-IT'),
+            parseUTCDate(t.date).toLocaleDateString('it-IT', { timeZone: 'UTC' }),
             t.description || '-',
             t.project || '-',
             CURRENCY_FORMATTER.format(t.amount),
@@ -1504,7 +1504,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                             ) : (
                                 getCellTransactions(breakdownView.key, breakdownView.monthIndex, false).map(t => (
                                     <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="py-3 text-slate-500 font-mono text-xs">{new Date(t.date).toLocaleDateString('it-IT')}</td>
+                                        <td className="py-3 text-slate-500 font-mono text-xs">{parseUTCDate(t.date).toLocaleDateString('it-IT', { timeZone: 'UTC' })}</td>
                                         <td className="py-3 font-medium text-slate-700 text-xs">
                                             {t.description}
                                             {t.project && <span className="block text-[9px] text-slate-400 font-normal">{t.project}</span>}

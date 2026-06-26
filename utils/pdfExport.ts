@@ -116,7 +116,7 @@ export const esportaPDF = async (config: PDFReportConfig): Promise<void> => {
         const ctx = sliceCanvas.getContext('2d')!;
         ctx.drawImage(canvas, 0, -srcY);
         const sliceData = sliceCanvas.toDataURL('image/png');
-        const sliceH_pdf = altezzaDisponibile;
+        const sliceH_pdf = (sliceCanvas.height / sliceCanvas.width) * imgPdfW;
         pdf.addImage(sliceData, 'PNG', 10,
           i === 0 ? margineTop : 14,
           imgPdfW, sliceH_pdf);

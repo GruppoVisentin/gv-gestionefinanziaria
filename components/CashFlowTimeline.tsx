@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project } from '../types';
-import { fetchEuriborRates } from '../services/geminiService';
+import { fetchEuriborRates, generateFinancialReportPDFAnalysis } from '../services/geminiService';
 import { CURRENCY_FORMATTER, VARIABLE_COST_CATEGORIES } from '../constants';
 import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Database, Search, RefreshCw, Pencil, CheckCircle2, Building2 } from 'lucide-react';
 import PDFExportButton from './PDFExportButton';
@@ -46,6 +46,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const [isEditingBalance, setIsEditingBalance] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [editingLoanId, setEditingLoanId] = useState<string | null>(null);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [includeAI, setIncludeAI] = useState(false);
   
   // Local state for editing form
   const [tempAccounts, setTempAccounts] = useState<BankAccount[]>([]);
@@ -848,6 +850,70 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const tempTotalAssets = tempAccounts.reduce((sum, a) => sum + a.balance, 0);
   const tempTotalLoans = tempLoans.reduce((sum, l) => sum + l.originalAmount, 0);
 
+  const handleExportPDF = async () => {
+    setIsGeneratingPDF(true);
+    let aiAnalysisText: string | undefined = undefined;
+
+    if (includeAI) {
+      let actualIncome = 0;
+      let actualExpense = 0;
+      let forecastIncome = 0;
+      let forecastExpense = 0;
+
+      const meseCorrente = new Date().getMonth();
+      const isAnnoCorrente = currentYear === new Date().getFullYear();
+
+      transactions.forEach(t => {
+        const d = parseUTCDate(t.date);
+        if (d.getUTCFullYear() !== currentYear) return;
+        
+        const amount = t.amount + (t.vatRate ? (t.amount * t.vatRate / 100) : 0);
+        const isActual = !t.isForecast && (isAnnoCorrente ? d.getUTCMonth() <= meseCorrente : true);
+
+        if (isActual) {
+          if (t.type === 'INCOME') actualIncome += amount;
+          else if (t.type === 'EXPENSE') actualExpense += amount;
+        } else if (t.isForecast) {
+          if (t.type === 'INCOME') forecastIncome += amount;
+          else if (t.type === 'EXPENSE') forecastExpense += amount;
+        }
+      });
+
+      const actualNet = actualIncome - actualExpense;
+      const forecastNet = forecastIncome - forecastExpense;
+      const endOfYearBalance = saldoInizialePrevisionale + actualNet + forecastNet;
+
+      const dataToAnalyze = {
+        actualIncome: CURRENCY_FORMATTER.format(actualIncome),
+        actualExpense: CURRENCY_FORMATTER.format(actualExpense),
+        actualNet: CURRENCY_FORMATTER.format(actualNet),
+        forecastIncome: CURRENCY_FORMATTER.format(forecastIncome),
+        forecastExpense: CURRENCY_FORMATTER.format(forecastExpense),
+        forecastNet: CURRENCY_FORMATTER.format(forecastNet),
+        endOfYearBalance: CURRENCY_FORMATTER.format(endOfYearBalance)
+      };
+
+      aiAnalysisText = await generateFinancialReportPDFAnalysis(dataToAnalyze);
+    }
+
+    exportCashFlowProjectionPDF({
+      transactions,
+      currentYear,
+      projects,
+      initialData: {
+        accounts: initialData.accounts,
+        loans: initialData.loans,
+        previousFinancing: initialData.previousFinancing,
+        accontiClienti: initialData.accontiClienti,
+        altriDebitiBT: initialData.altriDebitiBT,
+        mutuiBT: initialData.mutuiBT
+      },
+      aiAnalysis: aiAnalysisText
+    });
+
+    setIsGeneratingPDF(false);
+  };
+
   return (
     <div className="bg-[#222222] rounded-2xl shadow-lg border border-slate-800 flex flex-col animate-in fade-in duration-500 mt-4 overflow-hidden relative">
       
@@ -1477,26 +1543,32 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
           </div>
 
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => exportCashFlowProjectionPDF({
-                transactions,
-                currentYear,
-                projects,
-                initialData: {
-                  accounts: initialData.accounts,
-                  loans: initialData.loans,
-                  previousFinancing: initialData.previousFinancing,
-                  accontiClienti: initialData.accontiClienti,
-                  altriDebitiBT: initialData.altriDebitiBT,
-                  mutuiBT: initialData.mutuiBT
-                }
-              })}
-              className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-black/20"
-              title="Esporta Report Proiezione Annuale Cash Flow"
-            >
-              <FileText size={14} />
-              <span className="hidden sm:inline">Report Proiezione</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-center gap-2 bg-slate-800/50 p-1.5 rounded-lg border border-slate-700/50">
+              <label className="flex items-center gap-2 cursor-pointer px-2">
+                <input 
+                  type="checkbox" 
+                  checked={includeAI}
+                  onChange={(e) => setIncludeAI(e.target.checked)}
+                  className="w-3 h-3 text-emerald-500 rounded border-slate-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span className="text-[10px] font-bold text-emerald-400">Analisi AI</span>
+              </label>
+              <button
+                onClick={handleExportPDF}
+                disabled={isGeneratingPDF}
+                className="flex items-center gap-2 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-bold transition-all shadow shadow-black/20 disabled:opacity-50"
+                title="Esporta Report Proiezione Annuale Cash Flow"
+              >
+                {isGeneratingPDF ? (
+                  <RefreshCw size={14} className="animate-spin text-emerald-500" />
+                ) : (
+                  <FileText size={14} />
+                )}
+                <span className="hidden sm:inline">
+                  {isGeneratingPDF ? "Elaborazione..." : "Report Proiezione"}
+                </span>
+              </button>
+            </div>
             <HelpButton onClick={() => setShowHelp(true)} />
             <PDFExportButton 
               config={{

@@ -760,7 +760,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       head: [['Data', 'Descrizione / Fornitore', 'Commessa', 'Imponibile', 'IVA %', 'Totale Lordo']],
       body: txs.length > 0
         ? txs.map(t => [
-            new Date(t.date).toLocaleDateString('it-IT'),
+            parseUTCDate(t.date).toLocaleDateString('it-IT', { timeZone: 'UTC' }),
             t.description || '-',
             t.project || '-',
             CURRENCY_FORMATTER.format(t.amount),
@@ -908,7 +908,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                             ) : (
                                 getCellTransactions(breakdownView.category, breakdownView.monthIndex, false).map(t => (
                                     <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="py-3 text-slate-500 font-mono text-xs">{new Date(t.date).toLocaleDateString('it-IT')}</td>
+                                        <td className="py-3 text-slate-500 font-mono text-xs">{parseUTCDate(t.date).toLocaleDateString('it-IT', { timeZone: 'UTC' })}</td>
                                         <td className="py-3 font-medium text-slate-700 text-xs">{t.description}{t.project && <span className="block text-[9px] text-slate-400 font-normal">{t.project}</span>}</td>
                                         <td className="py-3 text-right font-mono text-xs text-slate-600">{CURRENCY_FORMATTER.format(t.amount)}</td>
                                         <td className="py-3 text-right font-mono text-xs text-slate-400">
@@ -1448,7 +1448,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                                 <div className="flex gap-2"><input type="date" value={newActualDate} onChange={e => setNewActualDate(e.target.value)} className="w-2/3 pl-2 py-1 text-[10px] border rounded text-slate-900" /><input type="text" value={newActualInvoiceRef} onChange={e => setNewActualInvoiceRef(e.target.value)} className="w-1/3 px-1 py-1 text-[10px] border rounded text-slate-900" placeholder="Rif." /></div>
                                                                 <input type="text" list={`actual-suppliers-${category}-${mIdx}`} value={newActualSupplier} onChange={e => setNewActualSupplier(e.target.value)} className="w-full text-xs p-1.5 border rounded text-slate-900" placeholder="Fornitore" /><datalist id={`actual-suppliers-${category}-${mIdx}`}>{getSuppliersForCategory(category).map((s,i) => <option key={i} value={s} />)}</datalist>
                                                                 <select value={newActualProject} onChange={(e) => setNewActualProject(e.target.value)} className="w-full text-[10px] p-1.5 border rounded bg-white text-slate-900"><option value="">-- Commessa --</option>{projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}</select>
-                                                                <div className="flex gap-2"><input type="number" step="0.01" value={newActualAmount} onChange={e => setNewActualAmount(e.target.value)} className="w-2/3 text-xs p-1.5 border rounded text-slate-900" placeholder="€" /><select value={newActualVat} onChange={e => setNewActualVat(e.target.value)} className="w-1/3 text-xs p-1.5 border rounded text-slate-900"><option value="22">22%</option><option value="10">10%</option><option value="4">4%</option></select></div>
+                                                                <div className="flex gap-2"><input type="number" step="0.01" value={newActualAmount} onChange={e => setNewActualAmount(e.target.value)} className="w-2/3 text-xs p-1.5 border rounded text-slate-900" placeholder="€" /><select value={newActualVat} onChange={e => setNewActualVat(e.target.value)} className="w-1/3 text-xs p-1.5 border rounded text-slate-900"><option value="22">22%</option><option value="10">10%</option><option value="4">4%</option><option value="0">0%</option></select></div>
                                                                 
                                                                 {/* Info origine — solo in lettura se transazione importata */}
                                                                 {editingActualId && (() => {
@@ -1637,7 +1637,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                                 <div className="flex gap-2"><input type="date" value={newActualDate} onChange={e => setNewActualDate(e.target.value)} className="w-2/3 pl-2 py-1 text-[10px] border rounded text-slate-900" /><input type="text" value={newActualInvoiceRef} onChange={e => setNewActualInvoiceRef(e.target.value)} className="w-1/3 px-1 py-1 text-[10px] border rounded text-slate-900" placeholder="Rif." /></div>
                                                                 <input type="text" list={`actual-suppliers-${category}-${mIdx}`} value={newActualSupplier} onChange={e => setNewActualSupplier(e.target.value)} className="w-full text-xs p-1.5 border rounded text-slate-900" placeholder="Fornitore" /><datalist id={`actual-suppliers-${category}-${mIdx}`}>{getSuppliersForCategory(category).map((s,i) => <option key={i} value={s} />)}</datalist>
                                                                 <select value={newActualProject} onChange={(e) => setNewActualProject(e.target.value)} className="w-full text-[10px] p-1.5 border rounded bg-white text-slate-900"><option value="">-- Commessa --</option>{projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}</select>
-                                                                <div className="flex gap-2"><input type="number" step="0.01" value={newActualAmount} onChange={e => setNewActualAmount(e.target.value)} className="w-2/3 text-xs p-1.5 border rounded text-slate-900" placeholder="€" /><select value={newActualVat} onChange={e => setNewActualVat(e.target.value)} className="w-1/3 text-xs p-1.5 border rounded text-slate-900"><option value="22">22%</option><option value="10">10%</option><option value="4">4%</option></select></div>
+                                                                <div className="flex gap-2"><input type="number" step="0.01" value={newActualAmount} onChange={e => setNewActualAmount(e.target.value)} className="w-2/3 text-xs p-1.5 border rounded text-slate-900" placeholder="€" /><select value={newActualVat} onChange={e => setNewActualVat(e.target.value)} className="w-1/3 text-xs p-1.5 border rounded text-slate-900"><option value="22">22%</option><option value="10">10%</option><option value="4">4%</option><option value="0">0%</option></select></div>
                                                                 
                                                                 {/* Info origine — solo in lettura se transazione importata */}
                                                                 {editingActualId && (() => {

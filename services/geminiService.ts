@@ -332,3 +332,44 @@ export const generateCardInsight = async (
     return "";
   }
 };
+
+export const generateFinancialReportPDFAnalysis = async (data: any): Promise<string> => {
+  if (!apiKey) {
+    return "API Key mancante per l'analisi AI.";
+  }
+
+  try {
+    const prompt = `
+      Agisci come il CFO (Chief Financial Officer) esperto di "Gruppo Visentin SRL", un'impresa edile.
+      Il CEO sta leggendo il Report di Cash Flow (Consuntivo vs Previsionale) e ti ha chiesto un'analisi direzionale e consigli operativi su come ottimizzare le risorse.
+
+      I dati sintetici sono i seguenti:
+      - Entrate Consuntive (da inizio anno ad oggi): ${data.actualIncome} €
+      - Uscite Consuntive: ${data.actualExpense} €
+      - Flusso di cassa netto consuntivo: ${data.actualNet} €
+      
+      - Entrate Previsionali (da oggi a fine anno): ${data.forecastIncome} €
+      - Uscite Previsionali: ${data.forecastExpense} €
+      - Flusso di cassa netto previsionale: ${data.forecastNet} €
+      
+      - Saldo di cassa teorico a fine anno: ${data.endOfYearBalance} €
+
+      Elabora un breve documento Markdown che:
+      1. Evidenzi in modo critico ma professionale il trend attuale (stiamo bruciando cassa o creando valore?).
+      2. Metti a confronto l'andamento reale vs quello che ci aspetta (previsionale).
+      3. Fornisci 3 azioni correttive (es. negoziazione scadenze fornitori, accelerazione incassi, rinegoziazione debiti) mirate e pratiche per l'impresa edile, in base alla situazione (se c'è deficit, fai raccomandazioni dure; se c'è surplus, consiglia come allocarlo/proteggerlo).
+
+      Restituisci ESCLUSIVAMENTE testo formattato in Markdown (titoli H2, H3, elenchi puntati), senza altri preamboli.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+    });
+
+    return response.text?.trim() || "Nessuna analisi generata.";
+  } catch (error) {
+    console.error("Gemini PDF analysis error:", error);
+    return "Errore durante la generazione dell'analisi AI.";
+  }
+};

@@ -100,15 +100,11 @@ export const calculateOverheadRates = (
   const incidenzaFissiFatturato     = totaleOverheadPuro / baseFatt;
   const incidenzaCompletaFatturato  = totaleOverheadCompleto / baseFatt;
 
-  // Proiezione
+  // Proiezione (Spostata a fine funzione per includere previsionali)
   const oggi = new Date();
   const mesiTrascorsi = anno < oggi.getFullYear()
     ? 12
     : Math.max(1, oggi.getMonth() + 1);
-  const fattoreProiezione = 12 / mesiTrascorsi;
-  const overheadRateProiettato =
-    (totaleOverheadCompleto * fattoreProiezione) /
-    Math.max(1, totaleCostiDiretti * fattoreProiezione);
 
   // --- CALCOLO PREVISIONALI ---
   const txAnnoPrev = transactions.filter(tx => {
@@ -154,6 +150,10 @@ export const calculateOverheadRates = (
   const incidenzaStudioFatturatoPrev    = totaleCostiStudioPrev / baseFattPrev;
   const incidenzaFissiFatturatoPrev     = totaleOverheadPuroPrev / baseFattPrev;
   const incidenzaCompletaFatturatoPrev  = totaleOverheadCompletoPrev / baseFattPrev;
+
+  const overheadRateProiettato =
+    (totaleOverheadCompleto + totaleOverheadCompletoPrev) /
+    Math.max(1, totaleCostiDiretti + totaleCostiDirettiPrev);
 
   return {
     totaleCostiDiretti,

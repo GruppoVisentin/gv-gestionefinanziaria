@@ -16,13 +16,15 @@ interface CashFlowPdfOptions {
     altriDebitiBT?: number;
     mutuiBT?: number;
   };
+  aiAnalysis?: string;
 }
 
 export const exportCashFlowProjectionPDF = ({
   transactions,
   currentYear,
   projects,
-  initialData
+  initialData,
+  aiAnalysis
 }: CashFlowPdfOptions) => {
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pdfW = pdf.internal.pageSize.getWidth();
@@ -307,10 +309,11 @@ export const exportCashFlowProjectionPDF = ({
   currentY += 8;
 
   const avgMonthlyExpense = monthlyData.reduce((sum, d) => sum + d.expense, 0) / 12;
-  const minBalance = Math.min(...tableRows.filter(r => typeof r[4] === 'object').map(r => {
+  const minBalance = Math.min(...tableRows.filter(r => typeof r[4] === 'object' && r[4].content !== '-').map(r => {
       const val = r[4].content.replace(/[^0-9,-]/g, '').replace(',', '.');
-      return parseFloat(val);
-  }));
+      const parsed = parseFloat(val);
+      return isNaN(parsed) ? Infinity : parsed;
+  }).filter(v => v !== Infinity));
 
   const summaryData = [
     ['Saldo Iniziale Disponibile', CURRENCY_FORMATTER.format(totalInitialBalance)],
@@ -383,6 +386,31 @@ export const exportCashFlowProjectionPDF = ({
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
     pdf.text('• Nessuna criticità di cassa rilevata nel periodo analizzato.', 15, currentY);
+  }
+
+  // --- ANALISI AI (OPZIONALE) ---
+  if (aiAnalysis) {
+    pdf.addPage();
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(41, 128, 185); // Blue color for AI Header
+    pdf.text('Analisi Direzionale e Suggerimenti AI (Gemini)', 10, 30);
+    
+    let aiY = 40;
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(40, 40, 40);
+
+    const splitText = pdf.splitTextToSize(aiAnalysis.replace(/\*\*/g, '').replace(/#/g, ''), pdfW - 20);
+    
+    splitText.forEach((line: string) => {
+      if (aiY > pdfH - 30) {
+        pdf.addPage();
+        aiY = 30;
+      }
+      pdf.text(line, 10, aiY);
+      aiY += 5;
+    });
   }
 
   // Finalize

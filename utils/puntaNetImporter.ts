@@ -5,13 +5,29 @@ import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 const safeParseFloat = (val: any): number => {
   if (typeof val === 'number') return val;
-  const str = String(val ?? '').trim();
+  let str = String(val ?? '').trim();
   if (!str) return NaN;
+  str = str.replace(/[^\d.,-]/g, ''); // Remove currency symbols, spaces, etc.
   if (str.includes('.') && str.includes(',')) {
-    return parseFloat(str.replace(/\./g, '').replace(',', '.'));
-  }
-  if (str.includes(',')) {
-    return parseFloat(str.replace(',', '.'));
+    const lastDot = str.lastIndexOf('.');
+    const lastComma = str.lastIndexOf(',');
+    if (lastComma > lastDot) {
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      str = str.replace(/,/g, '');
+    }
+  } else if (str.includes(',')) {
+    const parts = str.split(',');
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+      str = str.replace(/,/g, '');
+    } else {
+      str = str.replace(',', '.');
+    }
+  } else if (str.includes('.')) {
+    const parts = str.split('.');
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+      str = str.replace(/\./g, '');
+    }
   }
   return parseFloat(str);
 };
@@ -364,6 +380,7 @@ export const validaFileFEA = (workbook: XLSX.WorkBook, label: string = "Entrate 
 
 export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
+  if (!ws) return [];
   const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
 
   const risultati: PuntaNetRiga[] = [];
@@ -404,7 +421,14 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
       } else if (typeof val === 'number') {
         data = new Date((val - 25569) * 86400 * 1000);
       } else {
-        data = new Date(String(val));
+        const str = String(val).trim();
+        const itMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+        if (itMatch) {
+          const [_, d, m, y] = itMatch;
+          data = new Date(Date.UTC(parseInt(y), parseInt(m) - 1, parseInt(d)));
+        } else {
+          data = new Date(str);
+        }
       }
       if (isNaN(data.getTime())) continue;
     } catch {
@@ -448,6 +472,7 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
 
 export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP> => {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
+  if (!ws) return new Map();
   const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
   const map = new Map<string, DettFEP>();
 
@@ -534,7 +559,7 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
     if (desc.startsWith('FEP')) {
       salvaCorrente();
 
-      const numMatch = desc.match(/^FEP\s+([\S]+)\s+del/i);
+      const numMatch = desc.match(/^FEP\s+([\S]+)/i);
       const forMatch = desc.match(/del\s+\d{2}\/\d{2}\/\d{4}\s+(.+?)\s+-\s+\(Prot/i);
 
       if (numMatch) {
@@ -569,17 +594,17 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
 
     if (!current) continue;
 
-    const imp = typeof row[indexImp] === 'number' ? row[indexImp] : 0;
-    const tax = typeof row[indexTax] === 'number' ? row[indexTax] : 0;
-    const tot = typeof row[indexTot] === 'number' ? row[indexTot] : 0;
+    const imp = safeParseFloat(row[indexImp]);
+    const tax = safeParseFloat(row[indexTax]);
+    const tot = safeParseFloat(row[indexTot]);
     const codIva = String(row[indexCodIva] ?? '').trim();
     const cantiere = String(row[indexCantiere] ?? '').trim();
     const tipologia = String(row[indexTipologia] ?? '').trim();
     const categoria = String(row[indexCategoria] ?? '').trim();
 
-    current.imponibile += imp;
-    current.imposte += tax;
-    current.totale += tot;
+    current.imponibile += (imp || 0);
+    current.imposte += (tax || 0);
+    current.totale += (tot || 0);
 
     if (codIva && codIva !== 'X99') {
       current.aliquoteSet.add(codIva);
@@ -606,6 +631,7 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
 
 export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA> => {
   const ws = workbook.Sheets[workbook.SheetNames[0]];
+  if (!ws) return new Map();
   const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
   const map = new Map<string, DettFEA>();
 
@@ -639,7 +665,7 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
     if (!row || row.length === 0) continue;
     const desc = String(row[indexDesc] ?? '').trim();
 
-    const isFeaHeader = desc.match(/^FEA\s+\d+\/\d{4}\s+del/i) || 
+    const isFeaHeader = desc.match(/^FEA\s+\d+\/\d{4}/i) || 
                         desc.match(/^Emessa\s+FEA\s+n\.\s*(\d+)\s+(\d{4})/i) ||
                         desc.match(/^FEA\s+n\.\s*(\d+)\/(\d{4})/i);
 
@@ -647,7 +673,7 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
     if (isFeaHeader) {
       salvaCorrente();
 
-      let match = desc.match(/^FEA\s+(\d+)\/(\d{4})\s+del/i);
+      let match = desc.match(/^FEA\s+(\d+)\/(\d{4})/i);
       let cliMatch = desc.match(/del\s+\d{2}\/\d{2}\/\d{4}\s+(.+)$/i);
       
       if (!match) {
@@ -673,8 +699,10 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
           dataDocumento = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
         }
 
-        const isPrimaNota = headers[8] === 'BANCA' || headers[8] === 'CONTO';
-        const rowAmount = (isPrimaNota && typeof row[5] === 'number') ? row[5] : 0;
+        const indexBancaConto = findHeaderIndex(headers, ['BANCA', 'CONTO', 'B/I'], -1);
+        const isPrimaNota = indexBancaConto !== -1;
+        const indexAmount = findHeaderIndex(headers, ['IMPORTO', 'ENTRATE', 'ENTRAT', 'VALORE', 'TOTALE'], 5);
+        const rowAmount = isPrimaNota ? safeParseFloat(row[indexAmount]) : 0;
         current = {
           _key: `${match[1]}/${match[2]}`,
           numero: match[1],
@@ -696,14 +724,14 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
       }
     } else if (current) {
       // Riga di dettaglio: accumula valori
-      const imp = typeof row[indexImp] === 'number' ? row[indexImp] : 0;
-      const tot = typeof row[indexTot] === 'number' ? row[indexTot] : 0;
+      const imp = safeParseFloat(row[indexImp]);
+      const tot = safeParseFloat(row[indexTot]);
       const codIva = String(row[indexCodIva] ?? '').trim();
       const cantiere = String(row[indexCantiere] ?? '').trim();
       const dettaglio = String(row[indexDesc] ?? '').trim();
 
-      current.imponibile += imp;
-      current.totale += tot;
+      current.imponibile += (imp || 0);
+      current.totale += (tot || 0);
       // Prima aliquota IVA non vuota e non placeholder
       if (!current.codIva && codIva && codIva !== 'X99') current.codIva = codIva;
       // Primo cantiere non vuoto
@@ -970,7 +998,7 @@ export const classificaRiga = (
   // Automazione Ritenute Fiscali su Bonifici (Entrate/Uscite)
   if (/ritenuta fiscale su bonifico|ritenuta su bonifico|dedotta ritenuta/i.test(descLower) || /ritenuta fiscale su bonifico|ritenuta su bonifico|dedotta ritenuta/i.test(entLower)) {
     return {
-      categoria: '[FISCO] Ritenute su Bonifici (versate)',
+      categoria: riga.tipo === 'INCOME' ? '[FISCO] Ritenute Subite su Incassi' : '[FISCO] Ritenute su Bonifici (versate)',
       ceType: 'solo_cashflow',
       confidenza: 'alta',
       matchKey: 'automazione ritenute su bonifico',
@@ -1239,7 +1267,8 @@ export const suggerisciAliquotaIVADaCategoria = (categoria: string): AliquotaIVA
     '[CANTIERE] SAL — Stato Avanzamento Lavori',
     '[CANTIERE] Saldo Finale Commessa',
     '[CANTIERE] Manutenzioni e Piccoli Lavori',
-    '[CANTIERE] Subappalti Manodopera',
+    '[PERSONALE] Subappalti Manodopera',
+    '[FORNITORI] Subappalti su Cantieri',
     '[CANTIERE] Pranzi e Trasferte Cantiere',
     '[IMMOBILIARE] Vendita Immobili e Terreni',
     '[IMMOBILIARE] Affitti Attivi',

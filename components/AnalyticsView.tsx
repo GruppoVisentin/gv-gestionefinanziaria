@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { parseUTCDate } from '../utils/gasCoreEngine';
 import { Transaction, TransactionType, Project } from '../types';
 import { CURRENCY_FORMATTER } from '../constants';
 import { 
@@ -105,11 +106,11 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
     // Income Processing
     const filteredIncome = getFilteredTransactionsByType(transactions, TransactionType.INCOME, typeFilterIncome);
     filteredIncome.forEach(t => {
-        const tDate = new Date(t.date);
-        if (tDate.getFullYear() !== selectedYear) return;
+        const tDate = parseUTCDate(t.date);
+        if (tDate.getUTCFullYear() !== selectedYear) return;
         if (selectedProject !== 'all' && (t.project || '') !== selectedProject) return; // Apply Global Project Filter
 
-        const month = tDate.getMonth();
+        const month = tDate.getUTCMonth();
         const gross = t.amount * (1 + (t.vatRate || 0) / 100);
         if (t.isForecast) data[month].EntratePreviste += gross;
         else data[month].EntrateReali += gross;
@@ -118,11 +119,11 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
     // Expense Processing
     const filteredExpense = getFilteredTransactionsByType(transactions, TransactionType.EXPENSE, typeFilterExpense);
     filteredExpense.forEach(t => {
-        const tDate = new Date(t.date);
-        if (tDate.getFullYear() !== selectedYear) return;
+        const tDate = parseUTCDate(t.date);
+        if (tDate.getUTCFullYear() !== selectedYear) return;
         if (selectedProject !== 'all' && (t.project || '') !== selectedProject) return;
 
-        const month = tDate.getMonth();
+        const month = tDate.getUTCMonth();
         const gross = t.amount * (1 + (t.vatRate || 0) / 100);
         if (t.isForecast) data[month].UscitePreviste += gross;
         else data[month].UsciteReali += gross;
@@ -140,15 +141,15 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
   // 2. SPECIFIC CHART DATA MEMOS
   const cashFlowChartData = useMemo(() => 
       generateComparisonData(cashFlowTime, 'ALL', 'ALL'), 
-  [transactions, selectedYear, selectedProject, cashFlowTime]);
+  [transactions, selectedYear, selectedProject, cashFlowTime, fixedCategories]);
 
   const incomeChartData = useMemo(() => 
       generateComparisonData(incomeFilter.time, incomeFilter.type, 'ALL'), 
-  [transactions, selectedYear, selectedProject, incomeFilter]);
+  [transactions, selectedYear, selectedProject, incomeFilter, fixedCategories]);
 
   const expenseChartData = useMemo(() => 
       generateComparisonData(expenseFilter.time, 'ALL', expenseFilter.type), 
-  [transactions, selectedYear, selectedProject, expenseFilter]);
+  [transactions, selectedYear, selectedProject, expenseFilter, fixedCategories]);
 
 
   // Calculate Summaries for Tables (Based on Chart Data)
