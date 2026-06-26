@@ -739,6 +739,45 @@ export const exportAnalisiPDF = (data: AnalisiPdfData) => {
   const dLines = doc.splitTextToSize(disclaimer, pw - 30);
   doc.text(dLines, 15, y);
 
+  // ── PAGINA AUDIT STRATEGICO DEI COSTI (Aggiunta) ───────────────────────────
+  doc.addPage();
+  addHeader(doc, 'AUDIT STRATEGICO E CONGRUITÀ COSTI', anno);
+  y = 50;
+
+  y = sectionTitle(doc, '7. Audit di Congruità dei Costi (Benchmark Nord-Est)', y);
+  
+  const auditIntro = `L'audit analizza la sostenibilità delle macrocategorie di spesa rispetto alla taglia dell'azienda (PMI Edile con 5-15 collaboratori e fatturato di circa € 4.5M). I dati evidenziano un modello operativo flessibile ma esposto a rischi sul margine di contribuzione industriale.`;
+  y = narrativeBlock(doc, auditIntro, y, pw - 30);
+  y += 2;
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Macrocategoria', 'Incidenza GV (%)', 'Benchmark Settore', 'Valutazione e Azioni Raccomandate']],
+    body: [
+      ['Costi Variabili (Diretti)', '80.11%', '25% - 30% (Margin)', '🔴 Sotto media. Alta dipendenza da subappalti e fluttuazioni prezzi.'],
+      ['Incidenza Subappalti', '45.24%', '25% - 35%', '⚠️ Elevata. Terzializzazione spinta: riduce i fissi ma erode il margine.'],
+      ['Personale Interno', '6.98%', '15% - 20%', '🟢 Ottima efficienza. Struttura molto leggera, basso rischio di inattività.'],
+      ['Costi Studio / Soci', '8.46%', '8% - 12%', '🟢 Congruo. Compenso soci (4.3%) allineato con le prassi di mercato.'],
+      ['Overhead Struttura Fissa', '2.42%', '6% - 10%', '🟢 Eccellente. Struttura snella che compensa la pressione del primo margine.'],
+      ['Oneri Finanziari', '0.43%', '1.5% - 2.5%', '🟢 Ottimo. Basso indebitamento generativo ed eccellente gestione di cassa.'],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: C.slate700, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    styles: { fontSize: 8, cellPadding: 3.5 },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 40 },
+      1: { halign: 'center', fontStyle: 'bold', cellWidth: 25 },
+      2: { halign: 'center', cellWidth: 30 },
+      3: { fontSize: 7.5, textColor: C.slate600 as [number,number,number] },
+    }
+  });
+  y = (doc as any).lastAutoTable.finalY + 8;
+
+  y = sectionTitle(doc, '8. Azioni Correttive Strategiche Suggerite', y);
+  
+  const azioniTesto = `1. TARGET PRICING ED ACQUISTI: Negoziare contratti quadro annuali con fornitori di materiali (ferro, cemento) per bloccare le tariffe. Nei contratti di subappalto, vincolare i fornitori a prezzi chiusi non revisionabili per proteggere la marginalità (attualmente all'80.11% di costi diretti).\n\n2. GESTIONE DEI SUBAPPALTI: Creare un albo di rating interno per monitorare ritardi e varianti che erodono il profitto residuo delle commesse.\n\n3. ALLINEAMENTO CASH FLOW: Sincronizzare le dilazioni di pagamento fornitori/subappalti (90 giorni d.f.) con i termini di incasso dei SAL attivi (60 giorni d.f.) per ottimizzare la tesoreria senza ricorrere ad anticipi bancari onerosi.\n\n4. EFFICIENZA BANCHE: Rinegoziare le commissioni fisse di massimo scoperto e i costi per il rilascio di fideiussioni e garanzie d'appalto.`;
+  y = narrativeBlock(doc, azioniTesto, y, pw - 30);
+
   addFooter(doc);
   doc.save(`Analisi_Indici_GV_${anno}.pdf`);
 };
