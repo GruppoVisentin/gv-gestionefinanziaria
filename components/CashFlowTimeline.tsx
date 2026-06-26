@@ -359,7 +359,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const calculateProjectCostForMonth = (category: string, monthIndex: number) => {
       let total = 0;
       projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
-          const start = new Date(p.estimatedStartDate!);
+          const start = parseUTCDate(p.estimatedStartDate!);
           const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
           const targetMonthGlobal = currentYear * 12 + monthIndex;
           const diff = targetMonthGlobal - startMonthGlobal;
@@ -380,7 +380,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const calculateProjectRevenueForMonth = (monthIndex: number) => {
       let total = 0;
       projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
-          const start = new Date(p.estimatedStartDate!);
+          const start = parseUTCDate(p.estimatedStartDate!);
           const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
           const targetMonthGlobal = currentYear * 12 + monthIndex;
           const diff = targetMonthGlobal - startMonthGlobal;
@@ -543,7 +543,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       }
     }
     return result;
-  }, [transactions, saldoInizialeConsuntivo, safetyThreshold, currentYear]);
+  }, [transactions, saldoInizialeConsuntivo, safetyThreshold, currentYear, projects, initialData, tempLoans]);
 
   const getBalanceColor = (balance: number) => {
       if (balance < 1) return 'text-rose-500 font-bold'; 

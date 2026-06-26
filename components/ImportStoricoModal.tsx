@@ -20,6 +20,29 @@ const CURRENCY = new Intl.NumberFormat('it-IT', {
 const colEntrataCons = (m: number) => 4 + m * 5;
 const colUscitaCons  = (m: number) => 6 + m * 5;
 
+const safeParseFloat = (val: any): number => {
+  if (typeof val === 'number') return val;
+  if (typeof val !== 'string') return NaN;
+  let str = val.trim();
+  if (str === '-' || str === '') return 0;
+  if (str.includes(',') && str.includes('.')) {
+    const lastComma = str.lastIndexOf(',');
+    const lastDot = str.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      str = str.replace(/,/g, '');
+    }
+  } else if (str.includes(',')) {
+    if (str.split(',').length > 2 || str.match(/,\d{3}$/)) {
+      str = str.replace(/,/g, '');
+    } else {
+      str = str.replace(',', '.');
+    }
+  }
+  return parseFloat(str.replace(/[^\d.-]/g, ''));
+};
+
 // ─── MAPPATURA CATEGORIE EXCEL → APP ─────────────────────────────
 
 const MAPPA_USCITE: Record<string, { categoria: string; ceType: string }> = {
@@ -164,8 +187,9 @@ const parseExcelStorico = async (file: File, anniSelezionati: Set<number>): Prom
         if (isFinanziamento) continue;
 
         for (let m = 0; m < 12; m++) {
-          const val = row[colEntrataCons(m)];
-          if (!val || typeof val !== 'number' || val <= 0) continue;
+          const rawVal = row[colEntrataCons(m)];
+          const val = safeParseFloat(rawVal);
+          if (isNaN(val) || val <= 0) continue;
 
           righe.push({
             id: uuidv4(),
@@ -187,8 +211,9 @@ const parseExcelStorico = async (file: File, anniSelezionati: Set<number>): Prom
         const mapped = mappaUscita(label);
 
         for (let m = 0; m < 12; m++) {
-          const val = row[colUscitaCons(m)];
-          if (!val || typeof val !== 'number' || val <= 0) continue;
+          const rawVal = row[colUscitaCons(m)];
+          const val = safeParseFloat(rawVal);
+          if (isNaN(val) || val <= 0) continue;
 
           righe.push({
             id: uuidv4(),

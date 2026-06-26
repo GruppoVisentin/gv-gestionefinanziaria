@@ -1382,7 +1382,7 @@ const CEView: React.FC<CEViewProps> = ({
                     { label: 'EBIT', ytd: metrics.ebitTot, proj: getProjVal(metrics.proiezioneEbit, (metrics.ebitTot / metrics.mesiTrascorsi) * 12) },
                     { label: 'Utile Netto', ytd: metrics.utileNettoTot, proj: metrics.proiezioneUtile, isBold: true, color: 'text-slate-900' },
                   ].map((row, i) => (
-                    <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                    <tr key={row.label} className="hover:bg-slate-50/50 transition-colors">
                       <td className={`py-4 px-4 text-xs ${row.isBold ? 'font-black uppercase' : 'font-medium text-slate-600'}`}>
                         {row.label}
                       </td>
@@ -1443,7 +1443,7 @@ const CEView: React.FC<CEViewProps> = ({
               </button>
               {MONTHS.map((m, i) => (
                 <button
-                  key={i}
+                  key={m}
                   onClick={() => setMeseScostamento(i)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${meseScostamento === i ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                 >
@@ -1500,7 +1500,7 @@ const CEView: React.FC<CEViewProps> = ({
                       : riga.scostamentoPrevPct < -0.05 ? '○' : '◌';
 
                     return (
-                      <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/50">
+                      <tr key={riga.label} className="border-b border-slate-100 hover:bg-slate-50/50">
                         <td className="py-3 px-4 text-xs font-bold text-slate-700 sticky left-0 bg-white z-10">
                           {riga.label}
                         </td>

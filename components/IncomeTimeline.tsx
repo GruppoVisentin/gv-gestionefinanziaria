@@ -192,7 +192,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       let total = 0;
       availableProjects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
           if (projectName && p.name.trim() !== projectName) return;
-          const start = new Date(p.estimatedStartDate!);
+          const start = parseUTCDate(p.estimatedStartDate!);
           const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
           const targetMonthGlobal = currentYear * 12 + monthIndex;
           const diff = targetMonthGlobal - startMonthGlobal;
@@ -1062,7 +1062,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                             {CURRENCY_FORMATTER.format(getGrossAmount(f))}
                                             </span>
                                             <span className="text-[10px] text-slate-400 whitespace-nowrap">
-                                            del {DATE_FORMATTER.format(new Date(f.date))}
+                                            del {DATE_FORMATTER.format(parseUTCDate(f.date))}
                                             </span>
                                         </div>
                                         <span className="text-xs text-slate-500 truncate w-full group-hover:text-slate-700">

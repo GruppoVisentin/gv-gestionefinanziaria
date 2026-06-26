@@ -6,6 +6,7 @@ import { CATEGORY_TO_CE_TYPE } from '../constants';
  * partendo da una stringa 'YYYY-MM-DD'.
  */
 export const parseUTCDate = (dateStr: string): Date => {
+  if (!dateStr) return new Date(NaN);
   const parts = dateStr.split('-');
   if (parts.length === 3) {
     const y = parseInt(parts[0], 10);
@@ -108,7 +109,9 @@ export const calculateRepayment = (
 
   let rinegoziazioni: any[] = [];
   if (details.rinegoziazioni && Array.isArray(details.rinegoziazioni)) {
-    rinegoziazioni = [...details.rinegoziazioni].sort((a, b) => parseUTCDate(a.dataInizio).getTime() - parseUTCDate(b.dataInizio).getTime());
+    rinegoziazioni = [...details.rinegoziazioni]
+      .filter(r => r.dataInizio && !isNaN(parseUTCDate(r.dataInizio).getTime()))
+      .sort((a, b) => parseUTCDate(a.dataInizio).getTime() - parseUTCDate(b.dataInizio).getTime());
   }
 
   const amortizationStart = !isNaN(princStart.getTime()) ? princStart : intStart;
@@ -126,8 +129,18 @@ export const calculateRepayment = (
   const msPerDay = 1000 * 60 * 60 * 24;
 
   if (targetDate >= intStart && targetDate < amortizationStart) {
+    const getSafeMonthDate = (startDate: Date, addMonths: number) => {
+      const y = startDate.getUTCFullYear();
+      const m = startDate.getUTCMonth() + addMonths;
+      const d = startDate.getUTCDate();
+      const targetDate = new Date(Date.UTC(y, m, 1));
+      const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      targetDate.setUTCDate(Math.min(d, lastDay));
+      return targetDate;
+    };
+
     const rate = getRateForDate(targetDate);
-    const prevMonthDate = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth() - 1, targetDate.getUTCDate()));
+    const prevMonthDate = getSafeMonthDate(targetDate, -1);
     const startDateForCalc = prevMonthDate < intStart ? intStart : prevMonthDate;
     const days = Math.round((targetDate.getTime() - startDateForCalc.getTime()) / msPerDay);
     
@@ -150,19 +163,29 @@ export const calculateRepayment = (
   let resPrinc = 0;
   let resInt = 0;
 
+  const getSafeMonthDate = (startDate: Date, addMonths: number) => {
+    const y = startDate.getUTCFullYear();
+    const m = startDate.getUTCMonth() + addMonths;
+    const d = startDate.getUTCDate();
+    const targetDate = new Date(Date.UTC(y, m, 1));
+    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    targetDate.setUTCDate(Math.min(d, lastDay));
+    return targetDate;
+  };
+
   // Simulazione stateful mese per mese
   for (let m = 1; m <= monthsPassed; m++) {
-    const currentMonthDate = new Date(Date.UTC(amortizationStart.getUTCFullYear(), amortizationStart.getUTCMonth() + m, amortizationStart.getUTCDate()));
+    const currentMonthDate = getSafeMonthDate(amortizationStart, m);
     const rate = getRateForDate(currentMonthDate);
     const i = (rate / 100) / 12;
-    const monthsRemaining = n - (m - 1);
+    const monthsRemaining = Math.max(1, n - (m - 1));
     
     // Ricalcola la rata fissa sul capitale residuo
     const rataFissa = i > 0
       ? residualCapital * (i * Math.pow(1 + i, monthsRemaining)) / (Math.pow(1 + i, monthsRemaining) - 1)
       : residualCapital / monthsRemaining;
 
-    const prevMonthDate = new Date(Date.UTC(amortizationStart.getUTCFullYear(), amortizationStart.getUTCMonth() + m - 1, amortizationStart.getUTCDate()));
+    const prevMonthDate = getSafeMonthDate(amortizationStart, m - 1);
     const startDateForCalc = prevMonthDate < intStart ? intStart : prevMonthDate;
     const days = Math.round((currentMonthDate.getTime() - startDateForCalc.getTime()) / msPerDay);
     const dailyRate = (rate / 100) / 365;
@@ -829,8 +852,15 @@ export const calcPrevisioneFiscale = (
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
-  const creditoPregresso = Math.max(0, accontiPagatiAnnoPrec - imposteStoriche);
-  const saldoGiugnom = Math.max(0, imposteStoriche - accontiPagatiAnnoPrec);
+  const hasImposteStoriche = initialData?.imposteAnnoPrecedente !== undefined;
+  
+  const creditoPregresso = hasImposteStoriche 
+    ? Math.max(0, accontiPagatiAnnoPrec - imposteStoriche) 
+    : 0;
+
+  const saldoGiugnom = hasImposteStoriche 
+    ? Math.max(0, imposteStoriche - accontiPagatiAnnoPrec) 
+    : 0;
 
   // Imposte già versate (F24 IRES/IRAP registrati nel cash flow)
   const impostePagate = transactions

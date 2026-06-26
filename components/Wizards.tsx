@@ -131,8 +131,11 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
 
     const proposed = historical.map(tx => {
       const d = parseUTCDate(tx.date);
-      const dDay = Math.min(d.getUTCDate(), new Date(Date.UTC(targetYear, d.getUTCMonth() + 1, 0)).getUTCDate());
-      const newDate = new Date(Date.UTC(targetYear, d.getUTCMonth(), dDay)).toISOString().split('T')[0];
+      let newDate = `${targetYear}-01-01`; // Fallback sicuro
+      if (!isNaN(d.getTime())) {
+        const dDay = Math.min(d.getUTCDate(), new Date(Date.UTC(targetYear, d.getUTCMonth() + 1, 0)).getUTCDate());
+        newDate = new Date(Date.UTC(targetYear, d.getUTCMonth(), dDay)).toISOString().split('T')[0];
+      }
       return {
         id: generateId(),
         date: newDate,
@@ -156,8 +159,11 @@ export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, 
       if (tx.id === id) {
         if (field === 'month') {
           const d = parseUTCDate(tx.date!);
-          const dDay = Math.min(d.getUTCDate(), new Date(Date.UTC(targetYear, value + 1, 0)).getUTCDate());
-          const newDate = new Date(Date.UTC(targetYear, value, dDay)).toISOString().split('T')[0];
+          let newDate = `${targetYear}-${String(value + 1).padStart(2, '0')}-01`;
+          if (!isNaN(d.getTime())) {
+            const dDay = Math.min(d.getUTCDate(), new Date(Date.UTC(targetYear, value + 1, 0)).getUTCDate());
+            newDate = new Date(Date.UTC(targetYear, value, dDay)).toISOString().split('T')[0];
+          }
           return { ...tx, date: newDate };
         }
         return { ...tx, [field]: value };

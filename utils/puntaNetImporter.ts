@@ -425,7 +425,13 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
         const itMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
         if (itMatch) {
           const [_, d, m, y] = itMatch;
-          data = new Date(Date.UTC(parseInt(y), parseInt(m) - 1, parseInt(d)));
+          const parsedD = parseInt(d);
+          const parsedM = parseInt(m) - 1;
+          const parsedY = parseInt(y);
+          data = new Date(Date.UTC(parsedY, parsedM, parsedD));
+          if (data.getUTCDate() !== parsedD || data.getUTCMonth() !== parsedM) {
+            throw new Error(`Data non valida: ${str}`);
+          }
         } else {
           data = new Date(str);
         }
@@ -702,7 +708,7 @@ export const parseDettaglioFEA = (workbook: XLSX.WorkBook): Map<string, DettFEA>
         const indexBancaConto = findHeaderIndex(headers, ['BANCA', 'CONTO', 'B/I'], -1);
         const isPrimaNota = indexBancaConto !== -1;
         const indexAmount = findHeaderIndex(headers, ['IMPORTO', 'ENTRATE', 'ENTRAT', 'VALORE', 'TOTALE'], 5);
-        const rowAmount = isPrimaNota ? safeParseFloat(row[indexAmount]) : 0;
+        const rowAmount = isPrimaNota ? (safeParseFloat(row[indexAmount]) || 0) : 0;
         current = {
           _key: `${match[1]}/${match[2]}`,
           numero: match[1],
