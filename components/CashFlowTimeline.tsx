@@ -899,23 +899,33 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         endOfYearBalance: CURRENCY_FORMATTER.format(endOfYearBalance)
       };
 
-      aiAnalysisText = await generateFinancialReportPDFAnalysis(dataToAnalyze);
+      try {
+        aiAnalysisText = await generateFinancialReportPDFAnalysis(dataToAnalyze);
+      } catch (aiErr) {
+        console.error("Failed to generate AI analysis for PDF report:", aiErr);
+        aiAnalysisText = "L'analisi AI non è temporaneamente disponibile. Vengono mostrati solo i dati numerici e l'analisi delle criticità contabili standard.";
+      }
     }
 
-    exportCashFlowProjectionPDF({
-      transactions,
-      currentYear,
-      projects,
-      initialData: {
-        accounts: initialData.accounts,
-        loans: initialData.loans,
-        previousFinancing: initialData.previousFinancing,
-        accontiClienti: initialData.accontiClienti,
-        altriDebitiBT: initialData.altriDebitiBT,
-        mutuiBT: initialData.mutuiBT
-      },
-      aiAnalysis: aiAnalysisText
-    });
+    try {
+      exportCashFlowProjectionPDF({
+        transactions,
+        currentYear,
+        projects,
+        initialData: {
+          accounts: initialData.accounts,
+          loans: initialData.loans,
+          previousFinancing: initialData.previousFinancing,
+          accontiClienti: initialData.accontiClienti,
+          altriDebitiBT: initialData.altriDebitiBT,
+          mutuiBT: initialData.mutuiBT
+        },
+        aiAnalysis: aiAnalysisText
+      });
+    } catch (pdfErr) {
+      console.error("Failed to export Cash Flow PDF:", pdfErr);
+      alert("Si è verificato un errore imprevisto durante la generazione del PDF. Riprovare disabilitando l'analisi AI.");
+    }
 
     setIsGeneratingPDF(false);
   };
