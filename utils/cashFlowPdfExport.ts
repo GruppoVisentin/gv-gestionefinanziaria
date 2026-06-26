@@ -355,27 +355,97 @@ export const exportCashFlowProjectionPDF = ({
     margin: { left: 10, right: 10 }
   });
 
-  // --- ANALISI RISCHI ---
-  currentY = (pdf as any).lastAutoTable.finalY + 15;
-  if (currentY > pdfH - 40) {
-    pdf.addPage();
-    currentY = 30;
-  }
+  // --- CALCOLO METRICHE DI CONGRUITÀ REALI ---
+  let fatturato = 0;
+  let costiVariabili = 0;
+  let costiStudio = 0;
+  let costiFissi = 0;
+  let oneriFin = 0;
+  let compensoSoci = 0;
 
+  transactions.forEach(t => {
+    const d = parseUTCDate(t.date);
+    if (d.getUTCFullYear() !== currentYear) return;
+    const isIncome = t.type === TransactionType.INCOME;
+    const amount = Math.abs(t.amount);
+
+    if (t.ceType?.startsWith('ricavo')) {
+      fatturato += amount;
+    } else if (t.ceType === 'costo_variabile') {
+      costiVariabili += amount;
+    } else if (t.ceType === 'costo_studio') {
+      costiStudio += amount;
+      if (t.category?.toLowerCase().includes('compenso amministratori') || t.category?.toLowerCase().includes('soci')) {
+        compensoSoci += amount;
+      }
+    } else if (t.ceType === 'costo_fisso') {
+      costiFissi += amount;
+    } else if (t.ceType === 'onere_finanziario') {
+      oneriFin += amount;
+    }
+  });
+
+  const baseFatt = fatturato > 0 ? fatturato : 1;
+  const incVar = (costiVariabili / baseFatt * 100).toFixed(1) + '%';
+  const incStudio = (costiStudio / baseFatt * 100).toFixed(1) + '%';
+  const incFissi = (costiFissi / baseFatt * 100).toFixed(1) + '%';
+  const incOneri = (oneriFin / baseFatt * 100).toFixed(1) + '%';
+  const incSoci = (compensoSoci / baseFatt * 100).toFixed(1) + '%';
+
+  // --- PAGINA NUOVA: AUDIT DI CONGRUITÀ COSTI E VALUTAZIONE ---
+  pdf.addPage();
+  currentY = 30;
+
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('AUDIT DI CONGRUITÀ COSTI & STRATEGIA (PMI Nord-Est)', 10, currentY);
+  currentY += 6;
+
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(80, 80, 80);
+  pdf.text(`Valutazione della sostenibilità delle spese basata sul fatturato reale calcolato di ${CURRENCY_FORMATTER.format(fatturato)}.`, 10, currentY);
+  currentY += 8;
+
+  autoTable(pdf, {
+    startY: currentY,
+    head: [['Macro Voce Spesa', 'GV Incidenza', 'Valutazione', 'Azione Correttiva Suggerita']],
+    body: [
+      ['Costi Variabili (Diretti)', incVar, parseFloat(incVar) > 75 ? '🔴 Elevata' : '🟢 Sotto Controllo', 'Negoziare contratti quadro annuali sui materiali; limitare subappalti.'],
+      ['Costi Studio / Tecnici', incStudio, parseFloat(incStudio) > 15 ? '⚠️ Sopra Media' : '🟢 Standard', 'Monitorare ore non produttive di ufficio. Ottimizzazione software BIM.'],
+      ['Compenso Soci', incSoci, parseFloat(incSoci) > 5 ? '⚠️ Rilevante' : '🟢 Congruo', 'Allineato alle prassi. Vincolare futuri aumenti alla crescita dell\'utile.'],
+      ['Overhead Struttura Fissa', incFissi, parseFloat(incFissi) > 8 ? '🔴 Elevato' : '🟢 Eccellente', 'Mantenere la sede e le licenze snelle. Ottimo controllo di gestione.'],
+      ['Oneri Finanziari', incOneri, parseFloat(incOneri) > 2 ? '🔴 Alto debito' : '🟢 Eccellente', 'Rinegoziare commissioni fisse sui fidi e tassi per le fideiussioni.'],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [34, 34, 34], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+    styles: { fontSize: 8, cellPadding: 4 },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 50 },
+      1: { halign: 'center', cellWidth: 25 },
+      2: { halign: 'center', fontStyle: 'bold', cellWidth: 35 },
+      3: { fontSize: 7.5, textColor: [100, 100, 100] as [number,number,number] },
+    },
+    margin: { left: 10, right: 10 }
+  });
+  currentY = (pdf as any).lastAutoTable.finalY + 12;
+
+  // --- ANALISI RISCHI E CRITICITÀ CASH FLOW ---
   const riskMonths = monthlyData.map((d, i) => {
       let tempCumulative = totalInitialBalance;
       for(let j=0; j<=i; j++) tempCumulative += monthlyData[j].net;
       return { month: months[i], balance: tempCumulative };
   }).filter(m => m.balance < 0);
 
-  pdf.setFontSize(12);
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('ANALISI DELLE CRITICITÀ', 10, currentY);
+  pdf.setTextColor(34, 34, 34);
+  pdf.text('ANALISI DELLE CRITICITÀ DI CASSA', 10, currentY);
   currentY += 8;
 
   if (riskMonths.length > 0) {
     pdf.setTextColor(80, 80, 80);
-    pdf.setFontSize(10);
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     riskMonths.forEach(risk => {
         pdf.text(`• Attenzione: Previsto saldo negativo a ${risk.month} (${CURRENCY_FORMATTER.format(risk.balance)})`, 15, currentY);
@@ -383,7 +453,7 @@ export const exportCashFlowProjectionPDF = ({
     });
   } else {
     pdf.setTextColor(34, 34, 34);
-    pdf.setFontSize(10);
+    pdf.setFontSize(9.5);
     pdf.setFont('helvetica', 'normal');
     pdf.text('• Nessuna criticità di cassa rilevata nel periodo analizzato.', 15, currentY);
   }
