@@ -157,6 +157,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
   // Helper to calculate Gross Amount (Cifra Ivata)
   const getGrossAmount = (t: Transaction) => {
+    if (typeof t.grossAmount === 'number') return t.grossAmount;
     const net = t.amount;
     const vat = t.vatRate || 0;
     return net * (1 + vat / 100);
@@ -1346,8 +1347,19 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         </div>
       </div>
       
-      <div ref={scrollContainerRef} className="overflow-x-auto w-full max-h-[calc(100vh-320px)] relative">
-        <table className="w-full text-sm text-left border-collapse min-w-max">
+      <div ref={scrollContainerRef} className="overflow-x-auto w-full relative">
+        <table className="w-full text-sm text-left border-collapse" style={{ tableLayout: 'fixed', minWidth: 3420 }}>
+          <colgroup>
+            <col style={{ width: 300 }} />
+            {Array.from({ length: 12 }).map((_, i) => (
+              <React.Fragment key={`cg-${i}`}>
+                <col style={{ width: 120 }} />
+                <col style={{ width: 120 }} />
+              </React.Fragment>
+            ))}
+            <col style={{ width: 120 }} />
+            <col style={{ width: 120 }} />
+          </colgroup>
           <thead className="text-xs uppercase bg-slate-50 text-slate-500 sticky top-0 z-30">
             {/* Headers remain same */}
             <tr>

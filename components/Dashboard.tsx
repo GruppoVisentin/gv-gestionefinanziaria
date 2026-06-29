@@ -8,7 +8,7 @@ import PDFExportButton from './PDFExportButton';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { calcPosizIoneIVA } from '../utils/gasCoreEngine';
-import { CURRENCY_FORMATTER } from '../constants';
+import { CURRENCY_FORMATTER, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants';
 
 interface DashboardProps {
   transactions: Transaction[];
@@ -25,7 +25,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, 
   // Filter out Forecasts for the main dashboard. Only show Actuals.
   const currentYear = new Date().getFullYear();
 
-  const { actualTransactions, totalIncome, totalExpense, balance, expenseData } = useMemo(() => {
+  const { actualTransactions, totalIncome, totalExpense, balance, expenseData, fixedCostData, variableCostData } = useMemo(() => {
     const actTxs = transactions.filter(t =>
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
@@ -47,7 +47,23 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, 
       return { name: cat, value };
     }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
 
-    return { actualTransactions: actTxs, totalIncome: inc, totalExpense: exp, balance: inc - exp, expenseData: expData };
+    // Costi Fissi per categoria
+    const fixedData = FIXED_COST_CATEGORIES.map(cat => {
+      const value = actTxs
+        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+      return { name: cat, value };
+    }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
+
+    // Costi Variabili per categoria
+    const varData = VARIABLE_COST_CATEGORIES.map(cat => {
+      const value = actTxs
+        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+      return { name: cat, value };
+    }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
+
+    return { actualTransactions: actTxs, totalIncome: inc, totalExpense: exp, balance: inc - exp, expenseData: expData, fixedCostData: fixedData, variableCostData: varData };
   }, [transactions, currentYear, expenseCategories]);
 
   // Prepare data for Bar Chart (Last 6 months)
@@ -141,37 +157,45 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, 
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Expense Breakdown */}
+          {/* Expense Breakdown Pie */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
-            <h3 className="text-lg font-semibold text-slate-800 mb-6">Spese per Categoria</h3>
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Spese per Categoria</h3>
             {expenseData.length > 0 ? (
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={expenseData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {expenseData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      formatter={(value: number) => `€${value.toFixed(2)}`}
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="mt-4 flex flex-wrap gap-2 justify-center">
-                  {expenseData.slice(0, 5).map((entry, index) => (
-                    <div key={entry.name} className="flex items-center text-xs text-slate-500">
-                      <span className="w-2 h-2 rounded-full mr-1" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
-                      {entry.name}
+              <div className="flex flex-col gap-4">
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={expenseData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={80}
+                        paddingAngle={3}
+                        dataKey="value"
+                        label={({ name, percent }) => percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ''}
+                        labelLine={false}
+                      >
+                        {expenseData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(value: number, name: string) => [CURRENCY_FORMATTER.format(value), name]}
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Legenda completa con valori */}
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {expenseData.map((entry, index) => (
+                    <div key={entry.name} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
+                        <span className="text-slate-600 truncate" title={entry.name}>{entry.name}</span>
+                      </div>
+                      <span className="text-slate-800 font-semibold ml-2 shrink-0">{CURRENCY_FORMATTER.format(entry.value)}</span>
                     </div>
                   ))}
                 </div>
@@ -213,6 +237,75 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, 
             </div>
           </div>
         </div>
+
+        {/* ─── COSTI FISSI E VARIABILI ───────────────────────────── */}
+        {(fixedCostData.length > 0 || variableCostData.length > 0) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            {/* Costi Fissi */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-800">Costi Fissi</h3>
+                <span className="text-sm font-bold text-slate-700 bg-slate-100 px-3 py-1 rounded-full">
+                  {CURRENCY_FORMATTER.format(fixedCostData.reduce((s, i) => s + i.value, 0))}
+                </span>
+              </div>
+              {fixedCostData.length > 0 ? (
+                <div className="space-y-3">
+                  {fixedCostData.map((item) => {
+                    const maxVal = fixedCostData[0].value;
+                    const pct = maxVal > 0 ? (item.value / maxVal) * 100 : 0;
+                    return (
+                      <div key={item.name}>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-slate-600 truncate mr-2" title={item.name}>{item.name}</span>
+                          <span className="text-slate-800 font-semibold shrink-0">{CURRENCY_FORMATTER.format(item.value)}</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                          <div className="bg-slate-700 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400">Nessun costo fisso registrato</p>
+              )}
+            </div>
+
+            {/* Costi Variabili */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-800">Costi Variabili</h3>
+                <span className="text-sm font-bold text-slate-700 bg-slate-100 px-3 py-1 rounded-full">
+                  {CURRENCY_FORMATTER.format(variableCostData.reduce((s, i) => s + i.value, 0))}
+                </span>
+              </div>
+              {variableCostData.length > 0 ? (
+                <div className="space-y-3">
+                  {variableCostData.map((item) => {
+                    const maxVal = variableCostData[0].value;
+                    const pct = maxVal > 0 ? (item.value / maxVal) * 100 : 0;
+                    return (
+                      <div key={item.name}>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-slate-600 truncate mr-2" title={item.name}>{item.name}</span>
+                          <span className="text-slate-800 font-semibold shrink-0">{CURRENCY_FORMATTER.format(item.value)}</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                          <div className="bg-slate-500 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400">Nessun costo variabile registrato</p>
+              )}
+            </div>
+
+          </div>
+        )}
       </div>
       
       <HelpPanel 

@@ -70,6 +70,7 @@ export interface Transaction {
   invoiceDate?: string;
   sourceRef?: string; // Origine della transazione, es: "Punta Net — FEP 60/2026/E · 03/01/2026"
   importSessionId?: string;   // ← NUOVO — ID univoco della sessione di import Punta Net
+  grossAmount?: number; // Exact gross amount imported from PuntaNet / bank
 }
 
 export interface IntestatarioFattura {

@@ -34,6 +34,7 @@ export const exportCashFlowProjectionPDF = ({
   const totalInitialBalance = initialData.accounts.reduce((sum, acc) => sum + acc.balance, 0);
   
   const getGrossAmount = (t: Transaction) => {
+    if (typeof t.grossAmount === 'number') return t.grossAmount;
     const amount = t.amount || 0;
     const vat = t.vatRate ? (amount * t.vatRate) / 100 : 0;
     return amount + vat;
@@ -43,17 +44,14 @@ export const exportCashFlowProjectionPDF = ({
   const isAnnoCorrente = currentYear === new Date().getFullYear();
 
   const calculateMonthlyFlow = (monthIndex: number) => {
-    // Determina se il mese ha dati consuntivi
     const hasActuals = transactions.some(t => {
       const d = parseUTCDate(t.date);
       return d.getUTCMonth() === monthIndex && d.getUTCFullYear() === currentYear && !t.isForecast;
     });
 
-    // Usa consuntivi se: mese passato o corrente (con dati reali)
     const useActuals = hasActuals || (isAnnoCorrente && monthIndex <= meseCorrente);
 
     if (useActuals) {
-      // --- CONSUNTIVO ---
       const actualTransactions = transactions.filter(t => {
         const d = parseUTCDate(t.date);
         return d.getUTCMonth() === monthIndex && d.getUTCFullYear() === currentYear && !t.isForecast;
@@ -67,11 +65,9 @@ export const exportCashFlowProjectionPDF = ({
       return { income: aIncome, expense: aExpense, net: aIncome - aExpense, hasActuals: true };
     }
 
-    // --- PREVISIONALE (mesi futuri senza consuntivi) ---
     const forecastTransactions = transactions.filter(t => {
       const d = parseUTCDate(t.date);
       if (d.getUTCMonth() !== monthIndex || d.getUTCFullYear() !== currentYear || !t.isForecast) return false;
-      // Escludi forecast già liquidati
       return !transactions.some(act => !act.isForecast && act.linkedForecastId === t.id);
     });
 
@@ -83,9 +79,7 @@ export const exportCashFlowProjectionPDF = ({
       .filter(t => t.type === TransactionType.EXPENSE)
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
-    // Rate prestiti previsionali
     const calculateLoanRepayment = (mIdx: number) => {
-      // BUG-01 Fix: If we already have manual transactions for interests or quota capitale in the month, skip prediction.
       const hasLoanTransactions = transactions.some(t => {
         const tDate = parseUTCDate(t.date);
         return (
@@ -124,7 +118,6 @@ export const exportCashFlowProjectionPDF = ({
 
     fExpense += calculateLoanRepayment(monthIndex);
 
-    // Costi cantiere previsionali
     const calculateProjectCostForMonth = (category: string, mIdx: number) => {
       let total = 0;
       projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
@@ -152,7 +145,6 @@ export const exportCashFlowProjectionPDF = ({
     return { income: fIncome, expense: fExpense, net: fIncome - fExpense, hasActuals: false };
   };
 
-  // Helper per calcolo componenti prestito (allineato a ExpenseTimeline.tsx con supporto rinegoziazioni)
   function calculateLoanComponents(principal: number, details: any, targetMonthIndex: number) {
     if (!details || !details.interestStartDate) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
 
@@ -163,12 +155,10 @@ export const exportCashFlowProjectionPDF = ({
 
     if (targetDate < intStart || targetDate > end) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
 
-    // Determina il tasso applicabile per questa specifica data (considerando rinegoziazioni)
     let currentRate = details.interestRate;
     let currentType = details.rateType;
     
     if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
-      // Ordina per data e prendi l'ultima rinegoziazione valida per targetDate
       const rinegValide = [...details.rinegoziazioni]
         .filter((r: any) => parseUTCDate(r.dataInizio) <= targetDate)
         .sort((a: any, b: any) => parseUTCDate(b.dataInizio).getTime() - parseUTCDate(a.dataInizio).getTime());
@@ -227,7 +217,6 @@ export const exportCashFlowProjectionPDF = ({
 
   const monthlyData = months.map((_, i) => calculateMonthlyFlow(i));
   
-  // Calcolo progressivo
   let cumulative = totalInitialBalance;
   const tableRows: any[] = [];
   let qIncome = 0, qExpense = 0, qNet = 0;
@@ -255,7 +244,6 @@ export const exportCashFlowProjectionPDF = ({
       }
     ]);
 
-    // Accumulo trimestrale
     qIncome += data.income;
     qExpense += data.expense;
     qNet += data.net;
@@ -272,41 +260,51 @@ export const exportCashFlowProjectionPDF = ({
     }
   });
 
-  // --- HEADER E FOOTER (Stile GV) ---
+  // --- HEADER E FOOTER (Stile Premium GV) ---
   const drawHeaderFooter = (currentPage: number, totalPages: number) => {
-    // Header
-    pdf.setFillColor(34, 34, 34); // Nero smorzato
-    pdf.rect(0, 0, pdfW, 22, 'F');
+    pdf.setFillColor(15, 23, 42); 
+    pdf.rect(0, 0, pdfW, 26, 'F');
+
+    pdf.setFillColor(217, 119, 6);
+    pdf.rect(0, 26, pdfW, 1.5, 'F');
+
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(14);
-    pdf.text('GRUPPO VISENTIN SRL', 10, 10);
-    pdf.setFontSize(10);
+    pdf.text('GRUPPO VISENTIN', 12, 11);
+    
+    pdf.setFontSize(8.5);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(`REPORT PROIEZIONE ANNUALE CASH FLOW — ${currentYear}`, 10, 16);
+    pdf.setTextColor(226, 232, 240);
+    pdf.text(`REPORT PROIEZIONE FLUSSI DI CASSA — ANNO ${currentYear}`, 12, 17);
 
     const dataGen = new Date().toLocaleDateString('it-IT', {
-      day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
     });
     pdf.setFontSize(8);
-    pdf.text(`Generato il: ${dataGen}`, pdfW - 10, 10, { align: 'right' });
+    pdf.setTextColor(203, 213, 225);
+    pdf.text(`Generato: ${dataGen}`, pdfW - 12, 15, { align: 'right' });
 
-    // Footer
-    pdf.setFillColor(245, 245, 245);
-    pdf.rect(0, pdfH - 10, pdfW, 10, 'F');
-    pdf.setTextColor(100, 100, 100);
-    pdf.setFontSize(7);
-    pdf.text('GV Ecosystem — Gestione Finanziaria Avanzata', 10, pdfH - 4);
-    pdf.text(`Pagina ${currentPage} di ${totalPages}`, pdfW - 10, pdfH - 4, { align: 'right' });
+    pdf.setFillColor(248, 250, 252);
+    pdf.rect(0, pdfH - 12, pdfW, 12, 'F');
+    
+    pdf.setFillColor(226, 232, 240);
+    pdf.rect(0, pdfH - 12, pdfW, 0.5, 'F');
+
+    pdf.setTextColor(100, 116, 139);
+    pdf.setFontSize(7.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('GV Ecosystem  |  Controllo di Gestione Avanzato', 12, pdfH - 5);
+    pdf.text(`Pagina ${currentPage} di ${totalPages}`, pdfW - 12, pdfH - 5, { align: 'right' });
   };
 
-  // --- EXECUTIVE SUMMARY ---
-  let currentY = 30;
-  pdf.setTextColor(34, 34, 34);
-  pdf.setFontSize(12);
+  // --- PAGINA 1: EXECUTIVE SUMMARY & KPIs ---
+  let currentY = 35;
+  pdf.setTextColor(15, 23, 42);
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('EXECUTIVE SUMMARY', 10, currentY);
-  currentY += 8;
+  pdf.text('1. SINTESI FINANZIARIA & KPI DIREZIONALI', 12, currentY);
+  currentY += 5;
 
   const avgMonthlyExpense = monthlyData.reduce((sum, d) => sum + d.expense, 0) / 12;
   const minBalance = Math.min(...tableRows.filter(r => typeof r[4] === 'object' && r[4].content !== '-').map(r => {
@@ -315,47 +313,117 @@ export const exportCashFlowProjectionPDF = ({
       return isNaN(parsed) ? Infinity : parsed;
   }).filter(v => v !== Infinity));
 
+  // Advanced KPIs calculation
+  const totalLoanRepaymentsYear = transactions
+    .filter(t => !t.isForecast && t.date.startsWith(String(currentYear)) && 
+      (t.category?.includes('Quota Capitale') || t.category?.includes('Interessi Passivi')))
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  const ebitda = transactions
+    .filter(t => !t.isForecast && t.date.startsWith(String(currentYear)))
+    .reduce((sum, t) => {
+      const isIncome = t.type === TransactionType.INCOME;
+      const amt = Math.abs(t.amount);
+      if (t.ceType === 'ricavo_operativo') return sum + amt;
+      if (['costo_variabile', 'costo_fisso', 'costo_studio'].includes(t.ceType)) return sum - amt;
+      return sum;
+    }, 0);
+
+  const dscr = totalLoanRepaymentsYear > 0 ? (ebitda / totalLoanRepaymentsYear).toFixed(2) : 'N.D.';
+  const burnRateDays = avgMonthlyExpense > 0 ? Math.round((totalInitialBalance / avgMonthlyExpense) * 30) : 365;
+
   const summaryData = [
     ['Saldo Iniziale Disponibile', CURRENCY_FORMATTER.format(totalInitialBalance)],
-    ['Media Uscite Mensili', CURRENCY_FORMATTER.format(avgMonthlyExpense)],
-    ['Punto di Minimo Previsto', CURRENCY_FORMATTER.format(minBalance)],
-    ['Saldo Finale Previsto', CURRENCY_FORMATTER.format(cumulative)]
+    ['Media Uscite Mensili di Cassa', CURRENCY_FORMATTER.format(avgMonthlyExpense)],
+    ['Punto Minimo Liquidità di Esercizio', CURRENCY_FORMATTER.format(minBalance)],
+    ['Saldo di Cassa Stimato a Fine Anno', CURRENCY_FORMATTER.format(cumulative)]
   ];
 
   autoTable(pdf, {
     startY: currentY,
     body: summaryData,
     theme: 'plain',
-    styles: { fontSize: 10, cellPadding: 2 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60 } },
-    margin: { left: 10 }
+    styles: { fontSize: 9.5, cellPadding: 3.5, textColor: [51, 65, 85] },
+    columnStyles: { 
+      0: { fontStyle: 'bold', cellWidth: 80, textColor: [15, 23, 42] },
+      1: { fontStyle: 'bold', halign: 'right', cellWidth: 50, textColor: [15, 23, 42] }
+    },
+    margin: { left: 12 }
   });
 
-  currentY = (pdf as any).lastAutoTable.finalY + 15;
+  currentY = (pdf as any).lastAutoTable.finalY + 12;
 
-  // --- TABELLA TIMELINE ---
-  pdf.setFontSize(12);
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('PROIEZIONE FLUSSI MENSILI', 10, currentY);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('INDICI DI SOSTENIBILITÀ & TESORERIA', 12, currentY);
+  currentY += 6;
+
+  autoTable(pdf, {
+    startY: currentY,
+    head: [['Indicatore', 'Valore Rilevato', 'Soglia Limite', 'Stato']],
+    body: [
+      ['Autonomia di Cassa (Burn Rate)', `${burnRateDays} Giorni`, '60 Giorni', burnRateDays > 90 ? '🟢 Eccellente' : '🔴 Tensione'],
+      ['DSCR (Copertura Debiti da EBITDA)', dscr, '> 1.15', parseFloat(dscr) > 1.25 ? '🟢 Sostenibile' : '🔴 Rischioso'],
+      ['Copertura Spese Struttura (Mesi)', (avgMonthlyExpense > 0 ? (totalInitialBalance / avgMonthlyExpense).toFixed(1) : '12') + ' Mesi', '2.0 Mesi', (totalInitialBalance / avgMonthlyExpense) > 3 ? '🟢 Sicuro' : '🔴 Limite']
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], fontSize: 8.5 },
+    styles: { fontSize: 8.5, cellPadding: 4, textColor: [51, 65, 85] },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 60, textColor: [15, 23, 42] },
+      1: { halign: 'center', cellWidth: 35, fontStyle: 'bold' },
+      2: { halign: 'center', cellWidth: 35 },
+      3: { halign: 'center', fontStyle: 'bold', cellWidth: 35 }
+    },
+    margin: { left: 12 }
+  });
+
+  // --- PAGINA 2: TABELLA FLUSSI MENSILI ---
+  pdf.addPage();
+  currentY = 35;
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('2. PROIEZIONE DETTAGLIATA DEI FLUSSI MENSILI', 12, currentY);
   currentY += 5;
 
   autoTable(pdf, {
     startY: currentY,
-    head: [['Mese', 'Entrate', 'Uscite', 'Flusso Netto', 'Saldo Progressivo']],
+    head: [['Mese', 'Entrate (Lorde)', 'Uscite (Lorde)', 'Flusso Netto', 'Saldo Progressivo']],
     body: tableRows,
     theme: 'striped',
-    headStyles: { fillColor: [34, 34, 34], fontSize: 10, cellPadding: 4 },
-    bodyStyles: { fontSize: 8.5, cellPadding: 3 },
-    columnStyles: {
-      4: { fontStyle: 'bold', halign: 'right' },
-      3: { halign: 'right' },
-      2: { halign: 'right' },
-      1: { halign: 'right' }
+    headStyles: { 
+      fillColor: [15, 23, 42], 
+      fontSize: 9, 
+      cellPadding: 4,
+      textColor: [255, 255, 255]
     },
-    margin: { left: 10, right: 10 }
+    bodyStyles: { 
+      fontSize: 7.5, 
+      cellPadding: 3,
+      textColor: [51, 65, 85]
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 45 },
+      1: { halign: 'right', cellWidth: 35 },
+      2: { halign: 'right', cellWidth: 35 },
+      3: { halign: 'right', fontStyle: 'bold', cellWidth: 35 },
+      4: { halign: 'right', fontStyle: 'bold', cellWidth: 40 }
+    },
+    margin: { left: 12, right: 12 }
   });
 
-  // --- CALCOLO METRICHE DI CONGRUITÀ REALI ---
+  // --- PAGINA 3: AUDIT CONGRUITÀ COSTI ---
+  pdf.addPage();
+  currentY = 35;
+
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('3. AUDIT DI CONGRUITÀ COSTI & ALLOCAZIONE CANTIERI', 12, currentY);
+  currentY += 5;
+
   let fatturato = 0;
   let costiVariabili = 0;
   let costiStudio = 0;
@@ -366,7 +434,6 @@ export const exportCashFlowProjectionPDF = ({
   transactions.forEach(t => {
     const d = parseUTCDate(t.date);
     if (d.getUTCFullYear() !== currentYear) return;
-    const isIncome = t.type === TransactionType.INCOME;
     const amount = Math.abs(t.amount);
 
     if (t.ceType?.startsWith('ricavo')) {
@@ -392,24 +459,9 @@ export const exportCashFlowProjectionPDF = ({
   const incOneri = (oneriFin / baseFatt * 100).toFixed(1) + '%';
   const incSoci = (compensoSoci / baseFatt * 100).toFixed(1) + '%';
 
-  // --- PAGINA NUOVA: AUDIT DI CONGRUITÀ COSTI E VALUTAZIONE ---
-  pdf.addPage();
-  currentY = 30;
-
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('AUDIT DI CONGRUITÀ COSTI & STRATEGIA (PMI Nord-Est)', 10, currentY);
-  currentY += 6;
-
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(80, 80, 80);
-  pdf.text(`Valutazione della sostenibilità delle spese basata sul fatturato reale calcolato di ${CURRENCY_FORMATTER.format(fatturato)}.`, 10, currentY);
-  currentY += 8;
-
   autoTable(pdf, {
     startY: currentY,
-    head: [['Macro Voce Spesa', 'GV Incidenza', 'Valutazione', 'Azione Correttiva Suggerita']],
+    head: [['Macro Voce Spesa', 'Incidenza GV', 'Valutazione', 'Azione Correttiva Consigliata']],
     body: [
       ['Costi Variabili (Diretti)', incVar, parseFloat(incVar) > 75 ? '🔴 Elevata' : '🟢 Sotto Controllo', 'Negoziare contratti quadro annuali sui materiali; limitare subappalti.'],
       ['Costi Studio / Tecnici', incStudio, parseFloat(incStudio) > 15 ? '⚠️ Sopra Media' : '🟢 Standard', 'Monitorare ore non produttive di ufficio. Ottimizzazione software BIM.'],
@@ -418,72 +470,111 @@ export const exportCashFlowProjectionPDF = ({
       ['Oneri Finanziari', incOneri, parseFloat(incOneri) > 2 ? '🔴 Alto debito' : '🟢 Eccellente', 'Rinegoziare commissioni fisse sui fidi e tassi per le fideiussioni.'],
     ],
     theme: 'grid',
-    headStyles: { fillColor: [34, 34, 34], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-    styles: { fontSize: 8, cellPadding: 4 },
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 8.5, cellPadding: 4 },
+    styles: { fontSize: 8, cellPadding: 4, textColor: [51, 65, 85] },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 50 },
-      1: { halign: 'center', cellWidth: 25 },
+      0: { fontStyle: 'bold', cellWidth: 50, textColor: [15, 23, 42] },
+      1: { halign: 'center', cellWidth: 25, fontStyle: 'bold', textColor: [15, 23, 42] },
       2: { halign: 'center', fontStyle: 'bold', cellWidth: 35 },
-      3: { fontSize: 7.5, textColor: [100, 100, 100] as [number,number,number] },
+      3: { fontSize: 7.5, textColor: [71, 85, 105] as [number,number,number] },
     },
-    margin: { left: 10, right: 10 }
+    margin: { left: 12, right: 12 }
   });
-  currentY = (pdf as any).lastAutoTable.finalY + 12;
+  currentY = (pdf as any).lastAutoTable.finalY + 15;
 
-  // --- ANALISI RISCHI E CRITICITÀ CASH FLOW ---
-  const riskMonths = monthlyData.map((d, i) => {
-      let tempCumulative = totalInitialBalance;
-      for(let j=0; j<=i; j++) tempCumulative += monthlyData[j].net;
-      return { month: months[i], balance: tempCumulative };
+  // Calculate pure forecast balance for risk analysis
+  const totalLoanRepaymentsForecast = transactions
+    .filter(t => t.isForecast && t.date.startsWith(String(currentYear)) && 
+      (t.category?.includes('Quota Capitale') || t.category?.includes('Interessi Passivi')))
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  const saldoInizialePrevisionale = initialData.accounts.reduce((sum, acc) => sum + acc.balance, 0); // fallback default
+
+  const forecastMonthlyFlows = months.map((_, i) => calculateMonthlyFlow(i)); // calculateMonthlyFlow handles actual/forecast.
+  
+  // To evaluate strictly forecast:
+  const pureForecastMonthlyNet = months.map((_, i) => {
+    // Generate monthly forecast net (use calculateMonthlyFlow but force forecast logic or use it directly as forecast fallback if we map it)
+    const forecastTransactions = transactions.filter(t => {
+      const d = parseUTCDate(t.date);
+      return d.getUTCMonth() === i && d.getUTCFullYear() === currentYear && t.isForecast;
+    });
+    const fInc = forecastTransactions.filter(t => t.type === TransactionType.INCOME).reduce((sum, t) => sum + getGrossAmount(t), 0);
+    let fExp = forecastTransactions.filter(t => t.type === TransactionType.EXPENSE).reduce((sum, t) => sum + getGrossAmount(t), 0);
+    return fInc - fExp;
+  });
+
+  const riskMonths = months.map((m, i) => {
+      let tempCumulative = saldoInizialePrevisionale;
+      for(let j=0; j<=i; j++) {
+        // Accumulate using the pure forecast flow
+        tempCumulative += pureForecastMonthlyNet[j];
+      }
+      return { month: m, balance: tempCumulative };
   }).filter(m => m.balance < 0);
 
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(34, 34, 34);
-  pdf.text('ANALISI DELLE CRITICITÀ DI CASSA', 10, currentY);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('VALUTAZIONE DELLA SOSTENIBILITÀ', 12, currentY);
   currentY += 8;
 
   if (riskMonths.length > 0) {
-    pdf.setTextColor(80, 80, 80);
+    pdf.setTextColor(220, 38, 38);
     pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('ATTENZIONE: Rilevati periodi di potenziale tensione finanziaria:', 12, currentY);
+    currentY += 6;
+
     pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(100, 116, 139);
     riskMonths.forEach(risk => {
-        pdf.text(`• Attenzione: Previsto saldo negativo a ${risk.month} (${CURRENCY_FORMATTER.format(risk.balance)})`, 15, currentY);
-        currentY += 6;
+        pdf.text(`• Saldo progressivo stimato in negativo a ${risk.month}: ${CURRENCY_FORMATTER.format(risk.balance)}`, 16, currentY);
+        currentY += 5.5;
     });
   } else {
-    pdf.setTextColor(34, 34, 34);
-    pdf.setFontSize(9.5);
+    pdf.setFillColor(240, 253, 244);
+    pdf.rect(12, currentY, pdfW - 24, 14, 'F');
+    pdf.setDrawColor(22, 163, 74);
+    pdf.rect(12, currentY, pdfW - 24, 14, 'D');
+
+    pdf.setTextColor(21, 128, 61);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('ANALISI DI LIQUIDITÀ POSITIVA', 16, currentY + 5.5);
+    
     pdf.setFont('helvetica', 'normal');
-    pdf.text('• Nessuna criticità di cassa rilevata nel periodo analizzato.', 15, currentY);
+    pdf.setTextColor(22, 101, 52);
+    pdf.text('Il flusso di cassa progressivo stimato si mantiene superiore a zero per l\'intero esercizio analizzato.', 16, currentY + 9.5);
   }
 
-  // --- ANALISI AI (OPZIONALE) ---
+  // --- PAGINA 4: ANALISI AI ---
   if (aiAnalysis) {
     pdf.addPage();
-    pdf.setFontSize(16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(41, 128, 185); // Blue color for AI Header
-    pdf.text('Analisi Direzionale e Suggerimenti AI (Gemini)', 10, 30);
+    currentY = 35;
     
-    let aiY = 40;
-    pdf.setFontSize(10);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(15, 23, 42);
+    pdf.text('4. ANALISI DIREZIONALE E SUGGERIMENTI AI (GEMINI)', 12, currentY);
+    currentY += 8;
+    
+    pdf.setFontSize(8.5);
     pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(40, 40, 40);
+    pdf.setTextColor(51, 65, 85);
 
-    const splitText = pdf.splitTextToSize(aiAnalysis.replace(/\*\*/g, '').replace(/#/g, ''), pdfW - 20);
+    const splitText = pdf.splitTextToSize(aiAnalysis.replace(/\*\*/g, '').replace(/#/g, ''), pdfW - 24);
     
     splitText.forEach((line: string) => {
-      if (aiY > pdfH - 30) {
+      if (currentY > pdfH - 22) {
         pdf.addPage();
-        aiY = 30;
+        currentY = 35;
       }
-      pdf.text(line, 10, aiY);
-      aiY += 5;
+      pdf.text(line, 12, currentY);
+      currentY += 5;
     });
   }
 
-  // Finalize
   const totalPages = pdf.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     pdf.setPage(i);

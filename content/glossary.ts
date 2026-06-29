@@ -644,6 +644,28 @@ export const GLOSSARIO: TermineGlossario[] = [
   },
 
   {
+    id: 'dscr',
+    nome: 'DSCR — Debt Service Coverage Ratio',
+    categoria: 'rating',
+    origine: 'Dall\'inglese "Rapporto di Copertura del Servizio del Debito" — l\'indice principe della bancabilità',
+    definizione: 'Misura la capacità del flusso di cassa operativo (EBITDA) di coprire il servizio del debito annuo (quota capitale rate mutui + interessi passivi). Un valore superiore a 1,2 indica che la cassa copre agevolmente le rate con un cuscinetto del 20%.',
+    formulaTestuale: 'DSCR = EBITDA ÷ (Interessi Passivi + Quota Capitale Rate)',
+    esempioNumerico: {
+      dati: 'EBITDA proiettato €160.000, Interessi passivi mutui €8.500, Rimborsi quota capitale rate €28.000',
+      calcolo: '160.000 ÷ (8.500 + 28.000) = 160.000 ÷ 36.500',
+      risultato: 'DSCR = 4,38x (Punteggio radar 100/100, eccellente copertura)',
+    },
+    doveAppareNellApp: ['Dashboard — Radar Bancario', 'RatingView — indicatore DSCR'],
+    sogliaEdilizia: {
+      ottimo: '> 1,5x',
+      buono: '1,2–1,5x',
+      attenzione: '1,0–1,2x',
+      critico: '< 1,0x (l\'azienda non genera abbastanza cassa per pagare i debiti)',
+    },
+    connessoCon: ['ebitda', 'pfn_ebitda'],
+  },
+
+  {
     id: 'dso',
     nome: 'DSO — Days Sales Outstanding',
     categoria: 'rating',
@@ -690,6 +712,28 @@ export const GLOSSARIO: TermineGlossario[] = [
       critico: '> 120 gg',
     },
     connessoCon: ['dso', 'current_ratio'],
+  },
+
+  {
+    id: 'autonomia_cassa',
+    nome: 'Autonomia di Cassa / Liquidità Cumulata',
+    categoria: 'rating',
+    origine: 'Dal bilancio gestionale — quantifica i giorni di operatività coperti dalla liquidità disponibile',
+    definizione: 'Indica per quanti giorni l\'azienda è in grado di sostenere le proprie spese operative correnti basandosi esclusivamente sulla liquidità liquida in cassa, in assenza di nuovi incassi da clienti o SAL.',
+    formulaTestuale: 'Autonomia Cassa = Liquidità Disponibile ÷ (Spese Operative Annuali ÷ 365)',
+    esempioNumerico: {
+      dati: 'Saldo cassa €95.000, uscite totali previste nell\'anno €730.000',
+      calcolo: '95.000 ÷ (730.000 ÷ 365) = 95.000 ÷ 2.000',
+      risultato: 'Autonomia = 47,5 giorni di funzionamento garantito',
+    },
+    doveAppareNellApp: ['Dashboard — Andamento Conto Corrente', 'RatingView — indicatore Autonomia'],
+    sogliaEdilizia: {
+      ottimo: '> 90 gg',
+      buono: '60–90 gg',
+      attenzione: '30–60 gg',
+      critico: '< 30 gg',
+    },
+    connessoCon: ['current_ratio', 'posizione_iva'],
   },
 
   // ─── IVA ────────────────────────────────────────────────────────

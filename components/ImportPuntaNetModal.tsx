@@ -192,7 +192,8 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         }
 
         const dateStr = tx.date;
-        const amountCent = Math.round(tx.amount * 100);
+        const grossAmount = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
+        const amountCent = Math.round(grossAmount * 100);
         const descPrefix = tx.description.toUpperCase().slice(0, 15);
         
         // Indice Livello 2

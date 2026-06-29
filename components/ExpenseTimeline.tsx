@@ -7,7 +7,7 @@ import autoTable from 'jspdf-autotable';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { exportMonthlyReportPDF } from '../utils/monthlyPdfExport';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate, getDynamicLoansInterests, getDynamicLoansPrincipals } from '../utils/gasCoreEngine';
 
 interface ExpenseTimelineProps {
   transactions: Transaction[];
@@ -120,6 +120,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
   }, [activeCell, editingActualId, currentYear]); 
 
   const getGrossAmount = (t: Transaction) => {
+    if (typeof t.grossAmount === 'number') return t.grossAmount;
     const net = t.amount;
     const vat = t.vatRate || 0;
     return net * (1 + vat / 100);
@@ -166,151 +167,27 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       return total;
   };
 
-  // --- LOAN REPAYMENT LOGIC (French Amortization / Rata Costante) ---
-  const calculateRepayment = (
-      principal: number, 
-      details: LoanDetails, 
-      targetMonthIndex: number
-  ) => {
-      if (!details || !details.interestStartDate) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
-
-      const targetDate = new Date(Date.UTC(currentYear, targetMonthIndex, 15));
-      const intStart = parseUTCDate(details.interestStartDate);
-      const princStart = details.principalStartDate ? parseUTCDate(details.principalStartDate) : intStart;
-      const end = details.endDate ? parseUTCDate(details.endDate) : new Date(Date.UTC(intStart.getUTCFullYear() + 20, intStart.getUTCMonth(), intStart.getUTCDate()));
-
-      if (targetDate < intStart || targetDate > end) return { total: 0, principal: 0, interest: 0, rateUsed: 0, typeUsed: 'FIXED' };
-
-      // Determina il tasso applicabile per questa specifica data (considerando rinegoziazioni)
-      let currentRate = details.interestRate;
-      let currentType = details.rateType;
-      
-      if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
-        // Ordina per data e prendi l'ultima rinegoziazione valida per targetDate
-        const rinegValide = [...details.rinegoziazioni]
-          .filter(r => parseUTCDate(r.dataInizio) <= targetDate)
-          .sort((a, b) => parseUTCDate(b.dataInizio).getTime() - parseUTCDate(a.dataInizio).getTime());
-        
-        if (rinegValide.length > 0) {
-          currentRate = rinegValide[0].nuovoTasso;
-          currentType = rinegValide[0].nuovoTipoTasso;
-        }
-      }
-
-      const i = (currentRate / 100) / 12;
-      const amortizationStart = !isNaN(princStart.getTime()) ? princStart : intStart;
-      
-      if (targetDate >= intStart && targetDate < amortizationStart) {
-          return { 
-            total: principal * i, 
-            principal: 0, 
-            interest: principal * i,
-            rateUsed: currentRate,
-            typeUsed: currentType
-          };
-      }
-
-      const n = (end.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (end.getUTCMonth() - amortizationStart.getUTCMonth());
-      if (n <= 0) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
-
-      const rataFissa = i > 0
-        ? principal * (i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1)
-        : principal / n;
-
-      const monthsPassed = (targetDate.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (targetDate.getUTCMonth() - amortizationStart.getUTCMonth());
-      if (monthsPassed <= 0 || monthsPassed > n) return { total: 0, principal: 0, interest: 0, rateUsed: currentRate, typeUsed: currentType };
-
-      const paymentsMade = monthsPassed - 1;
-
-      const residualCapital = i > 0
-        ? principal * (Math.pow(1 + i, n) - Math.pow(1 + i, paymentsMade)) / (Math.pow(1 + i, n) - 1)
-        : Math.max(0, principal - (principal / n * paymentsMade));
-
-      const interestPayment = Math.max(0, residualCapital * i);
-      const principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
-
-      return {
-        total: Math.round((principalPayment + interestPayment) * 100) / 100,
-        principal: Math.round(principalPayment * 100) / 100,
-        interest: Math.round(interestPayment * 100) / 100,
-        rateUsed: currentRate,
-        typeUsed: currentType
-      };
-  };
+  // --- LOAN REPAYMENT LOGIC (Prende i vettori centralizzati del motore e li adatta) ---
+  const dynamicInterestsArray = useMemo(() => getDynamicLoansInterests(transactions, currentYear, initialData), [transactions, currentYear, initialData]);
+  const dynamicPrincipalsArray = useMemo(() => getDynamicLoansPrincipals(transactions, currentYear, initialData), [transactions, currentYear, initialData]);
 
   const calculateLoanRepaymentForMonth = (monthIndex: number) => {
-      let total = 0;
-      let interest = 0;
-      let principal = 0;
-      const details: { name: string; amount: number; rate: number; type: string; principal: number; interest: number; total: number }[] = [];
-
-      // 1. From New INCOME Transactions (that have loan details)
-      // Escludi forecast se esiste un actual collegato via linkedForecastId O loanSourceId
-      const incomeLoans = transactions.filter(t => 
-          t.type === TransactionType.INCOME && 
-          t.category === '[FINANZA] Finanziamenti Ricevuti' && 
-          t.loanDetails &&
-          !(t.isForecast && transactions.some(act => 
-            !act.isForecast && 
-            (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId))
-          ))
-      );
-
-      // Normalizzatore per confronto nomi robusto (ignora spazi multipli e maiuscole)
-      const normalizeForCompare = (s: string) => s.toLowerCase().trim().replace(/\s+/g, ' ');
-      // Track nomi già inclusi dalle transazioni per evitare duplicazione con initialData
-      const nomesFromIncomeLoans = new Set(incomeLoans.map(t => normalizeForCompare(t.description)));
-      const idsFromIncomeLoans = new Set(incomeLoans.map(t => t.loanSourceId || t.id));
-
-      incomeLoans.forEach(t => {
-          const comps = calculateRepayment(t.amount, t.loanDetails!, monthIndex);
-          total += comps.total;
-          interest += comps.interest;
-          principal += comps.principal;
-          if (comps.total > 0) {
-            details.push({
-              name: t.description,
-              amount: t.amount,
-              rate: comps.rateUsed,
-              type: comps.typeUsed,
-              principal: comps.principal,
-              interest: comps.interest,
-              total: comps.total
-            });
-          }
-      });
-
-      // 2. From Existing Loans (Initial Balance)
-      // Escludi prestiti già calcolati tramite transazioni INCOME (per id O per nome)
-      if (initialData?.loans) {
-          initialData.loans
-            .filter(l => {
-              // Escludi se c'è una transazione con loanSourceId corrispondente nell'anno corrente
-              const hasLinkedTx = transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === currentYear);
-              if (hasLinkedTx) return false;
-              // Escludi se già calcolato via incomeLoans (per id o per nome — prevenzione doppio conteggio)
-              if (idsFromIncomeLoans.has(l.id)) return false;
-              if (nomesFromIncomeLoans.has(normalizeForCompare(l.name))) return false;
-              return true;
-            })
-            .forEach(l => {
-              const comps = calculateRepayment(l.originalAmount, l.details, monthIndex);
-              total += comps.total;
-              interest += comps.interest;
-              principal += comps.principal;
-              if (comps.total > 0) {
-                details.push({
-                  name: l.name,
-                  amount: l.originalAmount,
-                  rate: comps.rateUsed,
-                  type: comps.typeUsed,
-                  principal: comps.principal,
-                  interest: comps.interest,
-                  total: comps.total
-                });
-              }
-          });
-      }
+      const interest = dynamicInterestsArray[monthIndex] || 0;
+      const principal = dynamicPrincipalsArray[monthIndex] || 0;
+      const total = interest + principal;
+      
+      // Dettaglio informativo per il tooltip
+      const details = total > 0 ? [
+        {
+          name: "Rate Mutui GV",
+          amount: 0,
+          rate: 0,
+          type: "AUTOMATIC",
+          principal,
+          interest,
+          total
+        }
+      ] : [];
 
       return { total, interest, principal, details };
   };
@@ -406,25 +283,25 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             total += calculateProjectCostForMonth(category, m);
         }
         if (isInterestCategory(category)) {
-            // BUG-01 Fix: Only add calculations if there are no manual transactions for interests in the whole year
-            const hasInterests = expenseTransactions.some(t => {
-              const tDate = parseUTCDate(t.date);
-              return tDate.getUTCFullYear() === currentYear && !!t.isForecast === true && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
-            });
-            if (!hasInterests) {
-                for (let m = 0; m < 12; m++) {
+            // Calcolo mensile additivo
+            for (let m = 0; m < 12; m++) {
+                const hasManualMonth = expenseTransactions.some(t => {
+                  const tDate = parseUTCDate(t.date);
+                  return tDate.getUTCFullYear() === currentYear && tDate.getUTCMonth() === m && !!t.isForecast === true && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
+                });
+                if (!hasManualMonth) {
                     total += calculateLoanRepaymentForMonth(m).interest;
                 }
             }
         }
         if (isPrincipalCategory(category)) {
-            // BUG-01 Fix: Only add calculations if there are no manual transactions for principal in the whole year
-            const hasPrincipal = expenseTransactions.some(t => {
-              const tDate = parseUTCDate(t.date);
-              return tDate.getUTCFullYear() === currentYear && !!t.isForecast === true && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
-            });
-            if (!hasPrincipal) {
-                for (let m = 0; m < 12; m++) {
+            // Calcolo mensile additivo
+            for (let m = 0; m < 12; m++) {
+                const hasManualMonth = expenseTransactions.some(t => {
+                  const tDate = parseUTCDate(t.date);
+                  return tDate.getUTCFullYear() === currentYear && tDate.getUTCMonth() === m && !!t.isForecast === true && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
+                });
+                if (!hasManualMonth) {
                     total += calculateLoanRepaymentForMonth(m).principal;
                 }
             }
@@ -467,23 +344,23 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                 total += calculateProjectCostForMonth(cat, m);
             }
             if (isInterestCategory(cat)) {
-                const hasInterests = expenseTransactions.some(t => {
-                  const tDate = parseUTCDate(t.date);
-                  return tDate.getUTCFullYear() === currentYear && !!t.isForecast === true && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
-                });
-                if (!hasInterests) {
-                    for (let m = 0; m < 12; m++) {
+                for (let m = 0; m < 12; m++) {
+                    const hasManualMonth = expenseTransactions.some(t => {
+                      const tDate = parseUTCDate(t.date);
+                      return tDate.getUTCFullYear() === currentYear && tDate.getUTCMonth() === m && !!t.isForecast === true && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
+                    });
+                    if (!hasManualMonth) {
                         total += calculateLoanRepaymentForMonth(m).interest;
                     }
                 }
             }
             if (isPrincipalCategory(cat)) {
-                const hasPrincipal = expenseTransactions.some(t => {
-                  const tDate = parseUTCDate(t.date);
-                  return tDate.getUTCFullYear() === currentYear && !!t.isForecast === true && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
-                });
-                if (!hasPrincipal) {
-                    for (let m = 0; m < 12; m++) {
+                for (let m = 0; m < 12; m++) {
+                    const hasManualMonth = expenseTransactions.some(t => {
+                      const tDate = parseUTCDate(t.date);
+                      return tDate.getUTCFullYear() === currentYear && tDate.getUTCMonth() === m && !!t.isForecast === true && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
+                    });
+                    if (!hasManualMonth) {
                         total += calculateLoanRepaymentForMonth(m).principal;
                     }
                 }
@@ -528,17 +405,21 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
             }
         });
         // Loans
-        const hasLoanTransactionsGlobal = expenseTransactions.some(t => {
-          const tDate = parseUTCDate(t.date);
-          return (
-            tDate.getUTCFullYear() === currentYear &&
-            !!t.isForecast === true && // solo forecast — evita che actual sopprima il previsionale
-            (t.category === '[FINANZA] Interessi Passivi Finanziamenti' || t.category === '[FINANZA] Quota Capitale Rate Finanziamenti')
-          );
-        });
-        if (!hasLoanTransactionsGlobal) {
-            for (let m = 0; m < 12; m++) {
-                total += calculateLoanRepaymentForMonth(m).total;
+        for (let m = 0; m < 12; m++) {
+            const hasManualMonthInt = expenseTransactions.some(t => {
+              const tDate = parseUTCDate(t.date);
+              return tDate.getUTCFullYear() === currentYear && tDate.getUTCMonth() === m && !!t.isForecast === true && t.category === '[FINANZA] Interessi Passivi Finanziamenti';
+            });
+            if (!hasManualMonthInt) {
+                total += calculateLoanRepaymentForMonth(m).interest;
+            }
+
+            const hasManualMonthPrinc = expenseTransactions.some(t => {
+              const tDate = parseUTCDate(t.date);
+              return tDate.getUTCFullYear() === currentYear && tDate.getUTCMonth() === m && !!t.isForecast === true && t.category === '[FINANZA] Quota Capitale Rate Finanziamenti';
+            });
+            if (!hasManualMonthPrinc) {
+                total += calculateLoanRepaymentForMonth(m).principal;
             }
         }
         

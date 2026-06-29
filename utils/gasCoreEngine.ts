@@ -579,7 +579,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     } else {
       proiezioneOneriFin += ce.oneriFin[m] > 0 
         ? ce.oneriFin[m] 
-        : (forecastOneriFinByMonth[m] > 0 ? forecastOneriFinByMonth[m] : dynamicInterests[m]);
+        : (forecastOneriFinByMonth[m] + (dynamicInterests[m] || 0));
     }
   }
 

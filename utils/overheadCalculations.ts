@@ -131,9 +131,7 @@ export const calculateOverheadRates = (
 
   let totaleOneriFinPrev = 0;
   for (let m = 0; m < 12; m++) {
-    totaleOneriFinPrev += forecastOneriFinByMonth[m] > 0 
-      ? forecastOneriFinByMonth[m] 
-      : (dynamicInterests[m] || 0);
+    totaleOneriFinPrev += forecastOneriFinByMonth[m] + (dynamicInterests[m] || 0);
   }
 
   const totaleCostiDirettiPrev    = sumByTypePrev(['costo_variabile']);

@@ -45,6 +45,7 @@ import Footer from './components/Footer';
 import TermModal, { useTermModal } from './components/TermModal';
 import ImportPuntaNetModal from './components/ImportPuntaNetModal';
 import ImportStoricoModal from './components/ImportStoricoModal';
+import { DiagnosticModal } from './components/DiagnosticModal';
 import { generateDefault2025Snapshot } from './utils/gasCoreEngine';
 import { 
   FIXED_COST_CATEGORIES, 
@@ -674,6 +675,7 @@ const App: React.FC = () => {
   const [fileFEA2, setFileFEA2] = useState<File | null>(null);
   const [showImportPuntaNet, setShowImportPuntaNet] = useState(false);
   const [showImportStorico, setShowImportStorico] = useState(false);
+  const [showDiagnosticModal, setShowDiagnosticModal] = useState(false);
   const [storicoImportato, setStoricoImportato]   = useState(false);
 
   const [aliquotaIRES, setAliquotaIRES] = useState<number>(24);
@@ -1690,6 +1692,9 @@ const App: React.FC = () => {
                 transactions={transactions} 
                 expenseCategories={[...fixedCategories, ...variableCategories]}
                 onGoToManuale={handleGoToManuale}
+                initialAccounts={initialData.accounts}
+                initialData={initialData}
+                projects={projects}
             />
           </div>
         );
@@ -1966,6 +1971,9 @@ const App: React.FC = () => {
                   transactions={transactions} 
                   expenseCategories={[...fixedCategories, ...variableCategories]}
                   onGoToManuale={handleGoToManuale}
+                  initialAccounts={initialData.accounts}
+                  initialData={initialData}
+                  projects={projects}
                 />;
     }
   };
@@ -2123,10 +2131,21 @@ const App: React.FC = () => {
             </nav>
           )}
 
-          {/* Pulsanti Azione (Nuova / AI / Salva) */}
+           {/* Pulsanti Azione (Nuova / AI / Salva) */}
           {/* Pulsanti Azione — Salva sempre visibile, Nuova solo nelle view operative */}
           <div className="flex items-center gap-3 w-full md:w-auto justify-end animate-in fade-in zoom-in-95 duration-300">
             <div className="flex gap-2">
+              {view !== AppView.HOME && (
+                <button
+                  onClick={() => setShowDiagnosticModal(true)}
+                  className="px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] md:text-sm font-bold shadow-sm transition-all active:scale-95 flex items-center gap-2"
+                  title="Diagnostica database per doppioni ed anomalie"
+                >
+                  <ShieldCheck size={16} />
+                  <span className="hidden md:inline">Diagnostica</span>
+                </button>
+              )}
+
               <button 
                 onClick={() => isDemoMode ? handleDownloadBackup(true) : (fileHandle ? saveToFile(fileHandle) : handleDownloadBackup())}
                 className={`px-4 py-2 rounded-xl text-white text-[11px] md:text-sm font-bold shadow-md transition-all active:scale-95 flex items-center gap-2 ${isDemoMode ? 'bg-slate-600 hover:bg-slate-700' : (saveStatus === 'error' ? 'bg-slate-800 hover:bg-slate-900' : 'bg-slate-900 hover:bg-slate-800')}`}
@@ -2288,6 +2307,18 @@ const App: React.FC = () => {
               triggerImmediateSave(newTxs, newSessions, true);
             }}
             onClose={() => setShowImportStorico(false)}
+          />
+        )}
+
+        {showDiagnosticModal && (
+          <DiagnosticModal 
+            transactions={transactions}
+            onClose={() => setShowDiagnosticModal(false)}
+            onFixDuplicates={(cleanedTxs) => {
+              setTransactions(cleanedTxs);
+              triggerImmediateSave(cleanedTxs, undefined);
+              setShowDiagnosticModal(false);
+            }}
           />
         )}
 

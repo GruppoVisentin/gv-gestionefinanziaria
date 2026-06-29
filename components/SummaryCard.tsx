@@ -1,14 +1,15 @@
 import React from 'react';
 import { CURRENCY_FORMATTER } from '../constants';
-import { ArrowUpRight, ArrowDownRight, Wallet } from 'lucide-react';
+import { HelpCircle, ArrowUpRight, ArrowDownRight, Wallet } from 'lucide-react';
 
 interface SummaryCardProps {
   title: string;
   amount: number;
   type: 'income' | 'expense' | 'balance';
+  onInfoClick?: () => void;
 }
 
-const SummaryCard: React.FC<SummaryCardProps> = ({ title, amount, type }) => {
+const SummaryCard: React.FC<SummaryCardProps> = ({ title, amount, type, onInfoClick }) => {
   let colorClass = '';
   let Icon = Wallet;
 
@@ -23,9 +24,20 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ title, amount, type }) => {
   }
 
   return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between">
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between relative">
       <div>
-        <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
+        <div className="flex items-center gap-1.5 mb-1">
+          <p className="text-sm font-medium text-slate-500">{title}</p>
+          {onInfoClick && (
+            <button 
+              onClick={(e) => { e.stopPropagation(); onInfoClick(); }}
+              className="p-0.5 rounded text-slate-400 hover:text-slate-900 transition-colors"
+              title="Mostra dettagli"
+            >
+              <HelpCircle size={14} />
+            </button>
+          )}
+        </div>
         <h3 className="text-2xl font-bold text-slate-900 tracking-tight">
           {CURRENCY_FORMATTER.format(amount)}
         </h3>

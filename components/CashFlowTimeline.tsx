@@ -120,6 +120,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   const COL_SUMMARY_WIDTH = "w-[120px]";
 
   const getGrossAmount = (t: Transaction) => {
+    if (typeof t.grossAmount === 'number') return t.grossAmount;
     const net = t.amount;
     const vat = t.vatRate || 0;
     return net * (1 + vat / 100);
@@ -254,7 +255,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   }, [transactions, currentYear, projects, initialData]);
 
   // --- CALCULATION LOGIC FOR THRESHOLDS ---
-  const { avgMonthlyExpense, safetyThreshold } = useMemo(() => {
+  const { avgMonthlyExpense, safetyThreshold, avgMonthlyExpenseForecast, avgMonthlyExpenseActual } = useMemo(() => {
     const totalAnnualExpense = transactions
       .filter(t => {
         const tDate = parseUTCDate(t.date);
@@ -263,9 +264,36 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
     const avg = totalAnnualExpense / 12;
+
+    // Media uscite PREVISIONALI (solo forecast, su 12 mesi)
+    const totalForecastExp = transactions
+      .filter(t => {
+        const tDate = parseUTCDate(t.date);
+        return t.isForecast && t.type === TransactionType.EXPENSE && tDate.getUTCFullYear() === currentYear;
+      })
+      .reduce((sum, t) => sum + getGrossAmount(t), 0);
+    const avgForecast = totalForecastExp / 12;
+
+    // Media uscite CONSUNTIVE (solo mesi con almeno una transazione reale)
+    const actualExpByMonth: Record<number, number> = {};
+    transactions.forEach(t => {
+      if (!t.isForecast && t.type === TransactionType.EXPENSE) {
+        const tDate = parseUTCDate(t.date);
+        if (tDate.getUTCFullYear() === currentYear) {
+          const m = tDate.getUTCMonth();
+          actualExpByMonth[m] = (actualExpByMonth[m] || 0) + getGrossAmount(t);
+        }
+      }
+    });
+    const mesiConDati = Object.keys(actualExpByMonth).length;
+    const totalActualExp = Object.values(actualExpByMonth).reduce((s, v) => s + v, 0);
+    const avgActual = mesiConDati > 0 ? totalActualExp / mesiConDati : 0;
+
     return { 
         avgMonthlyExpense: avg, 
-        safetyThreshold: avg * 2 
+        safetyThreshold: avg * 2,
+        avgMonthlyExpenseForecast: avgForecast,
+        avgMonthlyExpenseActual: avgActual
     };
   }, [transactions, currentYear]);
 
@@ -530,26 +558,20 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
   const mesiARischio = useMemo(() => {
     const result: { mese: number; saldo: number; tipo: 'negativo' | 'attenzione' }[] = [];
-    // BUG #5 fix: usa saldoInizialeConsuntivo come base reale di partenza
-    let cumulativo = saldoInizialeConsuntivo;
+    // Evaluate strictly based on the forecast scenario
+    let cumulativo = saldoInizialePrevisionale;
 
     for (let i = 0; i < 12; i++) {
-      if (i <= meseCorrente) {
-        cumulativo += calculateMonthlyFlow(i, false);
-      } else {
-        cumulativo += calculateMonthlyFlow(i, true);
-      }
+      cumulativo += calculateMonthlyFlow(i, true);
 
-      if (i > meseCorrente) {
-        if (cumulativo < 0) {
-          result.push({ mese: i, saldo: cumulativo, tipo: 'negativo' });
-        } else if (cumulativo < safetyThreshold) {
-          result.push({ mese: i, saldo: cumulativo, tipo: 'attenzione' });
-        }
+      if (cumulativo < 0) {
+        result.push({ mese: i, saldo: cumulativo, tipo: 'negativo' });
+      } else if (cumulativo < safetyThreshold) {
+        result.push({ mese: i, saldo: cumulativo, tipo: 'attenzione' });
       }
     }
     return result;
-  }, [transactions, saldoInizialeConsuntivo, safetyThreshold, currentYear, projects, initialData, tempLoans]);
+  }, [transactions, saldoInizialePrevisionale, safetyThreshold, currentYear, projects, initialData, tempLoans]);
 
   const getBalanceColor = (balance: number) => {
       if (balance < 1) return 'text-rose-500 font-bold'; 
@@ -1581,20 +1603,11 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                   <FileText size={14} />
                 )}
                 <span className="hidden sm:inline">
-                  {isGeneratingPDF ? "Elaborazione..." : "Report Proiezione"}
+                  {isGeneratingPDF ? "Elaborazione..." : "Esporta PDF"}
                 </span>
               </button>
             </div>
             <HelpButton onClick={() => setShowHelp(true)} />
-            <PDFExportButton 
-              config={{
-                elementId: "cashflow-timeline-report-content",
-                nomeFile: `CashFlow_Timeline_${currentYear}`,
-                titolo: `Flusso di Cassa - Anno ${currentYear}`,
-                sottotitolo: "Analisi Mensile e Progressiva della Liquidità",
-                orientazione: "landscape"
-              }}
-            />
           </div>
 
           {/* Tasto POPOLA — accanto all'ingranaggio */}
@@ -1709,18 +1722,41 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 </div>
               ))}
             </div>
-            <p className={`text-[11px] leading-relaxed ${
+            <div className={`flex flex-col gap-1.5 mt-1 text-[11px] leading-relaxed ${
               mesiARischio.some(m => m.tipo === 'negativo') ? 'text-slate-900' : 'text-slate-600'
             }`}>
-              Soglia di sicurezza: {CURRENCY_FORMATTER.format(safetyThreshold)} (media spese mensili × 2).
-              Valori basati sul mix consuntivo + previsionale inserito.
-            </p>
+              <p>
+                Soglia di sicurezza: {CURRENCY_FORMATTER.format(safetyThreshold)} (media spese mensili × 2).
+                Valori basati sul previsionale inserito.
+              </p>
+              <div className="flex flex-wrap gap-4 mt-1">
+                <div className="flex items-center gap-2 bg-white/60 border border-slate-200 rounded-lg px-3 py-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Media Uscite Previsionali/mese:</span>
+                  <span className="font-mono font-bold text-slate-800">{CURRENCY_FORMATTER.format(avgMonthlyExpenseForecast)}</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/60 border border-slate-200 rounded-lg px-3 py-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Media Uscite Consuntive/mese:</span>
+                  <span className="font-mono font-bold text-slate-800">{CURRENCY_FORMATTER.format(avgMonthlyExpenseActual)}</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
 
         <div ref={scrollContainerRef} className="overflow-x-auto w-full relative">
-        <table className="w-full text-sm text-left border-collapse min-w-max">
+        <table className="w-full text-sm text-left border-collapse" style={{ tableLayout: 'fixed', minWidth: 3420 }}>
+          <colgroup>
+            <col style={{ width: 300 }} />
+            {Array.from({ length: 12 }).map((_, i) => (
+              <React.Fragment key={`cg-${i}`}>
+                <col style={{ width: 120 }} />
+                <col style={{ width: 120 }} />
+              </React.Fragment>
+            ))}
+            <col style={{ width: 120 }} />
+            <col style={{ width: 120 }} />
+          </colgroup>
           <thead className="text-xs uppercase bg-slate-800 text-slate-400 sticky top-0 z-30">
             <tr>
               <th scope="col" rowSpan={2} className={`px-6 py-3 font-semibold sticky left-0 bg-slate-800 z-30 border-r border-slate-700 shadow-[4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_LABEL_WIDTH}`}>

@@ -775,38 +775,42 @@ export const isDuplicato = (
     const fepNumUpper = riga.numeroFattura.toUpperCase();
     if (indexes?.fepMap) {
       const list = indexes.fepMap.get(fepNumUpper) || [];
-      const trovata = list.find(tx =>
-        tx.type === 'EXPENSE' &&
-        tx.description.toUpperCase().includes(fepNumUpper) &&
-        Math.abs(tx.amount - riga.importo) < 0.05
-      );
+      const trovata = list.find(tx => {
+        const gross = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
+        return tx.type === 'EXPENSE' &&
+          tx.description.toUpperCase().includes(fepNumUpper) &&
+          Math.abs(gross - riga.importo) < 0.05;
+      });
       if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
     } else {
-      const trovata = esistenti.find(tx =>
-        tx.type === 'EXPENSE' &&
-        tx.description.toUpperCase().includes(fepNumUpper) &&
-        Math.abs(tx.amount - riga.importo) < 0.05
-      );
+      const trovata = esistenti.find(tx => {
+        const gross = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
+        return tx.type === 'EXPENSE' &&
+          tx.description.toUpperCase().includes(fepNumUpper) &&
+          Math.abs(gross - riga.importo) < 0.05;
+      });
       if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
     }
   } else if (riga.tipoMovimento === 'FEA' && riga.numeroFattura) {
     const feaNumUpper = riga.numeroFattura.toUpperCase();
     if (indexes?.feaMap) {
       const list = indexes.feaMap.get(feaNumUpper) || [];
-      const trovata = list.find(tx =>
-        tx.type === 'INCOME' &&
-        tx.description.toUpperCase().includes('FEA') &&
-        tx.description.toUpperCase().includes(feaNumUpper) &&
-        Math.abs(tx.amount - riga.importo) < 0.05
-      );
+      const trovata = list.find(tx => {
+        const gross = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
+        return tx.type === 'INCOME' &&
+          tx.description.toUpperCase().includes('FEA') &&
+          tx.description.toUpperCase().includes(feaNumUpper) &&
+          Math.abs(gross - riga.importo) < 0.05;
+      });
       if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
     } else {
-      const trovata = esistenti.find(tx =>
-        tx.type === 'INCOME' &&
-        tx.description.toUpperCase().includes('FEA') &&
-        tx.description.toUpperCase().includes(feaNumUpper) &&
-        Math.abs(tx.amount - riga.importo) < 0.05
-      );
+      const trovata = esistenti.find(tx => {
+        const gross = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
+        return tx.type === 'INCOME' &&
+          tx.description.toUpperCase().includes('FEA') &&
+          tx.description.toUpperCase().includes(feaNumUpper) &&
+          Math.abs(gross - riga.importo) < 0.05;
+      });
       if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
     }
   }
@@ -820,11 +824,12 @@ export const isDuplicato = (
       return { duplicato: true, livello: 2, transazioneEsistente: list[0] };
     }
   } else {
-    const trovata = esistenti.find(tx =>
-      tx.date === dataStr &&
-      Math.round(tx.amount * 100) === importoCent &&
-      tx.description.toUpperCase().slice(0, 15) === descPrefix
-    );
+    const trovata = esistenti.find(tx => {
+      const gross = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
+      return tx.date === dataStr &&
+        Math.round(gross * 100) === importoCent &&
+        tx.description.toUpperCase().slice(0, 15) === descPrefix;
+    });
     if (trovata) return { duplicato: true, livello: 2, transazioneEsistente: trovata };
   }
 
@@ -837,12 +842,13 @@ export const isDuplicato = (
       const trovataL3 = list.find(tx => tx.sourceRef?.startsWith('Punta Net'));
       if (trovataL3) return { duplicato: true, livello: 3, transazioneEsistente: trovataL3 };
     } else {
-      const trovataL3 = esistenti.find(tx =>
-        tx.date === dataStr &&
-        Math.round(tx.amount * 100) === importoCent &&
-        tx.type === type &&
-        tx.sourceRef?.startsWith('Punta Net')
-      );
+      const trovataL3 = esistenti.find(tx => {
+        const gross = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
+        return tx.date === dataStr &&
+          Math.round(gross * 100) === importoCent &&
+          tx.type === type &&
+          tx.sourceRef?.startsWith('Punta Net');
+      });
       if (trovataL3) return { duplicato: true, livello: 3, transazioneEsistente: trovataL3 };
     }
   }
@@ -1310,7 +1316,8 @@ export const rigaToTransaction = (
     vatRate: rate,
     sourceRef: sourceRef ?? `Punta Net · ${riga.data.toLocaleDateString('it-IT')}`,
     importSessionId,
-    invoiceDate
+    invoiceDate,
+    grossAmount: Math.round(riga.importo * 100) / 100
   };
 };
 

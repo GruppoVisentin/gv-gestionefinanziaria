@@ -43,12 +43,12 @@ const TermModal: React.FC<TermModalProps> = ({ termId, customTip, onClose }) => 
   return (
     // Overlay
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm overflow-y-auto"
       onClick={onClose}
     >
       {/* Modal */}
       <div
-        className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl my-8 flex flex-col max-h-[calc(100vh-4rem)] overflow-hidden relative"
+        className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden relative"
         onClick={e => e.stopPropagation()}
       >
         {/* Pulsante chiusura fisso in alto a destra per sicurezza */}
