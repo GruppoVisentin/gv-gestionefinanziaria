@@ -27,7 +27,12 @@ import {
   CartesianGrid, 
   LineChart, 
   Line,
-  ComposedChart
+  ComposedChart,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar
 } from 'recharts';
 import PDFExportButton from './PDFExportButton';
 import { HelpButton } from './HelpPanel';
@@ -74,7 +79,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     const ceMetrics = calcCEMetrics(ceData, transactions);
     const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions) : null;
     
-    if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0, breakdown: [] };
+    if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0, breakdown: [], radarData: [] };
     
     let score = 0;
     
@@ -195,8 +200,18 @@ const Dashboard: React.FC<DashboardProps> = ({
       { name: 'DSO (Incassi)', score: dsoScore, target: '< 60 gg', color: dsoHealth === 'green' ? '#10b981' : dsoHealth === 'orange' ? '#f59e0b' : '#ef4444' },
       { name: 'DPO (Pagamenti)', score: dpoScore, target: '30-90 gg', color: dpoHealth === 'green' ? '#10b981' : dpoHealth === 'orange' ? '#f59e0b' : '#ef4444' }
     ];
+
+    const radarData = [
+      { subject: 'PFN/EBITDA', A: pfnEbitdaScore * 100, fullMark: 100 },
+      { subject: 'EBITDA/Oneri', A: ebitdaOneriScore * 100, fullMark: 100 },
+      { subject: 'Current Ratio', A: currentRatioScore * 100, fullMark: 100 },
+      { subject: 'Solidità', A: soliditaScore * 100, fullMark: 100 },
+      { subject: 'Utile Netto', A: utileScore * 100, fullMark: 100 },
+      { subject: 'DSO (Incasso)', A: dsoScore * 100, fullMark: 100 },
+      { subject: 'DPO (Pagamento)', A: dpoScore * 100, fullMark: 100 }
+    ];
                   
-    return { score, label, color, dscr: ceMetrics.ebitdaTot / (ceMetrics.oneriFin || 1), breakdown };
+    return { score, label, color, dscr: ceMetrics.ebitdaTot / (ceMetrics.oneriFin || 1), breakdown, radarData };
   }, [transactions, spSnapshots, ceManualData, currentYear]);
 
   // Dati mensili per i tre grafici di andamento
@@ -538,31 +553,29 @@ const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            {/* Chart Column */}
-            <div className="lg:col-span-7 flex flex-col">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">Scomposizione Punteggio Indici</span>
-              <div className="h-56 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    layout="vertical"
-                    data={ratingData.breakdown}
-                    margin={{ top: 0, right: 10, left: 10, bottom: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                    <XAxis type="number" domain={[0, 1]} hide />
-                    <YAxis dataKey="name" type="category" width={110} axisLine={false} tickLine={false} tick={{fill: '#475569', fontSize: 9, fontWeight: 'bold'}} />
-                    <Tooltip 
-                      formatter={(value: number) => [`${value} Punti`, 'Punteggio']}
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
-                    />
-                    <Bar dataKey="score" barSize={8} radius={[0, 4, 4, 0]}>
-                      {ratingData.breakdown.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            {/* Chart Column (Radar Bancario) */}
+            <div className="lg:col-span-7 flex flex-col items-center justify-center">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block self-start">Radar del Rating Bancario</span>
+              {ratingData.radarData.length > 0 ? (
+                <div className="h-64 w-full flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart cx="50%" cy="50%" outerRadius="70%" data={ratingData.radarData}>
+                      <PolarGrid stroke="#e2e8f0" />
+                      <PolarAngleAxis dataKey="subject" tick={{ fill: '#475569', fontSize: 9, fontWeight: 'bold' }} />
+                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 8 }} />
+                      <Radar name="Punteggio" dataKey="A" stroke="#2563eb" fill="#3b82f6" fillOpacity={0.25} />
+                      <Tooltip 
+                        formatter={(value: number) => [`${value}%`, 'Punteggio']}
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-slate-400 text-xs italic">
+                  Dati patrimoniali assenti per il grafico radar
+                </div>
+              )}
             </div>
           </div>
         </div>
