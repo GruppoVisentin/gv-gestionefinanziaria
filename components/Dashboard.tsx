@@ -1,29 +1,293 @@
 import React, { useState, useMemo } from 'react';
-import { parseUTCDate } from '../utils/gasCoreEngine';
-import { FileCode, Receipt } from 'lucide-react';
-import { Transaction, TransactionType, AppView } from '../types';
+import { parseUTCDate, buildCEData, calcCEMetrics, calcSPMetrics } from '../utils/gasCoreEngine';
+import { 
+  FileCode, 
+  Receipt, 
+  ShieldCheck, 
+  TrendingUp, 
+  ArrowUpRight, 
+  ArrowDownRight, 
+  AlertCircle, 
+  CheckCircle2, 
+  Info,
+  CalendarClock
+} from 'lucide-react';
+import { Transaction, TransactionType, AppView, SPSnapshot, CEData } from '../types';
 import SummaryCard from './SummaryCard';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { 
+  PieChart, 
+  Pie, 
+  Cell, 
+  ResponsiveContainer, 
+  Tooltip, 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  LineChart, 
+  Line,
+  ComposedChart
+} from 'recharts';
 import PDFExportButton from './PDFExportButton';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { calcPosizIoneIVA } from '../utils/gasCoreEngine';
 import { CURRENCY_FORMATTER, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants';
+import InfoTooltip from './InfoTooltip';
 
 interface DashboardProps {
   transactions: Transaction[];
   expenseCategories: string[];
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
+  initialAccounts?: any[];
+  initialData?: any;
+  projects?: any[];
+  spSnapshots?: SPSnapshot[];
+  ceManualData?: Record<string, Partial<CEData>>;
 }
 
 const COLORS = ['#1e293b', '#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0', '#334155', '#0f172a', '#1e293b', '#334155', '#475569'];
 
 const getGrossAmount = (t: Transaction) => t.amount * (1 + (t.vatRate || 0) / 100);
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, onGoToManuale }) => {
+const Dashboard: React.FC<DashboardProps> = ({ 
+  transactions, 
+  expenseCategories, 
+  onGoToManuale,
+  initialAccounts = [],
+  initialData = {},
+  projects = [],
+  spSnapshots = [],
+  ceManualData = {}
+}) => {
   const [showHelp, setShowHelp] = useState(false);
-  // Filter out Forecasts for the main dashboard. Only show Actuals.
   const currentYear = new Date().getFullYear();
+
+  // Calcolo Rating Bancario (Basilea 3)
+  const ratingData = useMemo(() => {
+    const sortedSnapshots = [...spSnapshots].sort((a, b) => new Date(b.dataRiferimento).getTime() - new Date(a.dataRiferimento).getTime());
+    const activeSP = sortedSnapshots[0] || null;
+    const ratingYear = activeSP ? new Date(activeSP.dataRiferimento).getFullYear() : currentYear;
+    
+    const ceData = buildCEData(transactions, ratingYear, ceManualData[ratingYear.toString()]);
+    const ceMetrics = calcCEMetrics(ceData, transactions);
+    const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions) : null;
+    
+    if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0 };
+    
+    let score = 0;
+    
+    // PFN / EBITDA
+    if (spMetrics.pfnSuEbitda <= 3) score += 1;
+    else if (spMetrics.pfnSuEbitda <= 4.5) score += 0.5;
+    
+    // EBITDA / Oneri Fin.
+    if (ceMetrics.oneriFin <= 0) score += 1;
+    else {
+      const ratio = ceMetrics.ebitdaTot / ceMetrics.oneriFin;
+      if (ratio >= 3) score += 1;
+      else if (ratio >= 1.5) score += 0.5;
+    }
+    
+    // Current Ratio
+    if (spMetrics.currentRatio >= 1.2) score += 1;
+    else if (spMetrics.currentRatio >= 1.0) score += 0.5;
+    
+    // Solidità Patrimoniale
+    if (spMetrics.soliditaPatr >= 0.3) score += 1;
+    else if (spMetrics.soliditaPatr >= 0.15) score += 0.5;
+    
+    // Utile Netto %
+    if (ceMetrics.utileNettoPercent >= 0.03) score += 1;
+    else if (ceMetrics.utileNettoPercent >= 0) score += 0.5;
+    
+    // DSO
+    if (spMetrics.dso <= 60) score += 1;
+    else if (spMetrics.dso <= 90) score += 0.5;
+    
+    // DPO
+    if (spMetrics.dpo >= 30 && spMetrics.dpo <= 90) score += 1;
+    else if ((spMetrics.dpo >= 20 && spMetrics.dpo < 30) || (spMetrics.dpo > 90 && spMetrics.dpo <= 120)) score += 0.5;
+    
+    const label = score >= 5.5 ? 'AAA / AA — Eccellente' :
+                  score >= 4 ? 'A / BBB — Solido' :
+                  score >= 2.5 ? 'BB — Attenzione' :
+                  'B / C — Critico';
+                  
+    const color = score >= 5.5 ? 'text-emerald-600' :
+                  score >= 4 ? 'text-blue-600' :
+                  score >= 2.5 ? 'text-amber-500' :
+                  'text-rose-600';
+                  
+    return { score, label, color, dscr: ceMetrics.ebitdaTot / (ceMetrics.oneriFin || 1) };
+  }, [transactions, spSnapshots, ceManualData, currentYear]);
+
+  // Dati mensili per i tre grafici di andamento
+  const monthlyComparisonData = useMemo(() => {
+    const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+    let cumulative = initialAccounts?.reduce((sum, acc) => sum + (acc.saldoIniziale || 0), 0) || 0;
+    
+    return months.map((m, index) => {
+      const monthTxs = transactions.filter(t => {
+        const d = parseUTCDate(t.date);
+        return d.getUTCFullYear() === currentYear && d.getUTCMonth() === index;
+      });
+      
+      const entratePreviste = monthTxs
+        .filter(t => t.type === TransactionType.INCOME && t.isForecast)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+        
+      const entrateReali = monthTxs
+        .filter(t => t.type === TransactionType.INCOME && !t.isForecast)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+
+      const uscitePreviste = monthTxs
+        .filter(t => t.type === TransactionType.EXPENSE && t.isForecast && t.ceType !== 'ammortamento')
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+
+      const usciteReali = monthTxs
+        .filter(t => t.type === TransactionType.EXPENSE && !t.isForecast && t.ceType !== 'ammortamento')
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+        
+      cumulative += (entrateReali - usciteReali);
+      
+      return {
+        name: m,
+        EntratePreviste: entratePreviste,
+        EntrateReali: entrateReali,
+        UscitePreviste: uscitePreviste,
+        UsciteReali: usciteReali,
+        LiquiditaCumulata: cumulative
+      };
+    });
+  }, [transactions, currentYear, initialAccounts]);
+
+  // Costi Fissi con confronto Previsionale, Consuntivo e Scostamento
+  const fixedCostTableData = useMemo(() => {
+    const actTxs = transactions.filter(t =>
+      !t.isForecast &&
+      t.ceType !== 'ammortamento' &&
+      parseUTCDate(t.date).getUTCFullYear() === currentYear
+    );
+    
+    const prevTxs = transactions.filter(t =>
+      t.isForecast &&
+      t.ceType !== 'ammortamento' &&
+      parseUTCDate(t.date).getUTCFullYear() === currentYear
+    );
+
+    return FIXED_COST_CATEGORIES.map(cat => {
+      const forecast = prevTxs
+        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+        
+      const actual = actTxs
+        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+        
+      return {
+        name: cat,
+        forecast,
+        actual,
+        diff: actual - forecast
+      };
+    }).filter(item => item.forecast > 0 || item.actual > 0);
+  }, [transactions, currentYear]);
+
+  // Costi Variabili con confronto Previsionale, Consuntivo e Scostamento
+  const variableCostTableData = useMemo(() => {
+    const actTxs = transactions.filter(t =>
+      !t.isForecast &&
+      t.ceType !== 'ammortamento' &&
+      parseUTCDate(t.date).getUTCFullYear() === currentYear
+    );
+    
+    const prevTxs = transactions.filter(t =>
+      t.isForecast &&
+      t.ceType !== 'ammortamento' &&
+      parseUTCDate(t.date).getUTCFullYear() === currentYear
+    );
+
+    return VARIABLE_COST_CATEGORIES.map(cat => {
+      const forecast = prevTxs
+        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+        
+      const actual = actTxs
+        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+        
+      return {
+        name: cat,
+        forecast,
+        actual,
+        diff: actual - forecast
+      };
+    }).filter(item => item.forecast > 0 || item.actual > 0);
+  }, [transactions, currentYear]);
+
+  const renderDashboardCostTable = (data: {name: string, forecast: number, actual: number, diff: number}[]) => {
+    if (data.length === 0) return <p className="text-xs text-slate-400 p-4 italic">Nessun dato registrato per questo periodo.</p>;
+    
+    return (
+      <div className="overflow-x-auto mt-2">
+        <table className="w-full text-xs text-left">
+          <thead className="text-[10px] uppercase text-slate-400 bg-slate-50/50">
+            <tr>
+              <th className="px-3 py-2 font-bold">Voce di Spesa</th>
+              <th className="px-3 py-2 font-bold text-right">Previsto</th>
+              <th className="px-3 py-2 font-bold text-right">Effettivo</th>
+              <th className="px-3 py-2 font-bold text-right">Scostamento</th>
+              <th className="px-3 py-2 font-bold text-center">Stato</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50 text-xs">
+            {data.map((item) => {
+              const limit = item.forecast * 1.05; // 5% tolleranza
+              let semaforo = '🟢';
+              if (item.actual > limit) {
+                semaforo = '🔴';
+              } else if (item.actual > item.forecast) {
+                semaforo = '🟡';
+              }
+              
+              return (
+                <tr key={item.name} className="hover:bg-slate-50/50">
+                  <td className="px-3 py-2 font-medium text-slate-700 truncate max-w-[150px]" title={item.name}>
+                    {item.name.split('] ')[1] || item.name}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-slate-500">
+                    {CURRENCY_FORMATTER.format(item.forecast)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono font-bold text-slate-800">
+                    {CURRENCY_FORMATTER.format(item.actual)}
+                  </td>
+                  <td className={`px-3 py-2 text-right font-mono font-bold ${item.diff > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    {item.diff > 0 ? '+' : ''}{CURRENCY_FORMATTER.format(item.diff)}
+                  </td>
+                  <td className="px-3 py-2 text-center text-sm">{semaforo}</td>
+                </tr>
+              );
+            })}
+            <tr className="bg-slate-50 font-bold border-t border-slate-200">
+              <td className="px-3 py-2 text-slate-800 uppercase text-[9px]">Totale</td>
+              <td className="px-3 py-2 text-right font-mono text-slate-600">
+                {CURRENCY_FORMATTER.format(data.reduce((s, i) => s + i.forecast, 0))}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-slate-800">
+                {CURRENCY_FORMATTER.format(data.reduce((s, i) => s + i.actual, 0))}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-slate-800">
+                {CURRENCY_FORMATTER.format(data.reduce((s, i) => s + i.diff, 0))}
+              </td>
+              <td className="px-3 py-2"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   const { actualTransactions, totalIncome, totalExpense, balance, expenseData, fixedCostData, variableCostData } = useMemo(() => {
     const actTxs = transactions.filter(t =>
@@ -156,6 +420,37 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, 
           </div>
         </div>
 
+        {/* Rating Score Card (Valutazione Banca) */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <ShieldCheck size={20} className="text-slate-900" />
+              Valutazione Banca (Rating Merito Creditizio)
+            </h3>
+            <span className={`text-sm font-black px-3 py-1 bg-slate-100 rounded-full ${ratingData.color}`}>
+              Punteggio: {ratingData.score.toFixed(1)} / 7.0
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+            <div className="text-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Giudizio Sintetico</span>
+              <span className={`text-xl font-black ${ratingData.color}`}>{ratingData.label}</span>
+            </div>
+            <div className="text-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Copertura Oneri (DSCR)</span>
+              <span className="text-xl font-black text-slate-800 font-mono">
+                {ratingData.dscr > 0 ? `${ratingData.dscr.toFixed(2)}x` : 'N/A'}
+              </span>
+            </div>
+            <div className="text-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Livello di Rischio</span>
+              <span className="text-xl font-black text-slate-800">
+                {ratingData.score >= 5.5 ? 'Minimo' : ratingData.score >= 4 ? 'Basso' : ratingData.score >= 2.5 ? 'Medio' : 'Alto'}
+              </span>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Expense Breakdown Pie */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
@@ -238,74 +533,97 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, expenseCategories, 
           </div>
         </div>
 
-        {/* ─── COSTI FISSI E VARIABILI ───────────────────────────── */}
-        {(fixedCostData.length > 0 || variableCostData.length > 0) && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-            {/* Costi Fissi */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-slate-800">Costi Fissi</h3>
-                <span className="text-sm font-bold text-slate-700 bg-slate-100 px-3 py-1 rounded-full">
-                  {CURRENCY_FORMATTER.format(fixedCostData.reduce((s, i) => s + i.value, 0))}
-                </span>
-              </div>
-              {fixedCostData.length > 0 ? (
-                <div className="space-y-3">
-                  {fixedCostData.map((item) => {
-                    const maxVal = fixedCostData[0].value;
-                    const pct = maxVal > 0 ? (item.value / maxVal) * 100 : 0;
-                    return (
-                      <div key={item.name}>
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="text-slate-600 truncate mr-2" title={item.name}>{item.name}</span>
-                          <span className="text-slate-800 font-semibold shrink-0">{CURRENCY_FORMATTER.format(item.value)}</span>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-1.5">
-                          <div className="bg-slate-700 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-400">Nessun costo fisso registrato</p>
-              )}
+        {/* --- COMPARISON CHARTS SECTION --- */}
+        <div className="space-y-6">
+          
+          {/* Conto Corrente (Liquidità Cumulata) */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col w-full">
+            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+              <CalendarClock size={18} className="text-slate-900" />
+              Andamento Conto Corrente (Liquidità Cumulata)
+            </h3>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={monthlyComparisonData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                  <Tooltip 
+                    formatter={(value: number) => CURRENCY_FORMATTER.format(value)}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Line type="monotone" dataKey="LiquiditaCumulata" name="Saldo Conto" stroke="#0f172a" strokeWidth={3} dot={{r: 4, fill: '#0f172a'}} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
-
-            {/* Costi Variabili */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-slate-800">Costi Variabili</h3>
-                <span className="text-sm font-bold text-slate-700 bg-slate-100 px-3 py-1 rounded-full">
-                  {CURRENCY_FORMATTER.format(variableCostData.reduce((s, i) => s + i.value, 0))}
-                </span>
-              </div>
-              {variableCostData.length > 0 ? (
-                <div className="space-y-3">
-                  {variableCostData.map((item) => {
-                    const maxVal = variableCostData[0].value;
-                    const pct = maxVal > 0 ? (item.value / maxVal) * 100 : 0;
-                    return (
-                      <div key={item.name}>
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="text-slate-600 truncate mr-2" title={item.name}>{item.name}</span>
-                          <span className="text-slate-800 font-semibold shrink-0">{CURRENCY_FORMATTER.format(item.value)}</span>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-1.5">
-                          <div className="bg-slate-500 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-400">Nessun costo variabile registrato</p>
-              )}
-            </div>
-
           </div>
-        )}
+
+          {/* Confronto Entrate */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col w-full">
+            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+              <ArrowUpRight size={18} className="text-emerald-600" />
+              Confronto Entrate (Consuntivo vs Previsionale)
+            </h3>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={monthlyComparisonData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                  <Tooltip 
+                    formatter={(value: number) => CURRENCY_FORMATTER.format(value)}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Bar dataKey="EntratePreviste" fill="#cbd5e1" radius={[4, 4, 0, 0]} name="Previsto" barSize={20} />
+                  <Bar dataKey="EntrateReali" fill="#0f172a" radius={[4, 4, 0, 0]} name="Reale" barSize={20} />
+                  <Line type="monotone" dataKey="EntratePreviste" stroke="#94a3b8" strokeDasharray="5 5" dot={false} strokeWidth={2} name="Previsto Trend" />
+                  <Line type="monotone" dataKey="EntrateReali" stroke="#1e293b" strokeWidth={2} dot={{r: 3, fill: '#1e293b'}} name="Reale Trend" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Confronto Uscite */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col w-full">
+            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+              <ArrowDownRight size={18} className="text-rose-600" />
+              Confronto Uscite (Consuntivo vs Previsionale)
+            </h3>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={monthlyComparisonData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                  <Tooltip 
+                    formatter={(value: number) => CURRENCY_FORMATTER.format(value)}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Bar dataKey="UscitePreviste" fill="#cbd5e1" radius={[4, 4, 0, 0]} name="Previsto" barSize={20} />
+                  <Bar dataKey="UsciteReali" fill="#64748b" radius={[4, 4, 0, 0]} name="Reale" barSize={20} />
+                  <Line type="monotone" dataKey="UscitePreviste" stroke="#94a3b8" strokeDasharray="5 5" dot={false} strokeWidth={2} name="Previsto Trend" />
+                  <Line type="monotone" dataKey="UsciteReali" stroke="#475569" strokeWidth={2} dot={{r: 3, fill: '#475569'}} name="Reale Trend" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+        </div>
+
+        {/* ─── COSTI FISSI E VARIABILI ───────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Costi Fissi Table */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Costi Fissi</h3>
+            {renderDashboardCostTable(fixedCostTableData)}
+          </div>
+
+          {/* Costi Variabili Table */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Costi Variabili</h3>
+            {renderDashboardCostTable(variableCostTableData)}
+          </div>
+        </div>
       </div>
       
       <HelpPanel 

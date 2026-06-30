@@ -1695,6 +1695,8 @@ const App: React.FC = () => {
                 initialAccounts={initialData.accounts}
                 initialData={initialData}
                 projects={projects}
+                spSnapshots={spSnapshots}
+                ceManualData={ceManualData}
             />
           </div>
         );
