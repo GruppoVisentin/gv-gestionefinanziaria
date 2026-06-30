@@ -552,10 +552,10 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
         </div>
 
         {/* --- COMPARISON CHARTS SECTION --- */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-6">
             
             {/* Income Comparison Chart */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col h-full">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col w-full">
                 <div className="flex flex-col gap-4 mb-6">
                     <div className="flex justify-between items-center">
                         <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -639,7 +639,7 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
             </div>
 
             {/* Expense Comparison Chart */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col h-full">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col w-full">
                  <div className="flex flex-col gap-4 mb-6">
                     <div className="flex justify-between items-center">
                         <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
