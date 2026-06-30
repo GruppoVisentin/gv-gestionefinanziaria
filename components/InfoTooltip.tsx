@@ -63,7 +63,7 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({
   const iconColor = color || 'text-slate-400 hover:text-slate-900';
 
   return (
-    <>
+    <span className="relative inline-flex items-center">
       {/* Icona ⓘ sostituita da ? (HelpCircle) */}
       <button
         ref={iconRef}
@@ -84,7 +84,7 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({
           className={`
             absolute z-50 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-4
             ${tooltipPos === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}
-            -right-4 md:right-auto md:left-1/2 md:-translate-x-1/2
+            left-1/2 -translate-x-1/2
           `}
           onClick={e => e.stopPropagation()}
         >
@@ -151,7 +151,7 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({
           onClose={() => setShowModal(false)}
         />
       )}
-    </>
+    </span>
   );
 };
 

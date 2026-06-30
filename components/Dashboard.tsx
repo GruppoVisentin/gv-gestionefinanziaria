@@ -356,10 +356,23 @@ const Dashboard: React.FC<DashboardProps> = ({
                 semaforo = '🟡';
               }
               
+              const pct = item.forecast > 0 ? (item.actual / item.forecast) * 100 : 0;
+              
               return (
                 <tr key={item.name} className="hover:bg-slate-50/50">
-                  <td className="px-3 py-2 font-medium text-slate-700 truncate max-w-[150px]" title={item.name}>
-                    {item.name.split('] ')[1] || item.name}
+                  <td className="px-3 py-2 font-medium text-slate-700">
+                    <div className="truncate max-w-[150px] font-semibold text-slate-800" title={item.name}>
+                      {item.name.split('] ')[1] || item.name}
+                    </div>
+                    {/* Barra di avanzamento sotto la voce di spesa */}
+                    <div className="w-full bg-slate-100 rounded-full h-1 mt-1 max-w-[150px]">
+                      <div 
+                        className={`h-1 rounded-full transition-all ${
+                          item.actual > limit ? 'bg-rose-500' : item.actual > item.forecast ? 'bg-amber-500' : 'bg-emerald-500'
+                        }`} 
+                        style={{ width: `${Math.min(100, pct)}%` }} 
+                      />
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-slate-500">
                     {CURRENCY_FORMATTER.format(item.forecast)}
