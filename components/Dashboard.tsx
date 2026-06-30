@@ -84,11 +84,15 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Calcolo Rating Bancario (Basilea 3)
   const ratingData = useMemo(() => {
-    const txList = transactions || [];
-    const snapshots = spSnapshots || [];
-    const sortedSnapshots = [...snapshots].sort((a, b) => new Date(b.dataRiferimento).getTime() - new Date(a.dataRiferimento).getTime());
+    const txList = Array.isArray(transactions) ? transactions : [];
+    const snapshots = Array.isArray(spSnapshots) ? spSnapshots.filter(Boolean) : [];
+    const sortedSnapshots = [...snapshots].sort((a, b) => {
+      const dateA = a && a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
+      const dateB = b && b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
+      return dateB - dateA;
+    });
     const activeSP = sortedSnapshots[0] || null;
-    const ratingYear = activeSP ? new Date(activeSP.dataRiferimento).getFullYear() : currentYear;
+    const ratingYear = activeSP && activeSP.dataRiferimento ? new Date(activeSP.dataRiferimento).getFullYear() : currentYear;
     
     const manualData = ceManualData || {};
     const ceData = buildCEData(txList, ratingYear, manualData[ratingYear.toString()]);
@@ -232,14 +236,15 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Dati mensili per i tre grafici di andamento
   const monthlyComparisonData = useMemo(() => {
-    const txList = transactions || [];
+    const txList = Array.isArray(transactions) ? transactions : [];
+    const accountsList = Array.isArray(initialAccounts) ? initialAccounts : [];
     const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-    let cumulative = initialAccounts?.reduce((sum, acc) => sum + (acc.saldoIniziale || 0), 0) || 0;
+    let cumulative = accountsList.reduce((sum, acc) => sum + (acc?.saldoIniziale || 0), 0) || 0;
     
     return months.map((m, index) => {
       const monthTxs = txList.filter(t => {
-        const d = parseUTCDate(t.date);
-        return d.getUTCFullYear() === currentYear && d.getUTCMonth() === index;
+        const d = t && t.date ? parseUTCDate(t.date) : null;
+        return d && d.getUTCFullYear() === currentYear && d.getUTCMonth() === index;
       });
       
       const entratePreviste = monthTxs
@@ -273,26 +278,30 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Costi Fissi con confronto Previsionale, Consuntivo e Scostamento
   const fixedCostTableData = useMemo(() => {
-    const txList = transactions || [];
+    const txList = Array.isArray(transactions) ? transactions : [];
     const actTxs = txList.filter(t =>
+      t &&
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
+      t.date &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear
     );
     
     const prevTxs = txList.filter(t =>
+      t &&
       t.isForecast &&
       t.ceType !== 'ammortamento' &&
+      t.date &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear
     );
 
     return FIXED_COST_CATEGORIES.map(cat => {
       const forecast = prevTxs
-        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
         
       const actual = actTxs
-        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
         
       return {
@@ -306,26 +315,30 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Costi Variabili con confronto Previsionale, Consuntivo e Scostamento
   const variableCostTableData = useMemo(() => {
-    const txList = transactions || [];
+    const txList = Array.isArray(transactions) ? transactions : [];
     const actTxs = txList.filter(t =>
+      t &&
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
+      t.date &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear
     );
     
     const prevTxs = txList.filter(t =>
+      t &&
       t.isForecast &&
       t.ceType !== 'ammortamento' &&
+      t.date &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear
     );
 
     return VARIABLE_COST_CATEGORIES.map(cat => {
       const forecast = prevTxs
-        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
         
       const actual = actTxs
-        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
         
       return {
@@ -413,24 +426,27 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const { actualTransactions, totalIncome, totalExpense, balance, expenseData, fixedCostData, variableCostData } = useMemo(() => {
-    const txList = transactions || [];
+    const txList = Array.isArray(transactions) ? transactions : [];
     const actTxs = txList.filter(t =>
+      t &&
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
+      t.date &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear
     );
 
     const inc = actTxs
-      .filter(t => t.type === TransactionType.INCOME)
+      .filter(t => t && t.type === TransactionType.INCOME)
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
     const exp = actTxs
-      .filter(t => t.type === TransactionType.EXPENSE)
+      .filter(t => t && t.type === TransactionType.EXPENSE)
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
-    const expData = expenseCategories.map(cat => {
+    const expCategoriesList = Array.isArray(expenseCategories) ? expenseCategories : [];
+    const expData = expCategoriesList.map(cat => {
       const value = actTxs
-        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
       return { name: cat, value };
     }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
@@ -438,7 +454,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     // Costi Fissi per categoria
     const fixedData = FIXED_COST_CATEGORIES.map(cat => {
       const value = actTxs
-        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
       return { name: cat, value };
     }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
@@ -446,7 +462,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     // Costi Variabili per categoria
     const varData = VARIABLE_COST_CATEGORIES.map(cat => {
       const value = actTxs
-        .filter(t => t.type === TransactionType.EXPENSE && t.category === cat)
+        .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
       return { name: cat, value };
     }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
@@ -458,6 +474,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const monthlyData = useMemo(() => {
     const today = new Date();
     const data = [];
+    const txList = Array.isArray(actualTransactions) ? actualTransactions : [];
     for (let i = 5; i >= 0; i--) {
       // Usiamo UTC local time matching per evitare sfasamenti sui fusi orari.
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
@@ -465,9 +482,9 @@ const Dashboard: React.FC<DashboardProps> = ({
       const targetYear = d.getFullYear();
       const monthLabel = d.toLocaleString('it-IT', { month: 'short' });
       
-      const monthTransactions = actualTransactions.filter(t => {
-        const tDate = parseUTCDate(t.date);
-        return tDate.getUTCMonth() === targetMonth && tDate.getUTCFullYear() === targetYear;
+      const monthTransactions = txList.filter(t => {
+        const tDate = t && t.date ? parseUTCDate(t.date) : null;
+        return tDate && tDate.getUTCMonth() === targetMonth && tDate.getUTCFullYear() === targetYear;
       });
       
       const income = monthTransactions
