@@ -476,7 +476,76 @@ const Dashboard: React.FC<DashboardProps> = ({
     return data;
   }, [actualTransactions]);
 
-  const ivaData = calcPosizIoneIVA(transactions, currentYear);
+  // Calcolo stringhe calculatedValues per i tooltip della Dashboard
+  const entrateCalculatedValues = `Analisi Entrate ${currentYear}:\n- Totale Entrate Consuntive: ${CURRENCY_FORMATTER.format(totalIncome)}\n- Composto da ricavi operativi reali incassati per SAL, vendite immobili, affitti e manutenzioni.`;
+
+  const usciteCalculatedValues = `Analisi Uscite ${currentYear}:\n- Totale Uscite Consuntive: ${CURRENCY_FORMATTER.format(totalExpense)}\n- Composto da costi fissi, variabili, oneri finanziari, tasse e investimenti pagati.`;
+
+  const saldoCalculatedValues = `Flusso di Cassa Netto ${currentYear}:\n- Entrate Consuntive: ${CURRENCY_FORMATTER.format(totalIncome)}\n- Uscite Consuntive: -${CURRENCY_FORMATTER.format(totalExpense)}\n--------------------\n- Saldo Netto: ${CURRENCY_FORMATTER.format(balance)}`;
+
+  const ivaCalculatedValues = `Posizione IVA ${currentYear}:\n- Liquidazione cumulativa calcolata: ${CURRENCY_FORMATTER.format(Math.abs(ivaData.creditoDebitoResiduo))} ${ivaData.creditoDebitoResiduo > 0 ? '(a Debito)' : '(a Credito)'}\n- Include l'IVA a debito sulle entrate e l'IVA a credito deducibile sugli acquisti consuntivati.`;
+
+  const ratingCalculatedValues = ratingData.breakdown && ratingData.breakdown.length > 0
+    ? `Scomposizione Punteggio Rating (Basilea 3):\n` + 
+      ratingData.breakdown.map(i => `- ${i.name}: Punteggio ${i.score.toFixed(1)} / 1.0 (Target: ${i.target})`).join('\n') +
+      `\n--------------------\n- Punteggio Totale: ${ratingData.score.toFixed(1)} / 7.0\n- Giudizio: ${ratingData.label}`
+    : `Dati patrimoniali o Conto Economico incompleti per calcolare il rating.`;
+
+  const speseCategoriaCalculatedValues = expenseData && expenseData.length > 0
+    ? `Spese per Categoria (Top Costi):\n` +
+      expenseData.slice(0, 3).map((e, idx) => `${idx + 1}. ${e.name}: ${CURRENCY_FORMATTER.format(e.value)}`).join('\n') +
+      `\n- Altre categorie: ${CURRENCY_FORMATTER.format(expenseData.slice(3).reduce((s, e) => s + e.value, 0))}`
+    : `Nessun costo registrato per le categorie di spesa.`;
+
+  const andamentoMensileCalculatedValues = monthlyData && monthlyData.length > 0
+    ? `Andamento Mensile:\n- Mese con maggiori Entrate: ${
+        [...monthlyData].sort((a,b) => b.Entrate - a.Entrate)[0]?.name || 'N/A'
+      } (${CURRENCY_FORMATTER.format([...monthlyData].sort((a,b) => b.Entrate - a.Entrate)[0]?.Entrate || 0)})\n- Mese con maggiori Uscite: ${
+        [...monthlyData].sort((a,b) => b.Uscite - a.Uscite)[0]?.name || 'N/A'
+      } (${CURRENCY_FORMATTER.format([...monthlyData].sort((a,b) => b.Uscite - a.Uscite)[0]?.Uscite || 0)})`
+    : `Nessun dato mensile disponibile.`;
+
+  const contoCorrenteCalculatedValues = `Liquidità Cumulata:\n- Saldo iniziale conti corrente: ${
+    CURRENCY_FORMATTER.format(initialAccounts?.reduce((sum, acc) => sum + (acc.saldoIniziale || 0), 0) || 0)
+  }\n- Flusso netto cumulato dell'anno: ${CURRENCY_FORMATTER.format(balance)}\n- Saldo finale progressivo stimato: ${
+    CURRENCY_FORMATTER.format((initialAccounts?.reduce((sum, acc) => sum + (acc.saldoIniziale || 0), 0) || 0) + balance)
+  }`;
+
+  const confrontoEntrateCalculatedValues = `Confronto Entrate:\n- Previste (Budget): ${
+    CURRENCY_FORMATTER.format(monthlyComparisonData.reduce((s, m) => s + m.EntratePreviste, 0))
+  }\n- Reali (Consuntivate): ${
+    CURRENCY_FORMATTER.format(monthlyComparisonData.reduce((s, m) => s + m.EntrateReali, 0))
+  }\n- Scostamento complessivo YTD: ${
+    CURRENCY_FORMATTER.format(
+      monthlyComparisonData.reduce((s, m) => s + m.EntrateReali, 0) - monthlyComparisonData.reduce((s, m) => s + m.EntratePreviste, 0)
+    )
+  }`;
+
+  const confrontoUsciteCalculatedValues = `Confronto Uscite:\n- Previste (Budget): ${
+    CURRENCY_FORMATTER.format(monthlyComparisonData.reduce((s, m) => s + m.UscitePreviste, 0))
+  }\n- Reali (Consuntivate): ${
+    CURRENCY_FORMATTER.format(monthlyComparisonData.reduce((s, m) => s + m.UsciteReali, 0))
+  }\n- Scostamento complessivo YTD: ${
+    CURRENCY_FORMATTER.format(
+      monthlyComparisonData.reduce((s, m) => s + m.UsciteReali, 0) - monthlyComparisonData.reduce((s, m) => s + m.UscitePreviste, 0)
+    )
+  }`;
+
+  const costiFissiCalculatedValues = `Dettaglio Costi Fissi ${currentYear}:\n- Previsto Totale: ${
+    CURRENCY_FORMATTER.format(fixedCostTableData.reduce((s, i) => s + i.forecast, 0))
+  }\n- Reale Consuntivato: ${
+    CURRENCY_FORMATTER.format(fixedCostTableData.reduce((s, i) => s + i.actual, 0))
+  }\n- Scostamento Totale: ${
+    CURRENCY_FORMATTER.format(fixedCostTableData.reduce((s, i) => s + i.diff, 0))
+  }`;
+
+  const costiVariabiliCalculatedValues = `Dettaglio Costi Variabili ${currentYear}:\n- Previsto Totale: ${
+    CURRENCY_FORMATTER.format(variableCostTableData.reduce((s, i) => s + i.forecast, 0))
+  }\n- Reale Consuntivato: ${
+    CURRENCY_FORMATTER.format(variableCostTableData.reduce((s, i) => s + i.actual, 0))
+  }\n- Scostamento Totale: ${
+    CURRENCY_FORMATTER.format(variableCostTableData.reduce((s, i) => s + i.diff, 0))
+  }`;
 
   return (
     <div className="space-y-6">
@@ -516,16 +585,16 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <SummaryCard title={`Entrate ${currentYear}`} amount={totalIncome} type="income" termId="fatturato" />
-          <SummaryCard title={`Uscite ${currentYear}`} amount={totalExpense} type="expense" termId="uscite" />
-          <SummaryCard title={`Saldo ${currentYear}`} amount={balance} type="balance" termId="saldo_cassa" />
+          <SummaryCard title={`Entrate ${currentYear}`} amount={totalIncome} type="income" termId="fatturato" calculatedValues={entrateCalculatedValues} />
+          <SummaryCard title={`Uscite ${currentYear}`} amount={totalExpense} type="expense" termId="uscite" calculatedValues={usciteCalculatedValues} />
+          <SummaryCard title={`Saldo ${currentYear}`} amount={balance} type="balance" termId="saldo_cassa" calculatedValues={saldoCalculatedValues} />
           
           {/* Posizione IVA Card */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between">
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <p className="text-sm font-medium text-slate-500">Posizione IVA {currentYear}</p>
-                <InfoTooltip termId="posizione_iva" size="sm" />
+                <InfoTooltip termId="posizione_iva" size="sm" calculatedValues={ivaCalculatedValues} />
               </div>
               <h3 className={`text-2xl font-bold tracking-tight ${ivaData.creditoDebitoResiduo > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
                 {CURRENCY_FORMATTER.format(Math.abs(ivaData.creditoDebitoResiduo))}
@@ -546,7 +615,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <ShieldCheck size={20} className="text-slate-900" />
               Valutazione Banca (Merito Creditizio Basilea 3)
-              <InfoTooltip termId="rating_bancario" size="md" />
+              <InfoTooltip termId="rating_bancario" size="md" calculatedValues={ratingCalculatedValues} />
             </h3>
             <span className={`text-sm font-black px-3 py-1 bg-slate-100 rounded-full ${ratingData.color}`}>
               Punteggio: {ratingData.score.toFixed(1)} / 7.0
@@ -615,7 +684,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
               Spese per Categoria
-              <InfoTooltip termId="spese_categoria" size="md" />
+              <InfoTooltip termId="spese_categoria" size="md" calculatedValues={speseCategoriaCalculatedValues} />
             </h3>
             {expenseData.length > 0 ? (
               <div className="flex flex-col gap-4">
@@ -668,7 +737,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
             <h3 className="text-lg font-semibold text-slate-800 mb-6 flex items-center gap-2">
               Andamento Mensile
-              <InfoTooltip termId="andamento_mensile" size="md" />
+              <InfoTooltip termId="andamento_mensile" size="md" calculatedValues={andamentoMensileCalculatedValues} />
             </h3>
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -706,7 +775,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
               <CalendarClock size={18} className="text-slate-900" />
               Andamento Conto Corrente (Liquidità Cumulata)
-              <InfoTooltip termId="conto_corrente" size="md" />
+              <InfoTooltip termId="conto_corrente" size="md" calculatedValues={contoCorrenteCalculatedValues} />
             </h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -729,7 +798,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
               <ArrowUpRight size={18} className="text-emerald-600" />
               Confronto Entrate (Consuntivo vs Previsionale)
-              <InfoTooltip termId="confronto_entrate" size="md" />
+              <InfoTooltip termId="confronto_entrate" size="md" calculatedValues={confrontoEntrateCalculatedValues} />
             </h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -755,7 +824,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
               <ArrowDownRight size={18} className="text-rose-600" />
               Confronto Uscite (Consuntivo vs Previsionale)
-              <InfoTooltip termId="confronto_uscite" size="md" />
+              <InfoTooltip termId="confronto_uscite" size="md" calculatedValues={confrontoUsciteCalculatedValues} />
             </h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -784,7 +853,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
               Costi Fissi
-              <InfoTooltip termId="costi_fissi" size="md" />
+              <InfoTooltip termId="costi_fissi" size="md" calculatedValues={costiFissiCalculatedValues} />
             </h3>
             {renderDashboardCostTable(fixedCostTableData)}
           </div>
@@ -793,7 +862,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
               Costi Variabili
-              <InfoTooltip termId="costi_variabili" size="md" />
+              <InfoTooltip termId="costi_variabili" size="md" calculatedValues={costiVariabiliCalculatedValues} />
             </h3>
             {renderDashboardCostTable(variableCostTableData)}
           </div>

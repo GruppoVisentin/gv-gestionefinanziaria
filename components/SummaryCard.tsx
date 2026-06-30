@@ -8,10 +8,11 @@ interface SummaryCardProps {
   amount: number;
   type: 'income' | 'expense' | 'balance';
   termId?: string;
+  calculatedValues?: string;
   onInfoClick?: () => void;
 }
 
-const SummaryCard: React.FC<SummaryCardProps> = ({ title, amount, type, termId, onInfoClick }) => {
+const SummaryCard: React.FC<SummaryCardProps> = ({ title, amount, type, termId, calculatedValues, onInfoClick }) => {
   let colorClass = '';
   let Icon = Wallet;
 
@@ -31,7 +32,7 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ title, amount, type, termId, 
         <div className="flex items-center gap-1.5 mb-1">
           <p className="text-sm font-medium text-slate-500">{title}</p>
           {termId ? (
-            <InfoTooltip termId={termId} size="sm" />
+            <InfoTooltip termId={termId} size="sm" calculatedValues={calculatedValues} />
           ) : onInfoClick ? (
             <button 
               onClick={(e) => { e.stopPropagation(); onInfoClick(); }}
