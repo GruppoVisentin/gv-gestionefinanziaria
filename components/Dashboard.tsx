@@ -84,15 +84,16 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Calcolo Rating Bancario (Basilea 3)
   const ratingData = useMemo(() => {
+    const txList = transactions || [];
     const snapshots = spSnapshots || [];
     const sortedSnapshots = [...snapshots].sort((a, b) => new Date(b.dataRiferimento).getTime() - new Date(a.dataRiferimento).getTime());
     const activeSP = sortedSnapshots[0] || null;
     const ratingYear = activeSP ? new Date(activeSP.dataRiferimento).getFullYear() : currentYear;
     
     const manualData = ceManualData || {};
-    const ceData = buildCEData(transactions, ratingYear, manualData[ratingYear.toString()]);
-    const ceMetrics = calcCEMetrics(ceData, transactions);
-    const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions) : null;
+    const ceData = buildCEData(txList, ratingYear, manualData[ratingYear.toString()]);
+    const ceMetrics = calcCEMetrics(ceData, txList);
+    const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, txList) : null;
     
     if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0, breakdown: [], radarData: [] };
     
@@ -231,11 +232,12 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Dati mensili per i tre grafici di andamento
   const monthlyComparisonData = useMemo(() => {
+    const txList = transactions || [];
     const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
     let cumulative = initialAccounts?.reduce((sum, acc) => sum + (acc.saldoIniziale || 0), 0) || 0;
     
     return months.map((m, index) => {
-      const monthTxs = transactions.filter(t => {
+      const monthTxs = txList.filter(t => {
         const d = parseUTCDate(t.date);
         return d.getUTCFullYear() === currentYear && d.getUTCMonth() === index;
       });
@@ -271,13 +273,14 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Costi Fissi con confronto Previsionale, Consuntivo e Scostamento
   const fixedCostTableData = useMemo(() => {
-    const actTxs = transactions.filter(t =>
+    const txList = transactions || [];
+    const actTxs = txList.filter(t =>
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear
     );
     
-    const prevTxs = transactions.filter(t =>
+    const prevTxs = txList.filter(t =>
       t.isForecast &&
       t.ceType !== 'ammortamento' &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear
@@ -303,13 +306,14 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Costi Variabili con confronto Previsionale, Consuntivo e Scostamento
   const variableCostTableData = useMemo(() => {
-    const actTxs = transactions.filter(t =>
+    const txList = transactions || [];
+    const actTxs = txList.filter(t =>
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear
     );
     
-    const prevTxs = transactions.filter(t =>
+    const prevTxs = txList.filter(t =>
       t.isForecast &&
       t.ceType !== 'ammortamento' &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear
@@ -409,7 +413,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const { actualTransactions, totalIncome, totalExpense, balance, expenseData, fixedCostData, variableCostData } = useMemo(() => {
-    const actTxs = transactions.filter(t =>
+    const txList = transactions || [];
+    const actTxs = txList.filter(t =>
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
       parseUTCDate(t.date).getUTCFullYear() === currentYear

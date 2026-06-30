@@ -925,14 +925,16 @@ export const calcPrevisioneFiscale = (
 // ─── CALCOLI SP DERIVATI ─────────────────────────────────────────
 
 export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcCEMetrics>, transactions: Transaction[] = []) => {
-  const totAttivoImm  = sp.immImmateriali + sp.immMateriali + sp.immobiliTerreni + sp.partecipazioni;
-  const totAttivoCirc = sp.rimanenze + sp.creditiClienti + sp.creditiTributari + sp.liquidita;
+  const getVal = (v: any) => typeof v === 'number' ? v : parseFloat(v) || 0;
+  
+  const totAttivoImm  = getVal(sp.immImmateriali) + getVal(sp.immMateriali) + getVal(sp.immobiliTerreni) + getVal(sp.partecipazioni);
+  const totAttivoCirc = getVal(sp.rimanenze) + getVal(sp.creditiClienti) + getVal(sp.creditiTributari) + getVal(sp.liquidita);
   const totAttivo     = totAttivoImm + totAttivoCirc;
-  const totPN         = sp.capitaleSociale + sp.riserve + sp.utileEsercizio;
-  const totPassivoLT  = sp.mutuiLT + sp.leasingLT + sp.tfr;
-  const totPassivoBT  = sp.fidiRT + sp.debitiFornitori + sp.debitiTributari + sp.accontiClienti + sp.altriDebitiBT + (sp.mutuiBT || 0);
+  const totPN         = getVal(sp.capitaleSociale) + getVal(sp.riserve) + getVal(sp.utileEsercizio);
+  const totPassivoLT  = getVal(sp.mutuiLT) + getVal(sp.leasingLT) + getVal(sp.tfr);
+  const totPassivoBT  = getVal(sp.fidiRT) + getVal(sp.debitiFornitori) + getVal(sp.debitiTributari) + getVal(sp.accontiClienti) + getVal(sp.altriDebitiBT) + getVal(sp.mutuiBT);
   const totPassivo    = totPN + totPassivoLT + totPassivoBT;
-  const pfn           = sp.mutuiLT + sp.leasingLT + sp.fidiRT + (sp.mutuiBT || 0) - sp.liquidita;
+  const pfn           = totPassivoLT + totPassivoBT - getVal(sp.liquidita);
   const ebitda        = ceMetrics.ebitdaTot;
 
   const dataSnapObj = parseUTCDate(sp.dataRiferimento);
