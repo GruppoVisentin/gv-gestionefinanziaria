@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Info } from 'lucide-react';
+import { HelpCircle } from 'lucide-react';
 import { getTermine } from '../content/glossary';
 import TermModal from './TermModal';
 
@@ -64,7 +64,7 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({
 
   return (
     <>
-      {/* Icona ⓘ */}
+      {/* Icona ⓘ sostituita da ? (HelpCircle) */}
       <button
         ref={iconRef}
         onClick={(e) => {
@@ -74,7 +74,7 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({
         className={`inline-flex items-center justify-center transition-colors ${iconColor} focus:outline-none`}
         aria-label={`Informazioni su ${termine.nome}`}
       >
-        <Info size={iconSize} />
+        <HelpCircle size={iconSize} />
       </button>
 
       {/* Tooltip rapido (Livello 1) */}

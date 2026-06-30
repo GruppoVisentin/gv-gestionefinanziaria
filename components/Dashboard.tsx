@@ -503,14 +503,17 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <SummaryCard title={`Entrate ${currentYear}`} amount={totalIncome} type="income" />
-          <SummaryCard title={`Uscite ${currentYear}`} amount={totalExpense} type="expense" />
-          <SummaryCard title={`Saldo ${currentYear}`} amount={balance} type="balance" />
+          <SummaryCard title={`Entrate ${currentYear}`} amount={totalIncome} type="income" termId="fatturato" />
+          <SummaryCard title={`Uscite ${currentYear}`} amount={totalExpense} type="expense" termId="uscite" />
+          <SummaryCard title={`Saldo ${currentYear}`} amount={balance} type="balance" termId="saldo_cassa" />
           
           {/* Posizione IVA Card */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-slate-500 mb-1">Posizione IVA {currentYear}</p>
+              <div className="flex items-center gap-1.5 mb-1">
+                <p className="text-sm font-medium text-slate-500">Posizione IVA {currentYear}</p>
+                <InfoTooltip termId="posizione_iva" size="sm" />
+              </div>
               <h3 className={`text-2xl font-bold tracking-tight ${ivaData.creditoDebitoResiduo > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
                 {CURRENCY_FORMATTER.format(Math.abs(ivaData.creditoDebitoResiduo))}
                 <span className="text-xs ml-1 font-medium text-slate-400">
@@ -530,6 +533,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <ShieldCheck size={20} className="text-slate-900" />
               Valutazione Banca (Merito Creditizio Basilea 3)
+              <InfoTooltip termId="rating_bancario" size="md" />
             </h3>
             <span className={`text-sm font-black px-3 py-1 bg-slate-100 rounded-full ${ratingData.color}`}>
               Punteggio: {ratingData.score.toFixed(1)} / 7.0
@@ -596,7 +600,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Expense Breakdown Pie */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Spese per Categoria</h3>
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              Spese per Categoria
+              <InfoTooltip termId="spese_categoria" size="md" />
+            </h3>
             {expenseData.length > 0 ? (
               <div className="flex flex-col gap-4">
                 <div className="h-56 w-full">
@@ -646,7 +653,10 @@ const Dashboard: React.FC<DashboardProps> = ({
 
           {/* Monthly Trend */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
-            <h3 className="text-lg font-semibold text-slate-800 mb-6">Andamento Mensile</h3>
+            <h3 className="text-lg font-semibold text-slate-800 mb-6 flex items-center gap-2">
+              Andamento Mensile
+              <InfoTooltip termId="andamento_mensile" size="md" />
+            </h3>
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -683,6 +693,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
               <CalendarClock size={18} className="text-slate-900" />
               Andamento Conto Corrente (Liquidità Cumulata)
+              <InfoTooltip termId="conto_corrente" size="md" />
             </h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -705,6 +716,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
               <ArrowUpRight size={18} className="text-emerald-600" />
               Confronto Entrate (Consuntivo vs Previsionale)
+              <InfoTooltip termId="confronto_entrate" size="md" />
             </h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -730,6 +742,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
               <ArrowDownRight size={18} className="text-rose-600" />
               Confronto Uscite (Consuntivo vs Previsionale)
+              <InfoTooltip termId="confronto_uscite" size="md" />
             </h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -756,13 +769,19 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Costi Fissi Table */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Costi Fissi</h3>
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              Costi Fissi
+              <InfoTooltip termId="costi_fissi" size="md" />
+            </h3>
             {renderDashboardCostTable(fixedCostTableData)}
           </div>
 
           {/* Costi Variabili Table */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Costi Variabili</h3>
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              Costi Variabili
+              <InfoTooltip termId="costi_variabili" size="md" />
+            </h3>
             {renderDashboardCostTable(variableCostTableData)}
           </div>
         </div>
