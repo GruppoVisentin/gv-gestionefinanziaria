@@ -74,41 +74,107 @@ const Dashboard: React.FC<DashboardProps> = ({
     const ceMetrics = calcCEMetrics(ceData, transactions);
     const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions) : null;
     
-    if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0 };
+    if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0, breakdown: [] };
     
     let score = 0;
     
     // PFN / EBITDA
-    if (spMetrics.pfnSuEbitda <= 3) score += 1;
-    else if (spMetrics.pfnSuEbitda <= 4.5) score += 0.5;
+    let pfnEbitdaScore = 0;
+    let pfnEbitdaHealth = 'red';
+    if (spMetrics.pfnSuEbitda <= 3) {
+      score += 1;
+      pfnEbitdaScore = 1;
+      pfnEbitdaHealth = 'green';
+    } else if (spMetrics.pfnSuEbitda <= 4.5) {
+      score += 0.5;
+      pfnEbitdaScore = 0.5;
+      pfnEbitdaHealth = 'orange';
+    }
     
     // EBITDA / Oneri Fin.
-    if (ceMetrics.oneriFin <= 0) score += 1;
-    else {
+    let ebitdaOneriScore = 0;
+    let ebitdaOneriHealth = 'red';
+    if (ceMetrics.oneriFin <= 0) {
+      score += 1;
+      ebitdaOneriScore = 1;
+      ebitdaOneriHealth = 'green';
+    } else {
       const ratio = ceMetrics.ebitdaTot / ceMetrics.oneriFin;
-      if (ratio >= 3) score += 1;
-      else if (ratio >= 1.5) score += 0.5;
+      if (ratio >= 3) {
+        score += 1;
+        ebitdaOneriScore = 1;
+        ebitdaOneriHealth = 'green';
+      } else if (ratio >= 1.5) {
+        score += 0.5;
+        ebitdaOneriScore = 0.5;
+        ebitdaOneriHealth = 'orange';
+      }
     }
     
     // Current Ratio
-    if (spMetrics.currentRatio >= 1.2) score += 1;
-    else if (spMetrics.currentRatio >= 1.0) score += 0.5;
+    let currentRatioScore = 0;
+    let currentRatioHealth = 'red';
+    if (spMetrics.currentRatio >= 1.2) {
+      score += 1;
+      currentRatioScore = 1;
+      currentRatioHealth = 'green';
+    } else if (spMetrics.currentRatio >= 1.0) {
+      score += 0.5;
+      currentRatioScore = 0.5;
+      currentRatioHealth = 'orange';
+    }
     
     // Solidità Patrimoniale
-    if (spMetrics.soliditaPatr >= 0.3) score += 1;
-    else if (spMetrics.soliditaPatr >= 0.15) score += 0.5;
+    let soliditaScore = 0;
+    let soliditaHealth = 'red';
+    if (spMetrics.soliditaPatr >= 0.3) {
+      score += 1;
+      soliditaScore = 1;
+      soliditaHealth = 'green';
+    } else if (spMetrics.soliditaPatr >= 0.15) {
+      score += 0.5;
+      soliditaScore = 0.5;
+      soliditaHealth = 'orange';
+    }
     
     // Utile Netto %
-    if (ceMetrics.utileNettoPercent >= 0.03) score += 1;
-    else if (ceMetrics.utileNettoPercent >= 0) score += 0.5;
+    let utileScore = 0;
+    let utileHealth = 'red';
+    if (ceMetrics.utileNettoPercent >= 0.03) {
+      score += 1;
+      utileScore = 1;
+      utileHealth = 'green';
+    } else if (ceMetrics.utileNettoPercent >= 0) {
+      score += 0.5;
+      utileScore = 0.5;
+      utileHealth = 'orange';
+    }
     
     // DSO
-    if (spMetrics.dso <= 60) score += 1;
-    else if (spMetrics.dso <= 90) score += 0.5;
+    let dsoScore = 0;
+    let dsoHealth = 'red';
+    if (spMetrics.dso <= 60) {
+      score += 1;
+      dsoScore = 1;
+      dsoHealth = 'green';
+    } else if (spMetrics.dso <= 90) {
+      score += 0.5;
+      dsoScore = 0.5;
+      dsoHealth = 'orange';
+    }
     
     // DPO
-    if (spMetrics.dpo >= 30 && spMetrics.dpo <= 90) score += 1;
-    else if ((spMetrics.dpo >= 20 && spMetrics.dpo < 30) || (spMetrics.dpo > 90 && spMetrics.dpo <= 120)) score += 0.5;
+    let dpoScore = 0;
+    let dpoHealth = 'red';
+    if (spMetrics.dpo >= 30 && spMetrics.dpo <= 90) {
+      score += 1;
+      dpoScore = 1;
+      dpoHealth = 'green';
+    } else if ((spMetrics.dpo >= 20 && spMetrics.dpo < 30) || (spMetrics.dpo > 90 && spMetrics.dpo <= 120)) {
+      score += 0.5;
+      dpoScore = 0.5;
+      dpoHealth = 'orange';
+    }
     
     const label = score >= 5.5 ? 'AAA / AA — Eccellente' :
                   score >= 4 ? 'A / BBB — Solido' :
@@ -120,7 +186,17 @@ const Dashboard: React.FC<DashboardProps> = ({
                   score >= 2.5 ? 'text-amber-500' :
                   'text-rose-600';
                   
-    return { score, label, color, dscr: ceMetrics.ebitdaTot / (ceMetrics.oneriFin || 1) };
+    const breakdown = [
+      { name: 'PFN / EBITDA', score: pfnEbitdaScore, target: '< 3x', color: pfnEbitdaHealth === 'green' ? '#10b981' : pfnEbitdaHealth === 'orange' ? '#f59e0b' : '#ef4444' },
+      { name: 'EBITDA / Oneri Fin.', score: ebitdaOneriScore, target: '> 3x', color: ebitdaOneriHealth === 'green' ? '#10b981' : ebitdaOneriHealth === 'orange' ? '#f59e0b' : '#ef4444' },
+      { name: 'Current Ratio', score: currentRatioScore, target: '> 1.2', color: currentRatioHealth === 'green' ? '#10b981' : currentRatioHealth === 'orange' ? '#f59e0b' : '#ef4444' },
+      { name: 'Solidità Patrimoniale', score: soliditaScore, target: '> 30%', color: soliditaHealth === 'green' ? '#10b981' : soliditaHealth === 'orange' ? '#f59e0b' : '#ef4444' },
+      { name: 'Utile Netto %', score: utileScore, target: '> 3%', color: utileHealth === 'green' ? '#10b981' : utileHealth === 'orange' ? '#f59e0b' : '#ef4444' },
+      { name: 'DSO (Incassi)', score: dsoScore, target: '< 60 gg', color: dsoHealth === 'green' ? '#10b981' : dsoHealth === 'orange' ? '#f59e0b' : '#ef4444' },
+      { name: 'DPO (Pagamenti)', score: dpoScore, target: '30-90 gg', color: dpoHealth === 'green' ? '#10b981' : dpoHealth === 'orange' ? '#f59e0b' : '#ef4444' }
+    ];
+                  
+    return { score, label, color, dscr: ceMetrics.ebitdaTot / (ceMetrics.oneriFin || 1), breakdown };
   }, [transactions, spSnapshots, ceManualData, currentYear]);
 
   // Dati mensili per i tre grafici di andamento
@@ -420,33 +496,73 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        {/* Rating Score Card (Valutazione Banca) */}
+        {/* Rating Score Card (Valutazione Banca con Grafico) */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <ShieldCheck size={20} className="text-slate-900" />
-              Valutazione Banca (Rating Merito Creditizio)
+              Valutazione Banca (Merito Creditizio Basilea 3)
             </h3>
             <span className={`text-sm font-black px-3 py-1 bg-slate-100 rounded-full ${ratingData.color}`}>
               Punteggio: {ratingData.score.toFixed(1)} / 7.0
             </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-            <div className="text-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Giudizio Sintetico</span>
-              <span className={`text-xl font-black ${ratingData.color}`}>{ratingData.label}</span>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+            {/* KPI Column */}
+            <div className="lg:col-span-5 flex flex-col gap-3">
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Giudizio Sintetico</span>
+                  <span className={`text-lg font-black ${ratingData.color}`}>{ratingData.label}</span>
+                </div>
+                <span className="text-2xl">🏆</span>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Copertura Oneri (DSCR)</span>
+                  <span className="text-lg font-black text-slate-800 font-mono">
+                    {ratingData.dscr > 0 ? `${ratingData.dscr.toFixed(2)}x` : 'N/A'}
+                  </span>
+                </div>
+                <span className="text-2xl">💰</span>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Livello di Rischio</span>
+                  <span className="text-lg font-black text-slate-800">
+                    {ratingData.score >= 5.5 ? 'Minimo' : ratingData.score >= 4 ? 'Basso' : ratingData.score >= 2.5 ? 'Medio' : 'Alto'}
+                  </span>
+                </div>
+                <span className="text-2xl">⚖️</span>
+              </div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Copertura Oneri (DSCR)</span>
-              <span className="text-xl font-black text-slate-800 font-mono">
-                {ratingData.dscr > 0 ? `${ratingData.dscr.toFixed(2)}x` : 'N/A'}
-              </span>
-            </div>
-            <div className="text-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Livello di Rischio</span>
-              <span className="text-xl font-black text-slate-800">
-                {ratingData.score >= 5.5 ? 'Minimo' : ratingData.score >= 4 ? 'Basso' : ratingData.score >= 2.5 ? 'Medio' : 'Alto'}
-              </span>
+
+            {/* Chart Column */}
+            <div className="lg:col-span-7 flex flex-col">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">Scomposizione Punteggio Indici</span>
+              <div className="h-56 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    layout="vertical"
+                    data={ratingData.breakdown}
+                    margin={{ top: 0, right: 10, left: 10, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                    <XAxis type="number" domain={[0, 1]} hide />
+                    <YAxis dataKey="name" type="category" width={110} axisLine={false} tickLine={false} tick={{fill: '#475569', fontSize: 9, fontWeight: 'bold'}} />
+                    <Tooltip 
+                      formatter={(value: number) => [`${value} Punti`, 'Punteggio']}
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
+                    />
+                    <Bar dataKey="score" barSize={8} radius={[0, 4, 4, 0]}>
+                      {ratingData.breakdown.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         </div>
