@@ -84,11 +84,13 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Calcolo Rating Bancario (Basilea 3)
   const ratingData = useMemo(() => {
-    const sortedSnapshots = [...spSnapshots].sort((a, b) => new Date(b.dataRiferimento).getTime() - new Date(a.dataRiferimento).getTime());
+    const snapshots = spSnapshots || [];
+    const sortedSnapshots = [...snapshots].sort((a, b) => new Date(b.dataRiferimento).getTime() - new Date(a.dataRiferimento).getTime());
     const activeSP = sortedSnapshots[0] || null;
     const ratingYear = activeSP ? new Date(activeSP.dataRiferimento).getFullYear() : currentYear;
     
-    const ceData = buildCEData(transactions, ratingYear, ceManualData[ratingYear.toString()]);
+    const manualData = ceManualData || {};
+    const ceData = buildCEData(transactions, ratingYear, manualData[ratingYear.toString()]);
     const ceMetrics = calcCEMetrics(ceData, transactions);
     const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions) : null;
     
