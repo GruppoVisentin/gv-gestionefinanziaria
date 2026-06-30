@@ -370,19 +370,31 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
                         <th className="px-2 py-2 font-semibold text-right">Previsionale</th>
                         <th className="px-2 py-2 font-semibold text-right">Consuntivo</th>
                         <th className="px-2 py-2 font-semibold text-right">Differenza</th>
+                        <th className="px-2 py-2 font-semibold text-center">Stato</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 text-xs">
-                    {data.map((item) => (
-                        <tr key={item.name}>
-                            <td className="px-2 py-1.5 font-medium text-slate-700 truncate max-w-[180px]" title={item.name}>{item.name}</td>
-                            <td className="px-2 py-1.5 text-right font-mono text-slate-500">{CURRENCY_FORMATTER.format(item.forecast)}</td>
-                            <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-800">{CURRENCY_FORMATTER.format(item.actual)}</td>
-                            <td className={`px-2 py-1.5 text-right font-mono font-bold ${item.diff > 0 ? 'text-slate-600' : 'text-slate-900'}`}>
-                                {item.diff > 0 ? '+' : ''}{CURRENCY_FORMATTER.format(item.diff)}
-                            </td>
-                        </tr>
-                    ))}
+                    {data.map((item) => {
+                        const limit = item.forecast * 1.05; // 5% tolleranza
+                        let semaforo = '🟢';
+                        if (item.actual > limit) {
+                          semaforo = '🔴';
+                        } else if (item.actual > item.forecast) {
+                          semaforo = '🟡';
+                        }
+                        
+                        return (
+                          <tr key={item.name}>
+                              <td className="px-2 py-1.5 font-medium text-slate-700 truncate max-w-[180px]" title={item.name}>{item.name}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-500">{CURRENCY_FORMATTER.format(item.forecast)}</td>
+                              <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-800">{CURRENCY_FORMATTER.format(item.actual)}</td>
+                              <td className={`px-2 py-1.5 text-right font-mono font-bold ${item.diff > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                  {item.diff > 0 ? '+' : ''}{CURRENCY_FORMATTER.format(item.diff)}
+                              </td>
+                              <td className="px-2 py-1.5 text-center text-sm">{semaforo}</td>
+                          </tr>
+                        );
+                    })}
                     <tr className="bg-slate-50 font-bold border-t border-slate-200">
                         <td className="px-2 py-2 text-slate-800 uppercase text-[10px]">Totale</td>
                         <td className="px-2 py-2 text-right font-mono text-slate-600">
@@ -391,9 +403,10 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
                         <td className="px-2 py-2 text-right font-mono text-slate-800">
                              {CURRENCY_FORMATTER.format(data.reduce((acc, i) => acc + i.actual, 0))}
                         </td>
-                         <td className="px-2 py-2 text-right font-mono text-slate-800">
+                        <td className="px-2 py-2 text-right font-mono text-slate-800">
                              {CURRENCY_FORMATTER.format(data.reduce((acc, i) => acc + i.diff, 0))}
                         </td>
+                        <td className="px-2 py-2"></td>
                     </tr>
                 </tbody>
             </table>
