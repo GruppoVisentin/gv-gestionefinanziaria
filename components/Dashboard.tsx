@@ -500,6 +500,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     return data;
   }, [actualTransactions]);
 
+  const ivaData = calcPosizIoneIVA(transactions || [], currentYear);
+
   // Calcolo stringhe calculatedValues per i tooltip della Dashboard
   const entrateCalculatedValues = `Analisi Entrate ${currentYear}:\n- Totale Entrate Consuntive: ${CURRENCY_FORMATTER.format(totalIncome)}\n- Composto da ricavi operativi reali incassati per SAL, vendite immobili, affitti e manutenzioni.`;
 
