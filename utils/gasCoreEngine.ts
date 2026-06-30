@@ -934,7 +934,7 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
   const totPassivoLT  = getVal(sp.mutuiLT) + getVal(sp.leasingLT) + getVal(sp.tfr);
   const totPassivoBT  = getVal(sp.fidiRT) + getVal(sp.debitiFornitori) + getVal(sp.debitiTributari) + getVal(sp.accontiClienti) + getVal(sp.altriDebitiBT) + getVal(sp.mutuiBT);
   const totPassivo    = totPN + totPassivoLT + totPassivoBT;
-  const pfn           = totPassivoLT + totPassivoBT - getVal(sp.liquidita);
+  const pfn           = getVal(sp.mutuiLT) + getVal(sp.leasingLT) + getVal(sp.fidiRT) + getVal(sp.mutuiBT) - getVal(sp.liquidita);
   const ebitda        = ceMetrics.ebitdaTot;
 
   const dataSnapObj = parseUTCDate(sp.dataRiferimento);
