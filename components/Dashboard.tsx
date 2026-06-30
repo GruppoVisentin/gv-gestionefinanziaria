@@ -525,8 +525,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                     cursor={{ fill: '#f1f5f9' }}
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   />
-                  <Bar dataKey="Entrate" fill="#0f172a" radius={[4, 4, 0, 0]} barSize={20} />
-                  <Bar dataKey="Uscite" fill="#64748b" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="Entrate" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} name="Entrate" />
+                  <Bar dataKey="Uscite" fill="#f43f5e" radius={[4, 4, 0, 0]} barSize={20} name="Uscite" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -552,7 +552,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     formatter={(value: number) => CURRENCY_FORMATTER.format(value)}
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   />
-                  <Line type="monotone" dataKey="LiquiditaCumulata" name="Saldo Conto" stroke="#0f172a" strokeWidth={3} dot={{r: 4, fill: '#0f172a'}} />
+                  <Line type="monotone" dataKey="LiquiditaCumulata" name="Saldo Conto" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, fill: '#2563eb'}} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -574,10 +574,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                     formatter={(value: number) => CURRENCY_FORMATTER.format(value)}
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   />
-                  <Bar dataKey="EntratePreviste" fill="#cbd5e1" radius={[4, 4, 0, 0]} name="Previsto" barSize={20} />
-                  <Bar dataKey="EntrateReali" fill="#0f172a" radius={[4, 4, 0, 0]} name="Reale" barSize={20} />
-                  <Line type="monotone" dataKey="EntratePreviste" stroke="#94a3b8" strokeDasharray="5 5" dot={false} strokeWidth={2} name="Previsto Trend" />
-                  <Line type="monotone" dataKey="EntrateReali" stroke="#1e293b" strokeWidth={2} dot={{r: 3, fill: '#1e293b'}} name="Reale Trend" />
+                  <Bar dataKey="EntratePreviste" fill="#a7f3d0" radius={[4, 4, 0, 0]} name="Previsto" barSize={20} />
+                  <Bar dataKey="EntrateReali" fill="#10b981" radius={[4, 4, 0, 0]} name="Reale" barSize={20} />
+                  <Line type="monotone" dataKey="EntratePreviste" stroke="#34d399" strokeDasharray="5 5" dot={false} strokeWidth={2} name="Previsto Trend" />
+                  <Line type="monotone" dataKey="EntrateReali" stroke="#047857" strokeWidth={2} dot={{r: 3, fill: '#047857'}} name="Reale Trend" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -599,10 +599,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                     formatter={(value: number) => CURRENCY_FORMATTER.format(value)}
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   />
-                  <Bar dataKey="UscitePreviste" fill="#cbd5e1" radius={[4, 4, 0, 0]} name="Previsto" barSize={20} />
-                  <Bar dataKey="UsciteReali" fill="#64748b" radius={[4, 4, 0, 0]} name="Reale" barSize={20} />
-                  <Line type="monotone" dataKey="UscitePreviste" stroke="#94a3b8" strokeDasharray="5 5" dot={false} strokeWidth={2} name="Previsto Trend" />
-                  <Line type="monotone" dataKey="UsciteReali" stroke="#475569" strokeWidth={2} dot={{r: 3, fill: '#475569'}} name="Reale Trend" />
+                  <Bar dataKey="UscitePreviste" fill="#fecdd3" radius={[4, 4, 0, 0]} name="Previsto" barSize={20} />
+                  <Bar dataKey="UsciteReali" fill="#f43f5e" radius={[4, 4, 0, 0]} name="Reale" barSize={20} />
+                  <Line type="monotone" dataKey="UscitePreviste" stroke="#fb7185" strokeDasharray="5 5" dot={false} strokeWidth={2} name="Previsto Trend" />
+                  <Line type="monotone" dataKey="UsciteReali" stroke="#be123c" strokeWidth={2} dot={{r: 3, fill: '#be123c'}} name="Reale Trend" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
