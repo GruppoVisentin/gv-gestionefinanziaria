@@ -94,7 +94,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
     const accontoNovembre = taxPrev * 0.60;
 
     // Saldo of previous year paid in currentYear June:
-    // previous year's tax minus the acconti paid in the previous year
+    // previous year's tax minus the acconti paid for the previous year
     const accontiPagatiPrev = transactions
       .filter(tx => {
         const d = parseUTCDate(tx.date);
@@ -102,7 +102,10 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       })
       .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
-    const saldoGiugnom = Math.max(0, taxPrev - accontiPagatiPrev);
+    const accontiGiugnoNovembrePrev = prevFiscalePrev.accontoGiugno + prevFiscalePrev.accontoNovembre;
+    const assumedAccontiPrev = accontiPagatiPrev > 0 ? accontiPagatiPrev : accontiGiugnoNovembrePrev;
+
+    const saldoGiugnom = Math.max(0, taxPrev - assumedAccontiPrev);
 
     return {
       prevFiscale: {
