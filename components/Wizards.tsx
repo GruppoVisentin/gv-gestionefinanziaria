@@ -985,12 +985,14 @@ const CantierePrevForm: React.FC<{ cantiere: CantierePrev, tipologie: TipologiaC
           {selectedTipologia ? (
             <div className="space-y-4">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Costi Totali Stimati per Voce</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-2.5">
                 {selectedTipologia.vociAttive.map(v => (
-                  <div key={v.categoria} className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600 truncate mr-2">{v.categoria}</span>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1">
+                  <div key={v.categoria} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-100/50 transition-colors">
+                    <span className="text-xs font-bold text-slate-700 leading-normal max-w-full sm:max-w-[60%] break-words">
+                      {v.categoria}
+                    </span>
+                    <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
+                      <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 shadow-sm">
                         <span className="text-[10px] font-black text-slate-400 uppercase">IVA:</span>
                         <select
                           value={costiVatRates[v.categoria] !== undefined ? costiVatRates[v.categoria] : 22}
@@ -1004,15 +1006,15 @@ const CantierePrevForm: React.FC<{ cantiere: CantierePrev, tipologie: TipologiaC
                         </select>
                       </div>
                       
-                      <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1">
+                      <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
                         <input 
                           type="number" 
                           value={costiStimati[v.categoria] || ''} 
                           onChange={e => handleUpdateCosto(v.categoria, parseFloat(e.target.value) || 0)}
                           placeholder="0"
-                          className="w-20 p-0 bg-transparent text-xs font-mono font-bold text-right outline-none focus:ring-0 border-none"
+                          className="w-24 p-0 bg-transparent text-xs font-mono font-bold text-right outline-none focus:ring-0 border-none"
                         />
-                        <span className="text-xs font-bold text-slate-400">€</span>
+                        <span className="text-xs font-bold text-slate-400 ml-1">€</span>
                       </div>
                     </div>
                   </div>
