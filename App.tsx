@@ -898,7 +898,8 @@ const App: React.FC = () => {
   const triggerImmediateSave = useCallback(async (
     updatedTxs?: Transaction[], 
     updatedSessions?: ImportSession[],
-    updatedStoricoImportato?: boolean
+    updatedStoricoImportato?: boolean,
+    updatedCantieriPrev?: CantierePrev[]
   ) => {
     if (!fileHandle) return;
     try {
@@ -921,7 +922,7 @@ const App: React.FC = () => {
         oreCantiereStorico: oreStorico,
         oreOperaiStorico,
         tipologieCantiere,
-        cantieriPrev,
+        cantieriPrev: updatedCantieriPrev || cantieriPrev,
         rimanenze,
         regolePuntaNet,
         mappingContiPuntaNet,
@@ -1723,23 +1724,108 @@ const App: React.FC = () => {
   };
 
   const handleSaveCantierePrev = (c: CantierePrev) => {
-    setCantieriPrev(prev => {
-      const exists = prev.find(item => item.id === c.id);
-      if (exists) return prev.map(item => item.id === c.id ? c : item);
-      return [...prev, c];
-    });
+    const exists = cantieriPrev.some(item => item.id === c.id);
+    const finalCantieri = exists 
+      ? cantieriPrev.map(item => item.id === c.id ? c : item)
+      : [...cantieriPrev, c];
+      
+    setCantieriPrev(finalCantieri);
 
-    // Se il cantiere aveva già i flussi generati, rigenerali automaticamente per riflettere le modifiche
     if (c.previsionaliGenerati) {
-      setTransactions(prev => prev.filter(tx => !(tx.isForecast && tx.sourceRef === c.id)));
-      handleGenerateCantiereTransactions(c);
+      const filteredTxs = transactions.filter(tx => !(tx.isForecast && tx.sourceRef === c.id));
+      
+      const tipologia = tipologieCantiere.find(t => t.id === c.tipologiaId);
+      if (tipologia) {
+        const newTransactions: Transaction[] = [];
+        tipologia.vociAttive.forEach(voce => {
+          const totalAmount = c.costiStimati[voce.categoria] || 0;
+          if (totalAmount <= 0) return;
+
+          let offsetMesiLegacy = 0;
+          voce.fasi.forEach(fase => {
+            const faseAmount = (totalAmount * fase.percentuale) / 100;
+            
+            const getMeseValue = (m: any) => {
+               const parsed = parseInt(m, 10);
+               return isNaN(parsed) ? 1 : parsed;
+            };
+            
+            let meseInizio = getMeseValue(fase.meseInizio);
+            let meseFine = getMeseValue(fase.meseFine);
+            
+            if (fase.meseInizio === undefined || fase.meseFine === undefined) {
+               meseInizio = offsetMesiLegacy >= 0 ? offsetMesiLegacy + 1 : offsetMesiLegacy;
+               const offsetFine = offsetMesiLegacy + (fase.durataMesi || 1) - 1;
+               meseFine = offsetFine >= 0 ? offsetFine + 1 : offsetFine;
+               offsetMesiLegacy += (fase.durataMesi || 1);
+            }
+            
+            const offsetInizio = meseInizio > 0 ? meseInizio - 1 : meseInizio;
+            const offsetFine = meseFine > 0 ? meseFine - 1 : meseFine;
+            const durataMesi = Math.max(1, offsetFine - offsetInizio + 1);
+
+            const monthlyAmount = faseAmount / durataMesi;
+
+            for (let i = 0; i < durataMesi; i++) {
+              const absoluteMonthOffset = offsetInizio + i;
+              
+              const startUtc = parseUTCDate(c.dataInizio);
+              let targetYear = startUtc.getUTCFullYear();
+              let targetMonth = startUtc.getUTCMonth() + absoluteMonthOffset;
+              
+              if (targetMonth > 11) {
+                targetYear += Math.floor(targetMonth / 12);
+                targetMonth = targetMonth % 12;
+              } else if (targetMonth < 0) {
+                targetYear += Math.floor(targetMonth / 12) - 1;
+                targetMonth = (targetMonth % 12) + 12;
+              }
+              
+              const yearStr = targetYear.toString();
+              const monthStr = (targetMonth + 1).toString().padStart(2, '0');
+              const dayStr = '01';
+              const txDateStr = `${yearStr}-${monthStr}-${dayStr}`;
+              
+              const realCeType = CATEGORY_TO_CE_TYPE[voce.categoria] || 'solo_cashflow';
+              const selectedVat = c.costiVatRates && c.costiVatRates[voce.categoria] !== undefined 
+                ? c.costiVatRates[voce.categoria] 
+                : 22;
+              const newTx: Transaction = {
+                id: crypto.randomUUID(),
+                date: txDateStr,
+                amount: monthlyAmount,
+                vatRate: selectedVat,
+                type: TransactionType.EXPENSE,
+                category: voce.categoria,
+                description: `Previsionale ${c.nome} — ${voce.categoria.split('] ')[1] || voce.categoria}`,
+                project: c.nome,
+                isForecast: true,
+                ceType: realCeType as any,
+                sourceRef: c.id
+              };
+              newTransactions.push(newTx);
+            }
+          });
+        });
+        const finalTxs = [...filteredTxs, ...newTransactions];
+        setTransactions(finalTxs);
+        triggerImmediateSave(finalTxs, undefined, undefined, finalCantieri);
+      } else {
+        setTransactions(filteredTxs);
+        triggerImmediateSave(filteredTxs, undefined, undefined, finalCantieri);
+      }
+    } else {
+      triggerImmediateSave(undefined, undefined, undefined, finalCantieri);
     }
   };
 
   const handleDeleteCantierePrev = (id: string) => {
     if (window.confirm('Eliminare questo cantiere previsionale e rimuovere automaticamente tutte le voci generate nel cash flow?')) {
-      setCantieriPrev(prev => prev.filter(c => c.id !== id));
-      setTransactions(prev => prev.filter(tx => !(tx.isForecast && tx.sourceRef === id)));
+      const finalCantieri = cantieriPrev.filter(c => c.id !== id);
+      const finalTxs = transactions.filter(tx => !(tx.isForecast && tx.sourceRef === id));
+      setCantieriPrev(finalCantieri);
+      setTransactions(finalTxs);
+      triggerImmediateSave(finalTxs, undefined, undefined, finalCantieri);
     }
   };
 
@@ -1820,14 +1906,21 @@ const App: React.FC = () => {
       });
     });
 
-    setTransactions(prev => [...prev, ...newTransactions]);
-    setCantieriPrev(prev => prev.map(item => item.id === c.id ? { ...item, previsionaliGenerati: true } : item));
+    const finalTxs = [...transactions, ...newTransactions];
+    const finalCantieri = cantieriPrev.map(item => item.id === c.id ? { ...item, previsionaliGenerati: true } : item);
+
+    setTransactions(finalTxs);
+    setCantieriPrev(finalCantieri);
+    triggerImmediateSave(finalTxs, undefined, undefined, finalCantieri);
   };
 
   const handleDeleteCantiereGenerated = (c: CantierePrev) => {
     // N10 fix: match esatto sul sourceRef (cantiereWizardId) invece che sulla descrizione
-    setTransactions(prev => prev.filter(tx => !(tx.isForecast && tx.sourceRef === c.id)));
-    setCantieriPrev(prev => prev.map(item => item.id === c.id ? { ...item, previsionaliGenerati: false } : item));
+    const finalTxs = transactions.filter(tx => !(tx.isForecast && tx.sourceRef === c.id));
+    const finalCantieri = cantieriPrev.map(item => item.id === c.id ? { ...item, previsionaliGenerati: false } : item);
+    setTransactions(finalTxs);
+    setCantieriPrev(finalCantieri);
+    triggerImmediateSave(finalTxs, undefined, undefined, finalCantieri);
   };
 
   const handleAuthChange = (auth: boolean, user: string) => {
