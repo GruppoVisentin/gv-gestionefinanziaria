@@ -1149,9 +1149,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                       axisLine={false} 
                       tickLine={false} 
                       tick={{ fill: '#64748b', fontSize: 12 }}
+                      tickFormatter={(value) => CURRENCY_FORMATTER.format(value)}
                     />
                     <Tooltip 
                       cursor={{ fill: '#f1f5f9' }}
+                      formatter={(value: number) => CURRENCY_FORMATTER.format(value)}
                       contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                     />
                     <Bar dataKey="Entrate" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} name="Entrate" />
