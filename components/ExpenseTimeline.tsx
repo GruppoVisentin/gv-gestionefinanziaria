@@ -325,17 +325,20 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
         // Add Tax Estimates
         const ivaMese = taxForecasts.posIva.mensile[monthIndex];
         if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
-            transactionTotal += ivaMese.versamentoIVA;
+            const hasIvaTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === monthIndex && t.category === '[FISCO] Versamento IVA');
+            if (!hasIvaTx) {
+                transactionTotal += ivaMese.versamentoIVA;
+            }
         }
 
         if (monthIndex === 5) {
-            const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-            if (!paidJune) {
+            const hasTaxTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            if (!hasTaxTx) {
                 transactionTotal += taxForecasts.prevFiscale.accontoGiugno + taxForecasts.prevFiscale.saldoGiugnom;
             }
         } else if (monthIndex === 10) {
-            const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-            if (!paidNov) {
+            const hasTaxTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            if (!hasTaxTx) {
                 transactionTotal += taxForecasts.prevFiscale.accontoNovembre;
             }
         }
@@ -384,22 +387,25 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                 }
             }
         }
-        if (category === '[FISCO] F24 — IVA') {
+        if (category === '[FISCO] Versamento IVA') {
             for (let m = 0; m < 12; m++) {
                 const ivaMese = taxForecasts.posIva.mensile[m];
                 if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
-                    total += ivaMese.versamentoIVA;
+                    const hasIvaTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === m && t.category === '[FISCO] Versamento IVA');
+                    if (!hasIvaTx) {
+                        total += ivaMese.versamentoIVA;
+                    }
                 }
             }
         }
         if (category === '[FISCO] F24 — IRPEF / IRES / IRAP') {
-            const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-            if (!paidJune) {
+            const hasJuneTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            if (!hasJuneTx) {
                 total += taxForecasts.prevFiscale.accontoGiugno;
                 total += taxForecasts.prevFiscale.saldoGiugnom;
             }
-            const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-            if (!paidNov) total += taxForecasts.prevFiscale.accontoNovembre;
+            const hasNovTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            if (!hasNovTx) total += taxForecasts.prevFiscale.accontoNovembre;
         }
     }
     return total;
@@ -447,18 +453,21 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                 for (let m = 0; m < 12; m++) {
                     const ivaMese = taxForecasts.posIva.mensile[m];
                     if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
-                        total += ivaMese.versamentoIVA;
+                        const hasIvaTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === m && t.category === '[FISCO] Versamento IVA');
+                        if (!hasIvaTx) {
+                            total += ivaMese.versamentoIVA;
+                        }
                     }
                 }
             }
             if (cat === '[FISCO] F24 — IRPEF / IRES / IRAP') {
-                const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-                if (!paidJune) {
+                const hasJuneTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                if (!hasJuneTx) {
                     total += taxForecasts.prevFiscale.accontoGiugno;
                     total += taxForecasts.prevFiscale.saldoGiugnom;
                 }
-                const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-                if (!paidNov) total += taxForecasts.prevFiscale.accontoNovembre;
+                const hasNovTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                if (!hasNovTx) total += taxForecasts.prevFiscale.accontoNovembre;
             }
         });
     }
@@ -505,16 +514,19 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
         for (let m = 0; m < 12; m++) {
             const ivaMese = taxForecasts.posIva.mensile[m];
             if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
-                total += ivaMese.versamentoIVA;
+                const hasIvaTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === m && t.category === '[FISCO] Versamento IVA');
+                if (!hasIvaTx) {
+                    total += ivaMese.versamentoIVA;
+                }
             }
         }
-        const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-        if (!paidJune) {
+        const hasJuneTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+        if (!hasJuneTx) {
             total += taxForecasts.prevFiscale.accontoGiugno;
             total += taxForecasts.prevFiscale.saldoGiugnom;
         }
-        const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-        if (!paidNov) total += taxForecasts.prevFiscale.accontoNovembre;
+        const hasNovTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+        if (!hasNovTx) total += taxForecasts.prevFiscale.accontoNovembre;
     }
     return total;
   };
@@ -1257,53 +1269,76 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                 </div>
                                             )}
                                             {/* Tax estimates inside the forecast column */}
-                                            {(() => {
-                                                if (category === '[FISCO] Versamento IVA') {
-                                                    const ivaMese = taxForecasts.posIva.mensile[mIdx];
-                                                    if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
-                                                        return (
-                                                            <div className="relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border transition-all bg-rose-50 text-rose-700 border-rose-100 shadow-sm" title="IVA stimata da pagare">
-                                                                <span className="text-[11px] font-mono font-medium leading-none flex items-center gap-1">
-                                                                    {CURRENCY_FORMATTER.format(ivaMese.versamentoIVA)}
-                                                                </span>
-                                                                <span className="text-[9px] opacity-80 truncate w-full text-center mt-0.5 max-w-[90px] font-bold text-rose-800">
-                                                                    IVA Stimata
-                                                                </span>
-                                                            </div>
-                                                        );
-                                                    }
-                                                }
-                                                if (category === '[FISCO] F24 — IRPEF / IRES / IRAP') {
-                                                    let taxVal = 0;
-                                                    let taxName = '';
-                                                    if (mIdx === 5) {
-                                                        const paidJune = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-                                                        if (!paidJune) {
-                                                            taxVal = taxForecasts.prevFiscale.accontoGiugno + taxForecasts.prevFiscale.saldoGiugnom;
-                                                            taxName = 'Acconto 1 + Saldo';
-                                                        }
-                                                    } else if (mIdx === 10) {
-                                                        const paidNov = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-                                                        if (!paidNov) {
-                                                            taxVal = taxForecasts.prevFiscale.accontoNovembre;
-                                                            taxName = 'Acconto 2';
-                                                        }
-                                                    }
-                                                    if (taxVal > 0) {
-                                                        return (
-                                                            <div className="relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border transition-all bg-rose-50 text-rose-700 border-rose-100 shadow-sm" title="IRES/IRAP stimata da pagare">
-                                                                <span className="text-[11px] font-mono font-medium leading-none flex items-center gap-1">
-                                                                    {CURRENCY_FORMATTER.format(taxVal)}
-                                                                </span>
-                                                                <span className="text-[9px] opacity-80 truncate w-full text-center mt-0.5 max-w-[90px] font-bold text-rose-800">
-                                                                    {taxName}
-                                                                </span>
-                                                            </div>
-                                                        );
-                                                    }
-                                                }
-                                                return null;
-                                            })()}
+                                             {(() => {
+                                                 if (category === '[FISCO] Versamento IVA') {
+                                                     const ivaMese = taxForecasts.posIva.mensile[mIdx];
+                                                     if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
+                                                         const hasIvaTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === mIdx && t.category === '[FISCO] Versamento IVA');
+                                                         if (!hasIvaTx) {
+                                                             return (
+                                                                 <div 
+                                                                     className="relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border cursor-pointer hover:shadow-md transition-all bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100 shadow-sm" 
+                                                                     title="IVA stimata da pagare. Clicca per personalizzare/modificare."
+                                                                     onClick={(e) => {
+                                                                         e.stopPropagation();
+                                                                         openForecastForm(category, mIdx);
+                                                                         setNewForecastAmount(ivaMese.versamentoIVA.toFixed(2));
+                                                                         setNewForecastDesc('Versamento IVA');
+                                                                         setNewForecastVat('0');
+                                                                     }}
+                                                                 >
+                                                                     <span className="text-[11px] font-mono font-medium leading-none flex items-center gap-1">
+                                                                         {CURRENCY_FORMATTER.format(ivaMese.versamentoIVA)}
+                                                                     </span>
+                                                                     <span className="text-[9px] opacity-80 truncate w-full text-center mt-0.5 max-w-[90px] font-bold text-rose-800">
+                                                                         IVA Stimata
+                                                                     </span>
+                                                                 </div>
+                                                             );
+                                                         }
+                                                     }
+                                                 }
+                                                 if (category === '[FISCO] F24 — IRPEF / IRES / IRAP') {
+                                                     let taxVal = 0;
+                                                     let taxName = '';
+                                                     if (mIdx === 5) {
+                                                         const hasJuneTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                                                         if (!hasJuneTx) {
+                                                             taxVal = taxForecasts.prevFiscale.accontoGiugno + taxForecasts.prevFiscale.saldoGiugnom;
+                                                             taxName = 'Acconto 1 + Saldo';
+                                                         }
+                                                     } else if (mIdx === 10) {
+                                                         const hasNovTx = expenseTransactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                                                         if (!hasNovTx) {
+                                                             taxVal = taxForecasts.prevFiscale.accontoNovembre;
+                                                             taxName = 'Acconto 2';
+                                                         }
+                                                     }
+                                                     if (taxVal > 0) {
+                                                         return (
+                                                             <div 
+                                                                 className="relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border cursor-pointer hover:shadow-md transition-all bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100 shadow-sm" 
+                                                                 title="IRES/IRAP stimata da pagare. Clicca per personalizzare/modificare."
+                                                                 onClick={(e) => {
+                                                                     e.stopPropagation();
+                                                                     openForecastForm(category, mIdx);
+                                                                     setNewForecastAmount(taxVal.toFixed(2));
+                                                                     setNewForecastDesc(`F24 IRES/IRAP - ${taxName}`);
+                                                                     setNewForecastVat('0');
+                                                                 }}
+                                                             >
+                                                                 <span className="text-[11px] font-mono font-medium leading-none flex items-center gap-1">
+                                                                     {CURRENCY_FORMATTER.format(taxVal)}
+                                                                 </span>
+                                                                 <span className="text-[9px] opacity-80 truncate w-full text-center mt-0.5 max-w-[90px] font-bold text-rose-800">
+                                                                     {taxName}
+                                                                 </span>
+                                                             </div>
+                                                         );
+                                                     }
+                                                 }
+                                                 return null;
+                                             })()}
                                             {forecasts.map(t => (
                                                 <div 
                                                     key={t.id} 

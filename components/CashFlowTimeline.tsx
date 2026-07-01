@@ -512,18 +512,21 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         // Tax Deductions (IRES/IRAP and VAT)
         const ivaMese = taxForecasts.posIva.mensile[monthIndex];
         if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
-            expense += ivaMese.versamentoIVA;
+            const hasIvaTx = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === monthIndex && t.category === '[FISCO] Versamento IVA');
+            if (!hasIvaTx) {
+                expense += ivaMese.versamentoIVA;
+            }
         }
 
         if (monthIndex === 5) {
-            const paidJune = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-            if (!paidJune) {
+            const hasTaxTx = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            if (!hasTaxTx) {
                 expense += taxForecasts.prevFiscale.accontoGiugno;
                 expense += taxForecasts.prevFiscale.saldoGiugnom;
             }
         } else if (monthIndex === 10) {
-            const paidNov = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-            if (!paidNov) expense += taxForecasts.prevFiscale.accontoNovembre;
+            const hasTaxTx = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+            if (!hasTaxTx) expense += taxForecasts.prevFiscale.accontoNovembre;
         }
     }
 
@@ -575,18 +578,21 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
             // Tax Deductions (IRES/IRAP and VAT)
             const ivaMese = taxForecasts.posIva.mensile[i];
             if (ivaMese && ivaMese.isForecastMese && ivaMese.versamentoIVA > 0) {
-                annualAutoCosts += ivaMese.versamentoIVA;
+                const hasIvaTx = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === i && t.category === '[FISCO] Versamento IVA');
+                if (!hasIvaTx) {
+                    annualAutoCosts += ivaMese.versamentoIVA;
+                }
             }
 
             if (i === 5) {
-                const paidJune = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-                if (!paidJune) {
+                const hasTaxTx = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 5 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                if (!hasTaxTx) {
                     annualAutoCosts += taxForecasts.prevFiscale.accontoGiugno;
                     annualAutoCosts += taxForecasts.prevFiscale.saldoGiugnom;
                 }
             } else if (i === 10) {
-                const paidNov = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && !t.isForecast && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
-                if (!paidNov) annualAutoCosts += taxForecasts.prevFiscale.accontoNovembre;
+                const hasTaxTx = transactions.some(t => parseUTCDate(t.date).getUTCFullYear() === currentYear && parseUTCDate(t.date).getUTCMonth() === 10 && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP');
+                if (!hasTaxTx) annualAutoCosts += taxForecasts.prevFiscale.accontoNovembre;
             }
             // ⚠️ FIX BUG CRITICO: NON sommare a totalFlow dentro il loop.
             // annualAutoCosts/Income sono accumulatori — sommarli ad ogni iterazione
