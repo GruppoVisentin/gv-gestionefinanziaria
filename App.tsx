@@ -1637,7 +1637,6 @@ const App: React.FC = () => {
       const allNewTransactions: Transaction[] = [];
 
       cantieriDaRigenerare.forEach(c => {
-        const startDate = new Date(c.dataInizio);
         t.vociAttive.forEach(voce => {
           const totalAmount = c.costiStimati[voce.categoria] || 0;
           if (totalAmount <= 0) return;
@@ -1669,14 +1668,33 @@ const App: React.FC = () => {
 
             for (let i = 0; i < durataMesi; i++) {
               const absoluteMonthOffset = offsetInizio + i;
-              const txDate = new Date(startDate.getFullYear(), startDate.getMonth() + absoluteMonthOffset, 1);
+              
+              const startUtc = parseUTCDate(c.dataInizio);
+              let targetYear = startUtc.getUTCFullYear();
+              let targetMonth = startUtc.getUTCMonth() + absoluteMonthOffset;
+              
+              if (targetMonth > 11) {
+                targetYear += Math.floor(targetMonth / 12);
+                targetMonth = targetMonth % 12;
+              } else if (targetMonth < 0) {
+                targetYear += Math.floor(targetMonth / 12) - 1;
+                targetMonth = (targetMonth % 12) + 12;
+              }
+              
+              const yearStr = targetYear.toString();
+              const monthStr = (targetMonth + 1).toString().padStart(2, '0');
+              const dayStr = '01';
+              const txDateStr = `${yearStr}-${monthStr}-${dayStr}`;
               
               const realCeType = CATEGORY_TO_CE_TYPE[voce.categoria] || 'solo_cashflow';
+              const selectedVat = c.costiVatRates && c.costiVatRates[voce.categoria] !== undefined 
+                ? c.costiVatRates[voce.categoria] 
+                : 22;
               const newTx: Transaction = {
                 id: crypto.randomUUID(),
-                date: txDate.toISOString().split('T')[0],
+                date: txDateStr,
                 amount: monthlyAmount,
-                vatRate: 22,
+                vatRate: selectedVat,
                 type: TransactionType.EXPENSE,
                 category: voce.categoria,
                 description: `Previsionale ${c.nome} — ${voce.categoria.split('] ')[1] || voce.categoria}`,
@@ -1724,7 +1742,6 @@ const App: React.FC = () => {
     if (!tipologia) return;
 
     const newTransactions: Transaction[] = [];
-    const startDate = new Date(c.dataInizio);
 
     tipologia.vociAttive.forEach(voce => {
       const totalAmount = c.costiStimati[voce.categoria] || 0;
@@ -1757,7 +1774,23 @@ const App: React.FC = () => {
 
         for (let i = 0; i < durataMesi; i++) {
           const absoluteMonthOffset = offsetInizio + i;
-          const txDate = new Date(startDate.getFullYear(), startDate.getMonth() + absoluteMonthOffset, 1);
+          
+          const startUtc = parseUTCDate(c.dataInizio);
+          let targetYear = startUtc.getUTCFullYear();
+          let targetMonth = startUtc.getUTCMonth() + absoluteMonthOffset;
+          
+          if (targetMonth > 11) {
+            targetYear += Math.floor(targetMonth / 12);
+            targetMonth = targetMonth % 12;
+          } else if (targetMonth < 0) {
+            targetYear += Math.floor(targetMonth / 12) - 1;
+            targetMonth = (targetMonth % 12) + 12;
+          }
+          
+          const yearStr = targetYear.toString();
+          const monthStr = (targetMonth + 1).toString().padStart(2, '0');
+          const dayStr = '01';
+          const txDateStr = `${yearStr}-${monthStr}-${dayStr}`;
           
           const realCeType = CATEGORY_TO_CE_TYPE[voce.categoria] || 'solo_cashflow';
           const selectedVat = c.costiVatRates && c.costiVatRates[voce.categoria] !== undefined 
@@ -1765,7 +1798,7 @@ const App: React.FC = () => {
             : 22;
           const newTx: Transaction = {
             id: crypto.randomUUID(), // N2 fix: usa UUID invece di Math.random()
-            date: txDate.toISOString().split('T')[0],
+            date: txDateStr,
             amount: monthlyAmount,
             vatRate: selectedVat,
             type: TransactionType.EXPENSE,
