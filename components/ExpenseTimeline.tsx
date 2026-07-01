@@ -7,7 +7,7 @@ import autoTable from 'jspdf-autotable';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { exportMonthlyReportPDF } from '../utils/monthlyPdfExport';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate, getDynamicLoansInterests, getDynamicLoansPrincipals } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate, getDynamicLoansInterests, getDynamicLoansPrincipals, calculateRepayment } from '../utils/gasCoreEngine';
 
 interface ExpenseTimelineProps {
   transactions: Transaction[];
@@ -167,28 +167,76 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       return total;
   };
 
+  // Line 170
   // --- LOAN REPAYMENT LOGIC (Prende i vettori centralizzati del motore e li adatta) ---
-  const dynamicInterestsArray = useMemo(() => getDynamicLoansInterests(transactions, currentYear, initialData), [transactions, currentYear, initialData]);
-  const dynamicPrincipalsArray = useMemo(() => getDynamicLoansPrincipals(transactions, currentYear, initialData), [transactions, currentYear, initialData]);
-
   const calculateLoanRepaymentForMonth = (monthIndex: number) => {
-      const interest = dynamicInterestsArray[monthIndex] || 0;
-      const principal = dynamicPrincipalsArray[monthIndex] || 0;
-      const total = interest + principal;
-      
-      // Dettaglio informativo per il tooltip
-      const details = total > 0 ? [
-        {
-          name: "Rate Mutui GV",
-          amount: 0,
-          rate: 0,
-          type: "AUTOMATIC",
-          principal,
-          interest,
-          total
-        }
-      ] : [];
+      let interest = 0;
+      let principal = 0;
+      const details: { name: string; amount: number; rate: number; type: string; principal: number; interest: number; total: number }[] = [];
 
+      // Mappa unificata per evitare conflitti e perdite di dettagli
+      const loansMap = new Map<string, { id: string; name: string; amount: number; details: LoanDetails }>();
+
+      // 1. Carica i finanziamenti da initialData (pregressi)
+      if (initialData && initialData.loans) {
+        initialData.loans.forEach(l => {
+          if (l.details) {
+            loansMap.set(l.id, { id: l.id, name: l.name, amount: l.originalAmount, details: l.details });
+          }
+        });
+      }
+
+      // 2. Sovrascrivi o aggiungi con i dettagli delle transazioni se presenti
+      transactions.forEach(t => {
+        if (t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
+          const id = t.loanSourceId || t.id;
+          const isForecast = t.isForecast;
+          const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || act.loanSourceId === id));
+          
+          if (!(isForecast && hasLinked)) {
+            loansMap.set(id, { id, name: t.description, amount: t.amount, details: t.loanDetails });
+          }
+        }
+      });
+
+      // 3. Calcola per ciascun mutuo le rate
+      loansMap.forEach(loan => {
+        const yr = currentYear;
+        const d = new Date(Date.UTC(yr, monthIndex, 15));
+        const hasManualInt = expenseTransactions.some(t => 
+          (t.loanSourceId === loan.id || t.linkedForecastId === loan.id) &&
+          parseUTCDate(t.date).getUTCFullYear() === yr &&
+          parseUTCDate(t.date).getUTCMonth() === monthIndex &&
+          t.category === '[FINANZA] Interessi Passivi Finanziamenti'
+        );
+        const hasManualPrinc = expenseTransactions.some(t => 
+          (t.loanSourceId === loan.id || t.linkedForecastId === loan.id) &&
+          parseUTCDate(t.date).getUTCFullYear() === yr &&
+          parseUTCDate(t.date).getUTCMonth() === monthIndex &&
+          t.category === '[FINANZA] Quota Capitale Rate Finanziamenti'
+        );
+
+        const rep = calculateRepayment(loan.amount, loan.details, d);
+        
+        const mInt = hasManualInt ? 0 : rep.interest;
+        const mPrinc = hasManualPrinc ? 0 : rep.principal;
+        
+        if (mInt > 0 || mPrinc > 0) {
+          interest += mInt;
+          principal += mPrinc;
+          details.push({
+            name: loan.name,
+            amount: loan.amount,
+            rate: loan.details.interestRate,
+            type: loan.details.rateType,
+            principal: mPrinc,
+            interest: mInt,
+            total: mPrinc + mInt
+          });
+        }
+      });
+
+      const total = interest + principal;
       return { total, interest, principal, details };
   };
 

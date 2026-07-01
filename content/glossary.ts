@@ -932,6 +932,14 @@ export const GLOSSARIO: TermineGlossario[] = [
     definizione: 'Valutazione sintetica del merito creditizio aziendale calcolata ponderando i 7 indici fondamentali prescritti da Basilea 3 (PFN/EBITDA, DSCR, current ratio, solidità patrimoniale, utile netto %, DSO e DPO). Fornisce lo score indicativo che le banche usano per concedere affidamenti e tassi di interesse.',
     doveAppareNellApp: ['Dashboard — Valutazione Banca', 'RatingView'],
   },
+  {
+    id: 'struttura_patrimoniale',
+    nome: 'Struttura Patrimoniale (Fonti e Impieghi)',
+    categoria: 'concetti',
+    origine: 'Riclassificazione dello Stato Patrimoniale secondo il criterio finanziario',
+    definizione: 'Il confronto tra le Fonti di finanziamento (Patrimonio Netto, Debiti a Medio/Lungo Termine, Debiti a Breve Termine) e gli Impieghi di capitale (Capitale Immobilizzato, Capitale Circolante). Consente di verificare la coerenza tra la durata dei finanziamenti e la liquidità degli investimenti.',
+    doveAppareNellApp: ['Dashboard — Struttura Patrimoniale', 'SPView'],
+  },
 
 ];
 

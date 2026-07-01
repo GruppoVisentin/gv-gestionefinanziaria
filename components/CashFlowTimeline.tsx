@@ -140,13 +140,22 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     const intStart = details.interestStartDate ? parseUTCDate(details.interestStartDate) : undefined;
     const princStart = details.principalStartDate ? parseUTCDate(details.principalStartDate) : intStart;
     
-    if (!intStart || targetDate < intStart) return { principal: 0, interest: 0, total: 0 };
+    if (!intStart) return { principal: 0, interest: 0, total: 0 };
+
+    const targetMonthGlobal = yr * 12 + targetMonthIndex;
+    const intStartMonthGlobal = intStart.getUTCFullYear() * 12 + intStart.getUTCMonth();
     
+    if (targetMonthGlobal < intStartMonthGlobal) return { principal: 0, interest: 0, total: 0 };
+    
+    const princStartSafe = (princStart && !isNaN(princStart.getTime())) ? princStart : intStart;
+    const amortizationStartMonthGlobal = princStartSafe.getUTCFullYear() * 12 + princStartSafe.getUTCMonth();
+
     const end = details.endDate 
       ? parseUTCDate(details.endDate) 
-      : new Date(Date.UTC((princStart ? princStart.getUTCFullYear() : yr) + 20, princStart ? princStart.getUTCMonth() : 0, 15));
+      : new Date(Date.UTC(princStartSafe.getUTCFullYear() + 20, princStartSafe.getUTCMonth(), 15));
 
-    if (targetDate > end) return { principal: 0, interest: 0, total: 0 };
+    const endMonthGlobal = end.getUTCFullYear() * 12 + end.getUTCMonth();
+    if (targetMonthGlobal > endMonthGlobal) return { principal: 0, interest: 0, total: 0 };
 
     // Determina il tasso applicabile per questa specifica data (considerando rinegoziazioni)
     let currentRate = details.interestRate;
@@ -154,7 +163,11 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     
     if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
       const rinegValide = [...details.rinegoziazioni]
-        .filter(r => parseUTCDate(r.dataInizio) <= targetDate)
+        .filter(r => {
+          const rDate = parseUTCDate(r.dataInizio);
+          const rMonthGlobal = rDate.getUTCFullYear() * 12 + rDate.getUTCMonth();
+          return rMonthGlobal <= targetMonthGlobal;
+        })
         .sort((a, b) => parseUTCDate(b.dataInizio).getTime() - parseUTCDate(a.dataInizio).getTime());
       
       if (rinegValide.length > 0) {
@@ -165,8 +178,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
     const monthlyRate = (currentRate / 100) / 12;
 
-    const amortizationStart = (princStart && !isNaN(princStart.getTime())) ? princStart : intStart;
-    if (targetDate >= intStart && targetDate < amortizationStart) {
+    if (targetMonthGlobal >= intStartMonthGlobal && targetMonthGlobal < amortizationStartMonthGlobal) {
       const onlyInterest = principal * monthlyRate;
       return {
         principal: 0,
@@ -177,19 +189,18 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       };
     }
 
-    const n = (end.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (end.getUTCMonth() - amortizationStart.getUTCMonth());
-    
+    const n = (end.getUTCFullYear() - princStartSafe.getUTCFullYear()) * 12 + (end.getUTCMonth() - princStartSafe.getUTCMonth());
     if (n <= 0) return { principal: 0, interest: 0, total: 0 };
+
+    const monthsPassed = targetMonthGlobal - amortizationStartMonthGlobal;
+    if (monthsPassed < 0 || monthsPassed >= n) return { principal: 0, interest: 0, total: 0 };
+
+    const paymentsMade = monthsPassed;
 
     // Rata fissa mensile (piano francese) ricalcolata sul tasso corrente
     const rataFissa = monthlyRate > 0
       ? principal * (monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
       : principal / n;
-
-    const monthsPassed = (targetDate.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (targetDate.getUTCMonth() - amortizationStart.getUTCMonth());
-    if (monthsPassed <= 0 || monthsPassed > n) return { principal: 0, interest: 0, total: 0 };
-
-    const paymentsMade = monthsPassed - 1;
 
     const residualCapital = monthlyRate > 0
       ? principal * (Math.pow(1 + monthlyRate, n) - Math.pow(1 + monthlyRate, paymentsMade)) / (Math.pow(1 + monthlyRate, n) - 1)
@@ -212,31 +223,37 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       let totalPayment = 0;
       let totalPrincipal = 0;
 
-      const loanTransactions = transactions.filter(t => 
-        t.type === TransactionType.INCOME && 
-        t.category === '[FINANZA] Finanziamenti Ricevuti' && 
-        t.loanDetails &&
-        !(t.isForecast && transactions.some(act => 
-          !act.isForecast && 
-          (act.linkedForecastId === t.id || (t.loanSourceId && act.loanSourceId === t.loanSourceId))
-        ))
-      );
+      // Mappa unificata per evitare conflitti e perdite di dettagli
+      const loansMap = new Map<string, { amount: number, details: LoanDetails }>();
 
-      loanTransactions.forEach(loan => {
-         const comps = calculateLoanComponents(loan.amount, loan.loanDetails, monthIndex, targetYear);
-         totalPayment += comps.total;
-         totalPrincipal += comps.principal;
+      // 1. Carica i finanziamenti da initialData (pregressi)
+      if (initialData && initialData.loans) {
+        initialData.loans.forEach(l => {
+          if (l.details) {
+            loansMap.set(l.id, { amount: l.originalAmount, details: l.details });
+          }
+        });
+      }
+
+      // 2. Sovrascrivi o aggiungi con i dettagli delle transazioni se presenti
+      transactions.forEach(t => {
+        if (t.type === TransactionType.INCOME && t.category === '[FINANZA] Finanziamenti Ricevuti' && t.loanDetails) {
+          const id = t.loanSourceId || t.id;
+          const isForecast = t.isForecast;
+          const hasLinked = transactions.some(act => !act.isForecast && (act.linkedForecastId === t.id || act.loanSourceId === id));
+          
+          if (!(isForecast && hasLinked)) {
+            loansMap.set(id, { amount: t.amount, details: t.loanDetails });
+          }
+        }
       });
 
-      if (initialData && initialData.loans) {
-          initialData.loans
-             .filter(l => !transactions.some(t => t.loanSourceId === l.id && parseUTCDate(t.date).getUTCFullYear() === currentYear))
-             .forEach(loan => {
-                const comps = calculateLoanComponents(loan.originalAmount, loan.details, monthIndex, targetYear);
-                totalPayment += comps.total;
-                totalPrincipal += comps.principal;
-             });
-      }
+      // 3. Esegui il calcolo delle rate su tutti i finanziamenti unificati
+      loansMap.forEach(loan => {
+        const comps = calculateLoanComponents(loan.amount, loan.details, monthIndex, targetYear);
+        totalPayment += comps.total;
+        totalPrincipal += comps.principal;
+      });
 
       return { totalPayment, totalPrincipal };
   };
@@ -730,8 +747,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                   rateType: loanRateType,
                   spread: loanRateType === 'VARIABLE' ? parseFloat(spread) : undefined,
                   indiceDiRiferimento: loanRateType === 'VARIABLE' ? indiceDiRif : undefined,
-                  interestStartDate: l.details.interestStartDate,
-                  principalStartDate: l.details.principalStartDate,
+                  interestStartDate: loanInterestStart,
+                  principalStartDate: loanPrincipalStart,
                   endDate: loanEndDate || undefined,
                   rinegoziazioni: rinegoziazioni.length > 0 ? rinegoziazioni : undefined,
               }
@@ -1352,6 +1369,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                                         setLoanAmount(loan.originalAmount.toString());
                                         setLoanInterestRate(loan.details.interestRate.toString());
                                         setLoanRateType(loan.details.rateType);
+                                        setLoanInterestStart(loan.details.interestStartDate || '');
+                                        setLoanPrincipalStart(loan.details.principalStartDate || '');
                                         setLoanEndDate(loan.details.endDate || '');
                                         setSpread(loan.details.spread?.toString() || '1.5');
                                         setIndiceDiRif(loan.details.indiceDiRiferimento || 'Euribor 3M');
@@ -1406,7 +1425,16 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                            <input type="date" style={{ colorScheme: 'dark' }} value={loanEndDate} onChange={e => setLoanEndDate(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-white focus:border-slate-500 outline-none" />
                         </div>
                     </div>
-
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="flex flex-col">
+                           <label className="block text-[9px] text-slate-500 font-semibold mb-0.5 uppercase">Inizio Interessi</label>
+                           <input type="date" style={{ colorScheme: 'dark' }} value={loanInterestStart} onChange={e => setLoanInterestStart(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-white focus:border-slate-500 outline-none" />
+                        </div>
+                        <div className="flex flex-col">
+                           <label className="block text-[9px] text-slate-500 font-semibold mb-0.5 uppercase">Inizio Capitale (Rate)</label>
+                           <input type="date" style={{ colorScheme: 'dark' }} value={loanPrincipalStart} onChange={e => setLoanPrincipalStart(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-white focus:border-slate-500 outline-none" />
+                        </div>
+                    </div>
                     {loanRateType === 'VARIABLE' && (
                        <div className="space-y-2 p-2 bg-sky-900/20 rounded border border-sky-800/50">
                            <div className="grid grid-cols-2 gap-2">

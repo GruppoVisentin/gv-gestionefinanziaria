@@ -319,11 +319,12 @@ const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, o
     let totOutstanding = 0;
     let totShortTerm = 0;
     
-    const allLoans = [];
+    const allLoans: { amount: number; originalAmount: number; details: any; name: string }[] = [];
     if (initialData.loans) {
       initialData.loans.forEach(loan => {
         allLoans.push({
           amount: loan.originalAmount,
+          originalAmount: loan.originalAmount,
           details: loan.details,
           name: loan.name
         });
@@ -339,6 +340,7 @@ const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, o
            if (!(t.isForecast && hasLinked)) {
              allLoans.push({
                amount: t.amount,
+               originalAmount: t.amount,
                details: t.loanDetails,
                name: t.description
              });

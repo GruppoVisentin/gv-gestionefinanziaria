@@ -701,6 +701,7 @@ const App: React.FC = () => {
   const incomeScrollRef = useRef<HTMLDivElement>(null);
   const expenseScrollRef = useRef<HTMLDivElement>(null);
   const cashFlowScrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- SCROLL SYNCHRONIZATION ---
   useEffect(() => {
@@ -956,7 +957,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       if (!isFileSystemSupported) {
-        setAppState('ready'); // Fallback mode
+        setAppState('welcome'); // Mostra comunque welcome per caricare file tramite input fallback
         return;
       }
       const handle = await getHandleFromIDB();
@@ -1088,7 +1089,49 @@ const App: React.FC = () => {
     }
   }, [buildBackupData]);
 
+  const handleMobileFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const contents = await file.text();
+      const data = JSON.parse(contents) as BackupData;
+      
+      const mockHandle = {
+        name: file.name,
+        kind: 'file',
+        getFile: async () => file,
+        createWritable: async () => {
+          return {
+            write: async (content: string) => {
+              const blob = new Blob([content], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = file.name || 'backup-cashflow.gvcf';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            },
+            close: async () => {}
+          };
+        }
+      };
+      
+      loadFromData(data);
+      setFileHandle(mockHandle as any);
+      setAppState('ready');
+      e.target.value = '';
+    } catch (err: any) {
+      alert("Errore nel caricamento del file: " + err.message);
+    }
+  }, [loadFromData]);
+
   const handleOpenExisting = useCallback(async () => {
+    if (!isFileSystemSupported) {
+      fileInputRef.current?.click();
+      return;
+    }
     const result = await openExistingFile();
     if (result) {
       loadFromData(result.data);
@@ -1129,7 +1172,7 @@ const App: React.FC = () => {
       
       setAppState('ready');
     }
-  }, [loadFromData, pendingBackupHandleFromIDB, pendingRulesHandleFromIDB]);
+  }, [loadFromData, pendingBackupHandleFromIDB, pendingRulesHandleFromIDB, isFileSystemSupported]);
 
   const handleCreateNew = useCallback(async () => {
     const result = await createNewFile(buildBackupData());
@@ -1384,6 +1427,28 @@ const App: React.FC = () => {
     };
     setTransactions(prev => [newTransaction, ...prev]);
 
+    // SINCRONIZZAZIONE FINANZIAMENTO NUOVO -> initialData.loans (solo se effettivamente diverso)
+    if (newTransaction.type === TransactionType.INCOME && newTransaction.category === '[FINANZA] Finanziamenti Ricevuti' && newTransaction.loanDetails) {
+      const loanId = newTransaction.loanSourceId || newTransaction.id;
+      if (!newTransaction.loanSourceId) {
+        newTransaction.loanSourceId = loanId;
+      }
+      setInitialData(prev => {
+        const loans = prev.loans || [];
+        const existing = loans.find(l => l.id === loanId);
+        if (!existing) {
+          const newLoan = {
+            id: loanId,
+            name: newTransaction.description,
+            originalAmount: newTransaction.amount,
+            details: newTransaction.loanDetails!
+          };
+          return { ...prev, loans: [...loans, newLoan] };
+        }
+        return prev;
+      });
+    }
+
     // Auto-add supplier/description to presets if new
     if (data.description) {
         const cleanName = extractSupplierName(data.description);
@@ -1416,6 +1481,51 @@ const App: React.FC = () => {
       ceType: (CATEGORY_TO_CE_TYPE[transaction.category] ?? transaction.ceType) as any,
     };
     setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t));
+
+    // SINCRONIZZAZIONE FINANZIAMENTO AGGIORNATO -> initialData.loans (solo se effettivamente cambiato)
+    if (updated.type === TransactionType.INCOME && updated.category === '[FINANZA] Finanziamenti Ricevuti' && updated.loanDetails) {
+      const loanId = updated.loanSourceId || updated.id;
+      if (!updated.loanSourceId) {
+        updated.loanSourceId = loanId;
+      }
+      setInitialData(prev => {
+        const loans = prev.loans || [];
+        const existing = loans.find(l => l.id === loanId);
+        
+        // Verifica se c'è un cambiamento reale
+        const isChanged = !existing || 
+          existing.name !== updated.description ||
+          existing.originalAmount !== updated.amount ||
+          existing.details.interestRate !== updated.loanDetails?.interestRate ||
+          existing.details.rateType !== updated.loanDetails?.rateType ||
+          existing.details.interestStartDate !== updated.loanDetails?.interestStartDate ||
+          existing.details.principalStartDate !== updated.loanDetails?.principalStartDate ||
+          existing.details.endDate !== updated.loanDetails?.endDate;
+
+        if (isChanged) {
+          if (existing) {
+            return {
+              ...prev,
+              loans: loans.map(l => l.id === loanId ? {
+                ...l,
+                name: updated.description,
+                originalAmount: updated.amount,
+                details: updated.loanDetails!
+              } : l)
+            };
+          } else {
+            const newLoan = {
+              id: loanId,
+              name: updated.description,
+              originalAmount: updated.amount,
+              details: updated.loanDetails!
+            };
+            return { ...prev, loans: [...loans, newLoan] };
+          }
+        }
+        return prev; // Nessun cambiamento reale, non aggiornare lo stato evitando race conditions
+      });
+    }
     
     // Auto-add supplier even on update
     if (transaction.description) {
@@ -1434,6 +1544,18 @@ const App: React.FC = () => {
   };
 
   const handleDeleteTransaction = (id: string) => {
+    // Prima di eliminare, se si tratta di un finanziamento, rimuoviamolo da initialData
+    const tx = transactions.find(t => t.id === id);
+    if (tx && tx.type === TransactionType.INCOME && tx.category === '[FINANZA] Finanziamenti Ricevuti') {
+      const loanId = tx.loanSourceId || tx.id;
+      setInitialData(prev => {
+        const loans = prev.loans || [];
+        return {
+          ...prev,
+          loans: loans.filter(l => l.id !== loanId)
+        };
+      });
+    }
     setTransactions(prev => prev.filter(t => t.id !== id));
   };
 
@@ -2333,6 +2455,13 @@ const App: React.FC = () => {
           />
         )}
 
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          accept=".gvcf,.json" 
+          className="hidden" 
+          onChange={handleMobileFileChange} 
+        />
         <Footer />
       </main>
     </div>

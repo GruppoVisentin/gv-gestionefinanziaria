@@ -275,8 +275,8 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
             }
           } else {
             // Gap E: FEP senza file dettaglio (o dettaglio non trovato)
-            const descLower = mov.descrizione.toLowerCase();
-            const entLower = mov.entity.toLowerCase();
+            const descLower = (mov.descrizione || '').toLowerCase();
+            const entLower = (mov.entity || '').toLowerCase();
             
             if (/sub.*cantier/i.test(descLower) || /sub.*cantier/i.test(entLower)) {
               categoria = '[FORNITORI] Subappalti su Cantieri';

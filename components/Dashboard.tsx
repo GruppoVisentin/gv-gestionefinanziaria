@@ -12,7 +12,7 @@ import {
   Info,
   CalendarClock
 } from 'lucide-react';
-import { Transaction, TransactionType, AppView, SPSnapshot, CEData } from '../types';
+import { Transaction, TransactionType, AppView, SPSnapshot, CEData, InitialBalanceBreakdown, Project } from '../types';
 import SummaryCard from './SummaryCard';
 import { 
   PieChart, 
@@ -46,8 +46,8 @@ interface DashboardProps {
   expenseCategories: string[];
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
   initialAccounts?: any[];
-  initialData?: any;
-  projects?: any[];
+  initialData?: InitialBalanceBreakdown;
+  projects?: Project[];
   spSnapshots?: SPSnapshot[];
   ceManualData?: Record<string, Partial<CEData>>;
 }
@@ -80,18 +80,66 @@ const Dashboard: React.FC<DashboardProps> = ({
   ceManualData = {}
 }) => {
   const [showHelp, setShowHelp] = useState(false);
-  const currentYear = new Date().getFullYear();
+  const [dashboardYear, setDashboardYear] = useState<number>(() => new Date().getFullYear());
+  const currentYear = dashboardYear;
+
+  // Calcolo degli anni disponibili per il filtro della dashboard
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    years.add(new Date().getFullYear());
+    if (Array.isArray(transactions)) {
+      transactions.forEach(t => {
+        if (t && t.date) {
+          const d = parseUTCDate(t.date);
+          if (d) years.add(d.getUTCFullYear());
+        }
+      });
+    }
+    if (Array.isArray(spSnapshots)) {
+      spSnapshots.forEach(s => {
+        if (s && s.dataRiferimento) {
+          const d = new Date(s.dataRiferimento);
+          if (!isNaN(d.getTime())) {
+            years.add(d.getFullYear());
+          }
+        }
+      });
+    }
+    return Array.from(years).sort((a, b) => b - a);
+  }, [transactions, spSnapshots]);
 
   // Calcolo Rating Bancario (Basilea 3)
   const ratingData = useMemo(() => {
     const txList = Array.isArray(transactions) ? transactions : [];
     const snapshots = Array.isArray(spSnapshots) ? spSnapshots.filter(Boolean) : [];
-    const sortedSnapshots = [...snapshots].sort((a, b) => {
-      const dateA = a && a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
-      const dateB = b && b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
+    
+    // Filtra gli snapshot per l'anno selezionato
+    const snapshotsForYear = snapshots.filter(s => {
+      if (s && s.dataRiferimento) {
+        const d = new Date(s.dataRiferimento);
+        return !isNaN(d.getTime()) && d.getFullYear() === currentYear;
+      }
+      return false;
+    });
+    
+    // Ordina in modo decrescente per data per prendere il più recente di quell'anno
+    const sortedSnapshotsForYear = [...snapshotsForYear].sort((a, b) => {
+      const dateA = a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
+      const dateB = b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
       return dateB - dateA;
     });
-    const activeSP = sortedSnapshots[0] || null;
+    
+    let activeSP = sortedSnapshotsForYear[0] || null;
+    if (!activeSP && snapshots.length > 0) {
+      // Fallback: se non c'è uno snapshot per quell'anno, prendi il più recente in assoluto
+      const sortedAllSnapshots = [...snapshots].sort((a, b) => {
+        const dateA = a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
+        const dateB = b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
+        return dateB - dateA;
+      });
+      activeSP = sortedAllSnapshots[0] || null;
+    }
+    
     const ratingYear = activeSP && activeSP.dataRiferimento ? new Date(activeSP.dataRiferimento).getFullYear() : currentYear;
     
     const manualData = ceManualData || {};
@@ -99,18 +147,24 @@ const Dashboard: React.FC<DashboardProps> = ({
     const ceMetrics = calcCEMetrics(ceData, txList);
     const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, txList) : null;
     
-    if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0, breakdown: [], radarData: [] };
+    if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0, breakdown: [], radarData: [], spMetrics: null };
     
     let score = 0;
     
+    // BUG-004 FIX: negative EBITDA or negative PFN (net cash) need special handling
     // PFN / EBITDA
     let pfnEbitdaScore = 0;
     let pfnEbitdaHealth = 'red';
-    if (spMetrics.pfnSuEbitda <= 3) {
+    if (spMetrics.pfn <= 0) {
+      // PFN negativa = più cassa che debiti finanziario = ottimo
       score += 1;
       pfnEbitdaScore = 1;
       pfnEbitdaHealth = 'green';
-    } else if (spMetrics.pfnSuEbitda <= 4.5) {
+    } else if (spMetrics.pfnSuEbitda >= 0 && spMetrics.pfnSuEbitda <= 3) {
+      score += 1;
+      pfnEbitdaScore = 1;
+      pfnEbitdaHealth = 'green';
+    } else if (spMetrics.pfnSuEbitda >= 0 && spMetrics.pfnSuEbitda <= 4.5) {
       score += 0.5;
       pfnEbitdaScore = 0.5;
       pfnEbitdaHealth = 'orange';
@@ -231,7 +285,10 @@ const Dashboard: React.FC<DashboardProps> = ({
       { subject: 'DPO (Pagamento)', A: dpoScore * 100, fullMark: 100 }
     ];
                   
-    return { score, label, color, dscr: ceMetrics.ebitdaTot / (ceMetrics.oneriFin || 1), breakdown, radarData };
+    // BUG-003 FIX: DSCR reale = EBITDA / (Interessi Passivi + Quota Capitale Rate)
+    // non solo EBITDA / oneriFin (che sarebbe solo Interest Coverage)
+    const dscrDenominatore = (ceMetrics.oneriFin + ceMetrics.costiCapitaleRate) || 1;
+    return { score, label, color, dscr: ceMetrics.ebitdaTot / dscrDenominatore, breakdown, radarData, spMetrics };
   }, [transactions, spSnapshots, ceManualData, currentYear]);
 
   // Dati mensili per i tre grafici di andamento
@@ -239,7 +296,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     const txList = Array.isArray(transactions) ? transactions : [];
     const accountsList = Array.isArray(initialAccounts) ? initialAccounts : [];
     const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-    let cumulative = accountsList.reduce((sum, acc) => sum + (acc?.saldoIniziale || 0), 0) || 0;
+    // BUG-001 FIX: BankAccount usa il campo 'balance' non 'saldoIniziale'
+    let cumulative = accountsList.reduce((sum, acc) => sum + (acc?.balance || 0), 0) || 0;
     
     return months.map((m, index) => {
       const monthTxs = txList.filter(t => {
@@ -473,14 +531,32 @@ const Dashboard: React.FC<DashboardProps> = ({
   // Prepare data for Bar Chart (Last 6 months)
   const monthlyData = useMemo(() => {
     const today = new Date();
+    const systemYear = today.getFullYear();
+    const isCurrentOrFuture = currentYear >= systemYear;
     const data = [];
     const txList = Array.isArray(actualTransactions) ? actualTransactions : [];
+    
     for (let i = 5; i >= 0; i--) {
-      // Usiamo UTC local time matching per evitare sfasamenti sui fusi orari.
-      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      const targetMonth = d.getMonth();
-      const targetYear = d.getFullYear();
-      const monthLabel = d.toLocaleString('it-IT', { month: 'short' });
+      let targetMonth: number;
+      let targetYear: number;
+      
+      if (isCurrentOrFuture) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        targetMonth = d.getMonth();
+        targetYear = d.getFullYear();
+      } else {
+        // For past years (e.g. 2025): show July to December
+        // i goes from 5 down to 0:
+        // i = 5 -> targetMonth = 6 (July)
+        // i = 4 -> targetMonth = 7 (August)
+        // ...
+        // i = 0 -> targetMonth = 11 (December)
+        targetMonth = 11 - i;
+        targetYear = currentYear;
+      }
+      
+      const dForLabel = new Date(targetYear, targetMonth, 1);
+      const monthLabel = dForLabel.toLocaleString('it-IT', { month: 'short' });
       
       const monthTransactions = txList.filter(t => {
         const tDate = t && t.date ? parseUTCDate(t.date) : null;
@@ -498,9 +574,13 @@ const Dashboard: React.FC<DashboardProps> = ({
       data.push({ name: monthLabel, Entrate: income, Uscite: expense });
     }
     return data;
-  }, [actualTransactions]);
+  }, [actualTransactions, currentYear]);
 
-  const ivaData = calcPosizIoneIVA(transactions || [], currentYear);
+  // BUG-002 FIX: ivaData deve essere memoizzata per evitare ricalcoli su ogni render
+  const ivaData = useMemo(
+    () => calcPosizIoneIVA(Array.isArray(transactions) ? transactions : [], currentYear),
+    [transactions, currentYear]
+  );
 
   // Calcolo stringhe calculatedValues per i tooltip della Dashboard
   const entrateCalculatedValues = `Analisi Entrate ${currentYear}:\n- Totale Entrate Consuntive: ${CURRENCY_FORMATTER.format(totalIncome)}\n- Composto da ricavi operativi reali incassati per SAL, vendite immobili, affitti e manutenzioni.`;
@@ -532,9 +612,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     : `Nessun dato mensile disponibile.`;
 
   const contoCorrenteCalculatedValues = `Liquidità Cumulata:\n- Saldo iniziale conti corrente: ${
-    CURRENCY_FORMATTER.format(initialAccounts?.reduce((sum, acc) => sum + (acc.saldoIniziale || 0), 0) || 0)
+    // BUG-001 FIX: BankAccount usa il campo 'balance' non 'saldoIniziale'
+    CURRENCY_FORMATTER.format(Array.isArray(initialAccounts) ? initialAccounts.reduce((sum, acc) => sum + (acc?.balance || 0), 0) : 0)
   }\n- Flusso netto cumulato dell'anno: ${CURRENCY_FORMATTER.format(balance)}\n- Saldo finale progressivo stimato: ${
-    CURRENCY_FORMATTER.format((initialAccounts?.reduce((sum, acc) => sum + (acc.saldoIniziale || 0), 0) || 0) + balance)
+    CURRENCY_FORMATTER.format((Array.isArray(initialAccounts) ? initialAccounts.reduce((sum, acc) => sum + (acc?.balance || 0), 0) : 0) + balance)
   }`;
 
   const confrontoEntrateCalculatedValues = `Confronto Entrate:\n- Previste (Budget): ${
@@ -573,19 +654,55 @@ const Dashboard: React.FC<DashboardProps> = ({
     CURRENCY_FORMATTER.format(variableCostTableData.reduce((s, i) => s + i.diff, 0))
   }`;
 
+  // Preparazione dei dati per il grafico e la tabella della struttura patrimoniale
+  const spMetrics = ratingData.spMetrics;
+  const structureChartData = useMemo(() => {
+    if (!spMetrics) return [];
+    return [
+      {
+        name: 'Impieghi (Attivo)',
+        'Capitale Immobilizzato': spMetrics.totAttivoImm,
+        'Capitale Circolante': spMetrics.totAttivoCirc,
+      },
+      {
+        name: 'Fonti (Passivo & Netto)',
+        'Patrimonio Netto': spMetrics.totPN,
+        'Debiti a M/L Termine': spMetrics.totPassivoLT,
+        'Debiti a Breve Termine': spMetrics.totPassivoBT,
+      }
+    ];
+  }, [spMetrics]);
+
+  const formatPercent = (val: number, total: number) => {
+    if (total <= 0) return '0.0%';
+    return `${((val / total) * 100).toFixed(1)}%`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center no-print">
         <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Anno:</span>
+            <select
+              value={dashboardYear}
+              onChange={(e) => setDashboardYear(Number(e.target.value))}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all cursor-pointer font-sans"
+            >
+              {availableYears.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
           <HelpButton onClick={() => setShowHelp(true)} />
           <PDFExportButton 
             config={{
               elementId: "dashboard-report-content",
-              nomeFile: "Dashboard_Finanziaria",
-              titolo: "Dashboard Finanziaria",
-              sottotitolo: "Riepilogo Consuntivo e Andamento",
-              orientazione: "landscape"
+              nomeFile: `Dashboard_Finanziaria_${dashboardYear}`,
+              titolo: `Dashboard Finanziaria - ${dashboardYear}`,
+              sottotitolo: `Riepilogo Consuntivo e Andamento ${dashboardYear}`,
+              orientazione: "portrait"
             }}
           />
         </div>
@@ -703,6 +820,163 @@ const Dashboard: React.FC<DashboardProps> = ({
               )}
             </div>
           </div>
+        </div>
+
+        {/* Struttura Patrimoniale (Fonti vs Impieghi) */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <TrendingUp size={20} className="text-slate-900" />
+              Struttura Patrimoniale (Fonti vs Impieghi)
+              <InfoTooltip termId="struttura_patrimoniale" size="md" calculatedValues={
+                spMetrics 
+                  ? `Analisi Struttura Patrimoniale ${currentYear}:\n- Totale Attivo (Impieghi): ${CURRENCY_FORMATTER.format(spMetrics.totAttivo)}\n- Totale Passivo & Netto (Fonti): ${CURRENCY_FORMATTER.format(spMetrics.totPassivo)}\n- Capitale Immobilizzato: ${CURRENCY_FORMATTER.format(spMetrics.totAttivoImm)} (${formatPercent(spMetrics.totAttivoImm, spMetrics.totAttivo)})\n- Capitale Circolante: ${CURRENCY_FORMATTER.format(spMetrics.totAttivoCirc)} (${formatPercent(spMetrics.totAttivoCirc, spMetrics.totAttivo)})`
+                  : 'Nessun dato di Stato Patrimoniale disponibile per questo anno.'
+              } />
+            </h3>
+            {spMetrics && (
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${spMetrics.quadratura ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                {spMetrics.quadratura ? 'Stato Patrimoniale Quadrato' : 'Differenza di Quadratura rilevata'}
+              </span>
+            )}
+          </div>
+
+          {spMetrics ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+              {/* Grafico Column */}
+              <div className="lg:col-span-6 flex flex-col items-center justify-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block self-start font-sans">Rappresentazione Grafica</span>
+                <div className="h-64 w-full font-sans">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={structureChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
+                      <YAxis tickFormatter={(val) => CURRENCY_FORMATTER.format(val).replace(',00', '')} axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 9 }} />
+                      <Tooltip formatter={(value: number) => CURRENCY_FORMATTER.format(value)} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '11px' }} />
+                      
+                      {/* Impieghi */}
+                      <Bar dataKey="Capitale Immobilizzato" stackId="a" fill="#3b82f6" name="Capitale Immobilizzato" barSize={35} />
+                      <Bar dataKey="Capitale Circolante" stackId="a" fill="#60a5fa" radius={[4, 4, 0, 0]} name="Capitale Circolante" barSize={35} />
+                      
+                      {/* Fonti */}
+                      <Bar dataKey="Patrimonio Netto" stackId="b" fill="#10b981" name="Patrimonio Netto" barSize={35} />
+                      <Bar dataKey="Debiti a M/L Termine" stackId="b" fill="#f59e0b" name="Debiti a M/L Termine" barSize={35} />
+                      <Bar dataKey="Debiti a Breve Termine" stackId="b" fill="#ef4444" radius={[4, 4, 0, 0]} name="Debiti a Breve Termine" barSize={35} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Tabella Column */}
+              <div className="lg:col-span-6 overflow-x-auto">
+                <table className="w-full text-xs text-left border-collapse font-sans">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="px-3 py-2 font-bold text-slate-700">Voce</th>
+                      <th className="px-3 py-2 font-bold text-right text-slate-700">Valore</th>
+                      <th className="px-3 py-2 font-bold text-right text-slate-700">% Attivo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {/* IMPIEGHI SECTION */}
+                    <tr className="bg-slate-50/50">
+                      <td className="px-3 py-1.5 font-bold text-slate-900 uppercase text-[9px]" colSpan={3}>
+                        Impieghi (Attivo)
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 flex items-center gap-2 text-slate-600">
+                        <span className="w-2.5 h-2.5 rounded bg-blue-500 shrink-0"></span>
+                        Capitale Immobilizzato (Attivo Fisso)
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-700 font-semibold">
+                        {CURRENCY_FORMATTER.format(spMetrics.totAttivoImm)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-500 font-semibold">
+                        {formatPercent(spMetrics.totAttivoImm, spMetrics.totAttivo)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 flex items-center gap-2 text-slate-600">
+                        <span className="w-2.5 h-2.5 rounded bg-blue-400 shrink-0"></span>
+                        Capitale Circolante (Attivo Circolante)
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-700 font-semibold">
+                        {CURRENCY_FORMATTER.format(spMetrics.totAttivoCirc)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-500 font-semibold">
+                        {formatPercent(spMetrics.totAttivoCirc, spMetrics.totAttivo)}
+                      </td>
+                    </tr>
+                    <tr className="font-bold border-b border-slate-200 bg-slate-50/20">
+                      <td className="px-3 py-2 text-slate-800">Totale Impieghi (Attivo)</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800 font-bold">
+                        {CURRENCY_FORMATTER.format(spMetrics.totAttivo)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800 font-bold">100.0%</td>
+                    </tr>
+
+                    {/* FONTI SECTION */}
+                    <tr className="bg-slate-50/50">
+                      <td className="px-3 py-1.5 font-bold text-slate-900 uppercase text-[9px]" colSpan={3}>
+                        Fonti (Passivo e Netto)
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 flex items-center gap-2 text-slate-600">
+                        <span className="w-2.5 h-2.5 rounded bg-emerald-500 shrink-0"></span>
+                        Patrimonio Netto (Mezzi Propri)
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-700 font-semibold">
+                        {CURRENCY_FORMATTER.format(spMetrics.totPN)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-500 font-semibold">
+                        {formatPercent(spMetrics.totPN, spMetrics.totAttivo)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 flex items-center gap-2 text-slate-600">
+                        <span className="w-2.5 h-2.5 rounded bg-amber-500 shrink-0"></span>
+                        Debiti a Medio/Lungo Termine
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-700 font-semibold">
+                        {CURRENCY_FORMATTER.format(spMetrics.totPassivoLT)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-500 font-semibold">
+                        {formatPercent(spMetrics.totPassivoLT, spMetrics.totAttivo)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 flex items-center gap-2 text-slate-600">
+                        <span className="w-2.5 h-2.5 rounded bg-rose-500 shrink-0"></span>
+                        Debiti a Breve Termine
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-700 font-semibold">
+                        {CURRENCY_FORMATTER.format(spMetrics.totPassivoBT)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-500 font-semibold">
+                        {formatPercent(spMetrics.totPassivoBT, spMetrics.totAttivo)}
+                      </td>
+                    </tr>
+                    <tr className="font-bold border-t border-slate-200 bg-slate-50/20">
+                      <td className="px-3 py-2 text-slate-800">Totale Fonti (Passivo + Netto)</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800 font-bold">
+                        {CURRENCY_FORMATTER.format(spMetrics.totPassivo)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800 font-bold">
+                        {formatPercent(spMetrics.totPassivo, spMetrics.totAttivo)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 flex flex-col items-center justify-center text-slate-400 gap-2 border border-dashed border-slate-200 rounded-xl">
+              <AlertCircle size={24} className="text-slate-300" />
+              <span className="text-xs italic">Nessuno Stato Patrimoniale caricato o calcolato per l'anno {currentYear}.</span>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

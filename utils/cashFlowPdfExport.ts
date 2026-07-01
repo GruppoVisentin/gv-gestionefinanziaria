@@ -322,10 +322,9 @@ export const exportCashFlowProjectionPDF = ({
   const ebitda = transactions
     .filter(t => !t.isForecast && t.date.startsWith(String(currentYear)))
     .reduce((sum, t) => {
-      const isIncome = t.type === TransactionType.INCOME;
       const amt = Math.abs(t.amount);
-      if (t.ceType === 'ricavo_operativo') return sum + amt;
-      if (['costo_variabile', 'costo_fisso', 'costo_studio'].includes(t.ceType)) return sum - amt;
+      if (['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro'].includes(t.ceType as any)) return sum + amt;
+      if (['costo_variabile', 'costo_fisso', 'costo_studio'].includes(t.ceType as any)) return sum - amt;
       return sum;
     }, 0);
 

@@ -5,8 +5,9 @@ import { CATEGORY_TO_CE_TYPE } from '../constants';
  * Crea un oggetto Date in modo sicuro e indipendente dal fuso orario locale
  * partendo da una stringa 'YYYY-MM-DD'.
  */
-export const parseUTCDate = (dateStr: string): Date => {
-  if (!dateStr) return new Date(NaN);
+export const parseUTCDate = (dateStr: any): Date => {
+  if (dateStr instanceof Date) return dateStr;
+  if (typeof dateStr !== 'string' || !dateStr) return new Date(NaN);
   const parts = dateStr.split('-');
   if (parts.length === 3) {
     const y = parseInt(parts[0], 10);
@@ -103,115 +104,80 @@ export const calculateRepayment = (
 
   const intStart = parseUTCDate(details.interestStartDate);
   const princStart = details.principalStartDate ? parseUTCDate(details.principalStartDate) : intStart;
-  const end = details.endDate ? parseUTCDate(details.endDate) : new Date(Date.UTC(intStart.getUTCFullYear() + 20, intStart.getUTCMonth(), intStart.getUTCDate()));
+  
+  const yr = targetDate.getUTCFullYear();
+  const targetMonthIndex = targetDate.getUTCMonth();
+  const targetMonthGlobal = yr * 12 + targetMonthIndex;
+  const intStartMonthGlobal = intStart.getUTCFullYear() * 12 + intStart.getUTCMonth();
 
-  if (targetDate < intStart || targetDate > end) return { total: 0, principal: 0, interest: 0 };
+  if (targetMonthGlobal < intStartMonthGlobal) return { total: 0, principal: 0, interest: 0 };
+
+  const princStartSafe = (princStart && !isNaN(princStart.getTime())) ? princStart : intStart;
+  const amortizationStartMonthGlobal = princStartSafe.getUTCFullYear() * 12 + princStartSafe.getUTCMonth();
+
+  const end = details.endDate ? parseUTCDate(details.endDate) : new Date(Date.UTC(princStartSafe.getUTCFullYear() + 20, princStartSafe.getUTCMonth(), 15));
+  const endMonthGlobal = end.getUTCFullYear() * 12 + end.getUTCMonth();
+
+  if (targetMonthGlobal > endMonthGlobal) return { total: 0, principal: 0, interest: 0 };
 
   let rinegoziazioni: any[] = [];
   if (details.rinegoziazioni && Array.isArray(details.rinegoziazioni)) {
     rinegoziazioni = [...details.rinegoziazioni]
-      .filter(r => r.dataInizio && !isNaN(parseUTCDate(r.dataInizio).getTime()))
+      .filter(r => {
+        const rDate = parseUTCDate(r.dataInizio);
+        const rMonthGlobal = rDate.getUTCFullYear() * 12 + rDate.getUTCMonth();
+        return rMonthGlobal <= targetMonthGlobal;
+      })
       .sort((a, b) => parseUTCDate(a.dataInizio).getTime() - parseUTCDate(b.dataInizio).getTime());
   }
 
-  const amortizationStart = !isNaN(princStart.getTime()) ? princStart : intStart;
-  
-  const getRateForDate = (d: Date) => {
+  const getRateForDate = (monthGlobal: number) => {
     let rate = details.interestRate;
     for (const r of rinegoziazioni) {
-      if (parseUTCDate(r.dataInizio) <= d) {
+      const rDate = parseUTCDate(r.dataInizio);
+      const rMonthGlobal = rDate.getUTCFullYear() * 12 + rDate.getUTCMonth();
+      if (rMonthGlobal <= monthGlobal) {
         rate = r.nuovoTasso;
       }
     }
-    return Math.max(0, rate); // Protezione da tassi negativi
+    return Math.max(0, rate);
   };
 
-  const msPerDay = 1000 * 60 * 60 * 24;
+  const currentRate = getRateForDate(targetMonthGlobal);
+  const monthlyRate = (currentRate / 100) / 12;
 
-  if (targetDate >= intStart && targetDate < amortizationStart) {
-    const getSafeMonthDate = (startDate: Date, addMonths: number) => {
-      const y = startDate.getUTCFullYear();
-      const m = startDate.getUTCMonth() + addMonths;
-      const d = startDate.getUTCDate();
-      const targetDate = new Date(Date.UTC(y, m, 1));
-      const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-      targetDate.setUTCDate(Math.min(d, lastDay));
-      return targetDate;
-    };
-
-    const rate = getRateForDate(targetDate);
-    const prevMonthDate = getSafeMonthDate(targetDate, -1);
-    const startDateForCalc = prevMonthDate < intStart ? intStart : prevMonthDate;
-    const days = Math.round((targetDate.getTime() - startDateForCalc.getTime()) / msPerDay);
-    
-    // Pro rata giornaliero per pre-ammortamento
-    const dailyRate = (rate / 100) / 365;
+  if (targetMonthGlobal >= intStartMonthGlobal && targetMonthGlobal < amortizationStartMonthGlobal) {
+    const onlyInterest = principal * monthlyRate;
     return { 
-      total: principal * dailyRate * days, 
+      total: onlyInterest, 
       principal: 0, 
-      interest: principal * dailyRate * days
+      interest: onlyInterest
     };
   }
 
-  const n = (end.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (end.getUTCMonth() - amortizationStart.getUTCMonth());
+  const n = (end.getUTCFullYear() - princStartSafe.getUTCFullYear()) * 12 + (end.getUTCMonth() - princStartSafe.getUTCMonth());
   if (n <= 0) return { total: 0, principal: 0, interest: 0 };
 
-  const monthsPassed = (targetDate.getUTCFullYear() - amortizationStart.getUTCFullYear()) * 12 + (targetDate.getUTCMonth() - amortizationStart.getUTCMonth());
-  if (monthsPassed <= 0 || monthsPassed > n) return { total: 0, principal: 0, interest: 0 };
+  const monthsPassed = targetMonthGlobal - amortizationStartMonthGlobal;
+  if (monthsPassed < 0 || monthsPassed >= n) return { total: 0, principal: 0, interest: 0 };
 
-  let residualCapital = principal;
-  let resPrinc = 0;
-  let resInt = 0;
+  const paymentsMade = monthsPassed;
 
-  const getSafeMonthDate = (startDate: Date, addMonths: number) => {
-    const y = startDate.getUTCFullYear();
-    const m = startDate.getUTCMonth() + addMonths;
-    const d = startDate.getUTCDate();
-    const targetDate = new Date(Date.UTC(y, m, 1));
-    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    targetDate.setUTCDate(Math.min(d, lastDay));
-    return targetDate;
-  };
+  const rataFissa = monthlyRate > 0
+    ? principal * (monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
+    : principal / n;
 
-  // Simulazione stateful mese per mese
-  for (let m = 1; m <= monthsPassed; m++) {
-    const currentMonthDate = getSafeMonthDate(amortizationStart, m);
-    const rate = getRateForDate(currentMonthDate);
-    const i = (rate / 100) / 12;
-    const monthsRemaining = Math.max(1, n - (m - 1));
-    
-    // Ricalcola la rata fissa sul capitale residuo
-    const rataFissa = i > 0
-      ? residualCapital * (i * Math.pow(1 + i, monthsRemaining)) / (Math.pow(1 + i, monthsRemaining) - 1)
-      : residualCapital / monthsRemaining;
+  const residualCapital = monthlyRate > 0
+    ? principal * (Math.pow(1 + monthlyRate, n) - Math.pow(1 + monthlyRate, paymentsMade)) / (Math.pow(1 + monthlyRate, n) - 1)
+    : Math.max(0, principal - (principal / n * paymentsMade));
 
-    const prevMonthDate = getSafeMonthDate(amortizationStart, m - 1);
-    const startDateForCalc = prevMonthDate < intStart ? intStart : prevMonthDate;
-    const days = Math.round((currentMonthDate.getTime() - startDateForCalc.getTime()) / msPerDay);
-    const dailyRate = (rate / 100) / 365;
-
-    // Applica pro-rata al primo mese se inizia a ridosso
-    let interestPayment = m === 1 && startDateForCalc > prevMonthDate
-       ? residualCapital * dailyRate * days
-       : residualCapital * i;
-    
-    // Capitalizzazione mancata non implementata perché richiederebbe logica di accantonamento transazioni passate.
-    
-    let principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
-    if (principalPayment < 0) principalPayment = 0;
-
-    residualCapital -= principalPayment;
-    
-    if (m === monthsPassed) {
-      resPrinc = principalPayment;
-      resInt = interestPayment;
-    }
-  }
+  const interestPayment = Math.max(0, residualCapital * monthlyRate);
+  const principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
 
   return {
-    total: Math.round((resPrinc + resInt) * 100) / 100,
-    principal: Math.round(resPrinc * 100) / 100,
-    interest: Math.round(resInt * 100) / 100
+    total: Math.round((principalPayment + interestPayment) * 100) / 100,
+    principal: Math.round(principalPayment * 100) / 100,
+    interest: Math.round(interestPayment * 100) / 100
   };
 };
 
@@ -414,12 +380,16 @@ export const buildCEData = (
     costiVariabili:       manualOverrides?.costiVariabili ?? agg['costo_variabile'].map(v => Math.abs(v)),
     costiFissi:           manualOverrides?.costiFissi ?? agg['costo_fisso'].map(v => Math.abs(v)),
     costiStudio:          manualOverrides?.costiStudio ?? agg['costo_studio'].map(v => Math.abs(v)),
-    ammortamenti:         manualOverrides?.ammortamenti ?? 
-      (agg['ammortamento'].map((v, i) => Math.abs(v) + getDynamicDepreciation(transactions, anno)[i])),
+    // BUG-007 FIX: pre-compute depreciation ONCE instead of calling it 12 times inside .map()
+    ammortamenti:         manualOverrides?.ammortamenti ?? (() => {
+      const dynamicDep = getDynamicDepreciation(transactions, anno);
+      return agg['ammortamento'].map((v, i) => Math.abs(v) + dynamicDep[i]);
+    })(),
     oneriFin:             manualOverrides?.oneriFin ?? agg['onere_finanziario'].map(v => Math.abs(v)),
     proventiFin:          manualOverrides?.proventiFin ?? agg['provento_finanziario'].map(v => Math.abs(v)),
     straordinario:        manualOverrides?.straordinario ?? agg['straordinario'],
-    imposte:              manualOverrides?.imposte ?? Array(12).fill(0),
+    // BUG-011 FIX: use actual imposta_ce transactions instead of always returning zeros
+    imposte:              manualOverrides?.imposte ?? (agg['imposta_ce']?.map(v => Math.abs(v)) ?? Array(12).fill(0)),
     compensoImprenditore: manualOverrides?.compensoImprenditore ?? agg['distribuzione_utile'].map(v => Math.abs(v)),
   };
 };
@@ -594,7 +564,9 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   const forecastStraordinario = getForecastSum(['straordinario']);
   const forecastCompensoImprenditore = getForecastSum(['distribuzione_utile']);
 
-  const spiezioneMesi = ce.anno < oggi.getFullYear() ? 12 : oggi.getMonth() + 1; // used for backup if needed
+  const mesiTrascorsi = ce.anno < oggi.getFullYear()
+    ? 12
+    : oggi.getMonth() + 1;
 
   const proiezioneRicaviCore = isCurrentYear ? sum12(ce.ricaviCore) + forecastRicaviCore : sum12(ce.ricaviCore);
   const proiezioneRicaviImmobiliare = isCurrentYear ? sum12(ce.ricaviImmobiliare) + forecastRicaviImmobiliare : sum12(ce.ricaviImmobiliare);
@@ -625,9 +597,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   const forecastUtile = isCurrentYear ? (proiezioneEbt - ebtYtd) * (1 - aliquotaEffettiva) + forecastStraordinario : 0;
   const proiezioneUtile = isCurrentYear ? utileNettoTot + forecastUtile : utileNettoTot;
 
-  const mesiTrascorsi = ce.anno < oggi.getFullYear()
-    ? 12
-    : oggi.getMonth() + 1;
+  // mesiTrascorsi dichiarato a linea 601
 
   const ricaviConInvoiceDate = transactions.filter(tx => {
     const type = getDynamicCEType(tx, projects);
@@ -836,7 +806,7 @@ export const calcPrevisioneFiscale = (
   // costiFissiTot include ammortamenti. Ai fini IRAP per le S.R.L.,
   // l'ammortamento civilistico (imm. materiali/immateriali) è pienamente deducibile.
   const costiOperativiTotali = includeForecast
-    ? (ceMetrics.proiezioneCostiVariabili + ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio)
+    ? (ceMetrics.proiezioneCostiVariabili + ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio + ceMetrics.proiezioneAmmortamenti)
     : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + ceMetrics.costiFissiTot);
 
   const costiDeducibiliIRAP = Math.max(0, costiOperativiTotali - costoPersonaleDipendente - compensoAmministratoriIRAP);
@@ -1146,12 +1116,12 @@ export const calcPosizIoneIVA = (
     const txMese = txAnno.filter(tx => parseUTCDate(tx.date).getUTCMonth() === mese);
 
     const ivaIncassata = txMese
-      .filter(tx => tx.type === 'INCOME' && (tx.vatRate || 0) > 0 && tx.ceType !== 'solo_cashflow')
-      .reduce((s, tx) => s + tx.amount * (tx.vatRate! / 100), 0);
+      .filter(tx => tx.type === 'INCOME' && (tx.vatRate ?? 0) > 0 && tx.ceType !== 'solo_cashflow')
+      .reduce((s, tx) => s + tx.amount * ((tx.vatRate ?? 0) / 100), 0);
 
     const ivaPagata = txMese
-      .filter(tx => tx.type === 'EXPENSE' && (tx.vatRate || 0) > 0 && tx.ceType !== 'solo_cashflow')
-      .reduce((s, tx) => s + tx.amount * (tx.vatRate! / 100), 0);
+      .filter(tx => tx.type === 'EXPENSE' && (tx.vatRate ?? 0) > 0 && tx.ceType !== 'solo_cashflow')
+      .reduce((s, tx) => s + tx.amount * ((tx.vatRate ?? 0) / 100), 0);
 
     // Solo i versamenti F24 reali
     const versamentoIVA = txMese
@@ -1268,19 +1238,23 @@ export const calcPosizIoneIVA = (
     mensileCalcolato.forEach((m, idx) => {
       if (idx === 2) {
         const q1Saldo = mensileCalcolato[0].saldoIVA + mensileCalcolato[1].saldoIVA + mensileCalcolato[2].saldoIVA;
-        const q1Versamenti = mensileCalcolato[3].versamentoIVA + mensileCalcolato[4].versamentoIVA;
+        const q1Versamenti = mensileCalcolato[4].versamentoIVA;
         m.posizionNetta = q1Saldo - q1Versamenti;
       } else if (idx === 5) {
         const q2Saldo = mensileCalcolato[3].saldoIVA + mensileCalcolato[4].saldoIVA + mensileCalcolato[5].saldoIVA;
-        const q2Versamenti = mensileCalcolato[6].versamentoIVA + mensileCalcolato[7].versamentoIVA;
+        const q2Versamenti = mensileCalcolato[7].versamentoIVA;
         m.posizionNetta = q2Saldo - q2Versamenti;
       } else if (idx === 8) {
         const q3Saldo = mensileCalcolato[6].saldoIVA + mensileCalcolato[7].saldoIVA + mensileCalcolato[8].saldoIVA;
-        const q3Versamenti = mensileCalcolato[9].versamentoIVA + mensileCalcolato[10].versamentoIVA;
+        const q3Versamenti = mensileCalcolato[10].versamentoIVA;
         m.posizionNetta = q3Saldo - q3Versamenti;
       } else if (idx === 11) {
         const q4Saldo = mensileCalcolato[9].saldoIVA + mensileCalcolato[10].saldoIVA + mensileCalcolato[11].saldoIVA;
-        m.posizionNetta = q4Saldo;
+        // BUG-009 FIX: Q4 versamento (pagato a feb anno successivo) va sottratto come residuo finale
+        // Il versamento Q4 avviene a febbraio anno+1, quindi rimane come debito da saldare
+        // ma la posizionNetta del trimestre è il saldo lordo del Q4 (residuo da versare a feb)
+        const q4Versamento = mensileCalcolato[11].versamentoIVA;
+        m.posizionNetta = q4Saldo - q4Versamento;
       } else {
         m.posizionNetta = 0;
       }

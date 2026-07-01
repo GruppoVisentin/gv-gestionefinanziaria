@@ -163,44 +163,128 @@ export async function writeFile(handle: FileSystemFileHandle, data: BackupData):
   await writable.close();
 }
 
+class MockFileHandle {
+  name: string;
+  kind = 'file';
+  private fileData: File;
+
+  constructor(file: File) {
+    this.name = file.name;
+    this.fileData = file;
+  }
+
+  async getFile(): Promise<File> {
+    return this.fileData;
+  }
+
+  async createWritable() {
+    const fileData = this.fileData;
+    return {
+      write: async (content: string) => {
+        const blob = new Blob([content], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileData.name || 'backup-cashflow.gvcf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      },
+      close: async () => {}
+    };
+  }
+}
+
 /**
  * Open an existing file
  */
-export async function openExistingFile(): Promise<{ handle: FileSystemFileHandle, data: BackupData } | null> {
-  try {
-    // @ts-ignore
-    const [handle] = await window.showOpenFilePicker({
-      types: [{
-        description: 'GV Cash Flow File',
-        accept: { 'application/json': ['.gvcf', '.json'] },
-      }],
-      multiple: false
+export async function openExistingFile(): Promise<{ handle: any, data: BackupData } | null> {
+  // @ts-ignore
+  if (typeof window !== 'undefined' && 'showOpenFilePicker' in window) {
+    try {
+      // @ts-ignore
+      const [handle] = await window.showOpenFilePicker({
+        types: [{
+          description: 'GV Cash Flow File',
+          accept: { 'application/json': ['.gvcf', '.json'] },
+        }],
+        multiple: false
+      });
+      const data = await readFile(handle);
+      return { handle, data };
+    } catch (error: any) {
+      if (error.name === 'AbortError') return null;
+      throw error;
+    }
+  } else {
+    // Fallback per cellulari / browser non supportati
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.gvcf,.json';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        document.body.removeChild(input);
+        if (!file) {
+          resolve(null);
+          return;
+        }
+        try {
+          const contents = await file.text();
+          const data = JSON.parse(contents) as BackupData;
+          const handle = new MockFileHandle(file);
+          resolve({ handle, data });
+        } catch (err) {
+          alert("Errore nel caricamento del file: " + (err as Error).message);
+          resolve(null);
+        }
+      };
+      
+      input.click();
     });
-    const data = await readFile(handle);
-    return { handle, data };
-  } catch (error: any) {
-    if (error.name === 'AbortError') return null;
-    throw error;
   }
 }
 
 /**
  * Create a new file
  */
-export async function createNewFile(initialData: BackupData): Promise<{ handle: FileSystemFileHandle, data: BackupData } | null> {
-  try {
-    // @ts-ignore
-    const handle = await window.showSaveFilePicker({
-      suggestedName: 'gv-cashflow.gvcf',
-      types: [{
-        description: 'GV Cash Flow File',
-        accept: { 'application/json': ['.gvcf', '.json'] },
-      }],
-    });
-    await writeFile(handle, initialData);
+export async function createNewFile(initialData: BackupData): Promise<{ handle: any, data: BackupData } | null> {
+  // @ts-ignore
+  if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+    try {
+      // @ts-ignore
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'gv-cashflow.gvcf',
+        types: [{
+          description: 'GV Cash Flow File',
+          accept: { 'application/json': ['.gvcf', '.json'] },
+        }],
+      });
+      await writeFile(handle, initialData);
+      return { handle, data: initialData };
+    } catch (error: any) {
+      if (error.name === 'AbortError') return null;
+      throw error;
+    }
+  } else {
+    // Fallback: scarica direttamente il nuovo file
+    const blob = new Blob([JSON.stringify(initialData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'gv-cashflow.gvcf';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    // Ritorna un mock handle
+    const file = new File([blob], 'gv-cashflow.gvcf', { type: 'application/json' });
+    const handle = new MockFileHandle(file);
     return { handle, data: initialData };
-  } catch (error: any) {
-    if (error.name === 'AbortError') return null;
-    throw error;
   }
 }

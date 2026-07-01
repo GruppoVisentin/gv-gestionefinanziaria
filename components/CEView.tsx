@@ -711,15 +711,16 @@ const CEView: React.FC<CEViewProps> = ({
 
       for (let month = 0; month < 12; month++) {
         const d = new Date(selectedYear, month, 15);
-        const hasActualOneriFin = transactions.some(t => 
-          !t.isForecast && 
-          parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCFullYear() === selectedYear && 
-          parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCMonth() === month &&
-          getDynamicCEType(t, projects) === 'onere_finanziario'
-        );
+        loans.forEach((l, idx) => {
+          const hasActualForThisLoan = transactions.some(t => 
+            !t.isForecast && 
+            parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCFullYear() === selectedYear && 
+            parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCMonth() === month &&
+            getDynamicCEType(t, projects) === 'onere_finanziario' &&
+            (t.loanSourceId === l.id || t.linkedForecastId === l.id || t.description.toLowerCase().trim().includes(l.name.toLowerCase().trim()))
+          );
 
-        if (!hasActualOneriFin) {
-          loans.forEach((l, idx) => {
+          if (!hasActualForThisLoan) {
             const rep = calculateRepayment(l.amount, l.details, d);
             if (rep.interest > 0) {
               virtualLoanInterestTxs.push({
@@ -733,8 +734,8 @@ const CEView: React.FC<CEViewProps> = ({
                 isForecast: true
               });
             }
-          });
-        }
+          }
+        });
       }
     }
 
@@ -784,15 +785,16 @@ const CEView: React.FC<CEViewProps> = ({
 
       for (let month = 0; month < 12; month++) {
         const d = new Date(selectedYear, month, 15);
-        // Guard: non aggiungere virtuali se c'è già una tx forecast di interesse per questo mese
-        const hasForecastOneriFin = transactions.some(t =>
-          t.isForecast &&
-          parseUTCDate(t.date).getUTCFullYear() === selectedYear &&
-          parseUTCDate(t.date).getUTCMonth() === month &&
-          getDynamicCEType(t, projects) === 'onere_finanziario'
-        );
-        if (!hasForecastOneriFin) {
-          loans.forEach((l, idx) => {
+        loans.forEach((l, idx) => {
+          const hasForecastForThisLoan = transactions.some(t => 
+            t.isForecast && 
+            parseUTCDate(t.date).getUTCFullYear() === selectedYear && 
+            parseUTCDate(t.date).getUTCMonth() === month &&
+            getDynamicCEType(t, projects) === 'onere_finanziario' &&
+            (t.loanSourceId === l.id || t.linkedForecastId === l.id || t.description.toLowerCase().trim().includes(l.name.toLowerCase().trim()))
+          );
+
+          if (!hasForecastForThisLoan) {
             const rep = calculateRepayment(l.amount, l.details, d);
             if (rep.interest > 0) {
               virtualLoanInterestTxsSoloPrev.push({
@@ -806,8 +808,8 @@ const CEView: React.FC<CEViewProps> = ({
                 isForecast: true
               });
             }
-          });
-        }
+          }
+        });
       }
     }
 
