@@ -1347,7 +1347,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         </div>
       </div>
       
-      <div ref={scrollContainerRef} className="overflow-x-auto w-full relative">
+      <div ref={scrollContainerRef} className="overflow-x-auto w-full max-h-[calc(100vh-320px)] relative">
         <table className="w-full text-sm text-left border-collapse" style={{ tableLayout: 'fixed', minWidth: 3420 }}>
           <colgroup>
             <col style={{ width: 300 }} />
@@ -1360,10 +1360,10 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
             <col style={{ width: 120 }} />
             <col style={{ width: 120 }} />
           </colgroup>
-          <thead className="text-xs uppercase bg-slate-50 text-slate-500 sticky top-0 z-30">
+          <thead className="text-xs uppercase bg-slate-50 text-slate-500 sticky top-0 z-40 shadow-sm">
             {/* Headers remain same */}
             <tr>
-              <th scope="col" rowSpan={2} className={`px-6 py-3 font-semibold sticky left-0 bg-slate-50 z-30 border-r border-slate-200 shadow-[4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_LABEL_WIDTH}`}>
+              <th scope="col" rowSpan={2} className={`px-6 py-3 font-semibold sticky left-0 bg-slate-50 z-40 border-r border-slate-200 shadow-[4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_LABEL_WIDTH}`}>
                 Fonte / Commessa
               </th>
               {months.map((month, monthIndex) => (
