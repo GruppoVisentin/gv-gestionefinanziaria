@@ -1279,13 +1279,6 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                                  <div 
                                                                      className="relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border cursor-pointer hover:shadow-md transition-all bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100 shadow-sm" 
                                                                      title="IVA stimata da pagare. Clicca per personalizzare/modificare."
-                                                                     onClick={(e) => {
-                                                                         e.stopPropagation();
-                                                                         openForecastForm(category, mIdx);
-                                                                         setNewForecastAmount(ivaMese.versamentoIVA.toFixed(2));
-                                                                         setNewForecastDesc('Versamento IVA');
-                                                                         setNewForecastVat('0');
-                                                                     }}
                                                                  >
                                                                      <span className="text-[11px] font-mono font-medium leading-none flex items-center gap-1">
                                                                          {CURRENCY_FORMATTER.format(ivaMese.versamentoIVA)}
@@ -1293,6 +1286,42 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                                      <span className="text-[9px] opacity-80 truncate w-full text-center mt-0.5 max-w-[90px] font-bold text-rose-800">
                                                                          IVA Stimata
                                                                      </span>
+                                                                     {isAuthorized && (
+                                                                         <div className="absolute inset-0 bg-white/95 hidden group-hover/item:flex items-center justify-center gap-1.5 rounded z-10">
+                                                                             <button 
+                                                                                 onClick={(e) => { 
+                                                                                     e.stopPropagation(); 
+                                                                                     openForecastForm(category, mIdx);
+                                                                                     setNewForecastAmount(ivaMese.versamentoIVA.toFixed(2));
+                                                                                     setNewForecastDesc('Versamento IVA');
+                                                                                     setNewForecastVat('0');
+                                                                                 }} 
+                                                                                 className="text-rose-400 hover:text-rose-900 transition-colors"
+                                                                                 title="Modifica"
+                                                                             >
+                                                                                 <Pencil size={10} />
+                                                                             </button>
+                                                                             <button 
+                                                                                 onClick={(e) => { 
+                                                                                     e.stopPropagation(); 
+                                                                                     onSaveTransaction?.({
+                                                                                         date: `${currentYear}-${String(mIdx + 1).padStart(2, '0')}-15`,
+                                                                                         description: 'Esclusione IVA',
+                                                                                         amount: 0,
+                                                                                         type: TransactionType.EXPENSE,
+                                                                                         category: category,
+                                                                                         isForecast: true,
+                                                                                         vatRate: 0,
+                                                                                         ceType: 'solo_cashflow'
+                                                                                     });
+                                                                                 }} 
+                                                                                 className="text-rose-400 hover:text-rose-600 transition-colors"
+                                                                                 title="Elimina/Escludi"
+                                                                             >
+                                                                                 <Trash2 size={10} />
+                                                                             </button>
+                                                                         </div>
+                                                                     )}
                                                                  </div>
                                                              );
                                                          }
@@ -1319,13 +1348,6 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                              <div 
                                                                  className="relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border cursor-pointer hover:shadow-md transition-all bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100 shadow-sm" 
                                                                  title="IRES/IRAP stimata da pagare. Clicca per personalizzare/modificare."
-                                                                 onClick={(e) => {
-                                                                     e.stopPropagation();
-                                                                     openForecastForm(category, mIdx);
-                                                                     setNewForecastAmount(taxVal.toFixed(2));
-                                                                     setNewForecastDesc(`F24 IRES/IRAP - ${taxName}`);
-                                                                     setNewForecastVat('0');
-                                                                 }}
                                                              >
                                                                  <span className="text-[11px] font-mono font-medium leading-none flex items-center gap-1">
                                                                      {CURRENCY_FORMATTER.format(taxVal)}
@@ -1333,6 +1355,42 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                                  <span className="text-[9px] opacity-80 truncate w-full text-center mt-0.5 max-w-[90px] font-bold text-rose-800">
                                                                      {taxName}
                                                                  </span>
+                                                                 {isAuthorized && (
+                                                                     <div className="absolute inset-0 bg-white/95 hidden group-hover/item:flex items-center justify-center gap-1.5 rounded z-10">
+                                                                         <button 
+                                                                             onClick={(e) => { 
+                                                                                 e.stopPropagation(); 
+                                                                                 openForecastForm(category, mIdx);
+                                                                                 setNewForecastAmount(taxVal.toFixed(2));
+                                                                                 setNewForecastDesc(`F24 IRES/IRAP - ${taxName}`);
+                                                                                 setNewForecastVat('0');
+                                                                             }} 
+                                                                             className="text-rose-400 hover:text-rose-900 transition-colors"
+                                                                             title="Modifica"
+                                                                         >
+                                                                             <Pencil size={10} />
+                                                                         </button>
+                                                                         <button 
+                                                                             onClick={(e) => { 
+                                                                                 e.stopPropagation(); 
+                                                                                 onSaveTransaction?.({
+                                                                                     date: `${currentYear}-${String(mIdx + 1).padStart(2, '0')}-15`,
+                                                                                     description: `Esclusione F24 - ${taxName}`,
+                                                                                     amount: 0,
+                                                                                     type: TransactionType.EXPENSE,
+                                                                                     category: category,
+                                                                                     isForecast: true,
+                                                                                     vatRate: 0,
+                                                                                     ceType: 'solo_cashflow'
+                                                                                 });
+                                                                             }} 
+                                                                             className="text-rose-400 hover:text-rose-600 transition-colors"
+                                                                             title="Elimina/Escludi"
+                                                                         >
+                                                                             <Trash2 size={10} />
+                                                                         </button>
+                                                                     </div>
+                                                                 )}
                                                              </div>
                                                          );
                                                      }
