@@ -1,5 +1,10 @@
 import { Transaction, InitialBalanceBreakdown } from '../types';
 import { getDynamicLoansInterests } from './gasCoreEngine';
+import { CATEGORY_TO_CE_TYPE } from '../constants';
+
+const getCeType = (tx: Transaction): string => {
+  return tx.ceType || (tx.category ? CATEGORY_TO_CE_TYPE[tx.category] : '') || '';
+};
 
 export const parseUTCDate = (dateStr: string): Date => {
   if (!dateStr) return new Date(NaN); // guard: evita crash su tx.date undefined/null
@@ -65,12 +70,12 @@ export const calculateOverheadRates = (
 
   const txAnno = transactions.filter(tx => {
     const d = parseUTCDate(tx.date);
-    return d.getUTCFullYear() === anno && tx.ceType && !tx.isForecast;
+    return d.getUTCFullYear() === anno && getCeType(tx) && !tx.isForecast;
   });
 
   const sumByType = (types: string[]) =>
     txAnno
-      .filter(tx => types.includes(tx.ceType ?? ''))
+      .filter(tx => types.includes(getCeType(tx)))
       .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
   const totaleCostiDiretti    = sumByType(['costo_variabile']);
@@ -83,7 +88,7 @@ export const calculateOverheadRates = (
   // Compenso Soci: costo_studio con categoria che contiene 'Compenso Amministratori' o 'Soci'
   const compensoSoci = txAnno
     .filter(tx => 
-      tx.ceType === 'costo_studio' && 
+      getCeType(tx) === 'costo_studio' && 
       (tx.category?.toLowerCase().includes('compenso amministratori') || 
        tx.category?.toLowerCase().includes('soci'))
     )
@@ -110,12 +115,12 @@ export const calculateOverheadRates = (
   // --- CALCOLO PREVISIONALI ---
   const txAnnoPrev = transactions.filter(tx => {
     const d = parseUTCDate(tx.date);
-    return d.getUTCFullYear() === anno && tx.ceType && tx.isForecast;
+    return d.getUTCFullYear() === anno && getCeType(tx) && tx.isForecast;
   });
 
   const sumByTypePrev = (types: string[]) =>
     txAnnoPrev
-      .filter(tx => types.includes(tx.ceType ?? ''))
+      .filter(tx => types.includes(getCeType(tx)))
       .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
   // Calcolo dinamico interessi previsionali sui finanziamenti attivi
@@ -123,7 +128,7 @@ export const calculateOverheadRates = (
 
   const forecastOneriFinByMonth = Array(12).fill(0);
   txAnnoPrev
-    .filter(tx => tx.ceType === 'onere_finanziario')
+    .filter(tx => getCeType(tx) === 'onere_finanziario')
     .forEach(tx => {
       const m = parseUTCDate(tx.date).getUTCMonth();
       forecastOneriFinByMonth[m] += Math.abs(tx.amount);
@@ -385,7 +390,7 @@ export const calcolaCostoOrario = (
     const d = parseUTCDate(tx.date);
     return d.getUTCFullYear() === anno
         && d.getUTCMonth() + 1 === mese
-        && (tx.ceType === 'costo_variabile')
+        && (getCeType(tx) === 'costo_variabile')
         && (
           tx.category?.includes('[PERSONALE] Stipendi Dipendenti Operativi') ||
           tx.category?.includes('[PERSONALE] Contributi Dipendenti Operativi')
