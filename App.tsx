@@ -46,7 +46,7 @@ import TermModal, { useTermModal } from './components/TermModal';
 import ImportPuntaNetModal from './components/ImportPuntaNetModal';
 import ImportStoricoModal from './components/ImportStoricoModal';
 import { DiagnosticModal } from './components/DiagnosticModal';
-import { generateDefault2025Snapshot } from './utils/gasCoreEngine';
+import { generateDefault2025Snapshot, parseUTCDate } from './utils/gasCoreEngine';
 import { 
   FIXED_COST_CATEGORIES, 
   VARIABLE_COST_CATEGORIES, 
