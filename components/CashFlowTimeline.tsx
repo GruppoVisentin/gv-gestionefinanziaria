@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project, RimanenzeData } from '../types';
+import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project, RimanenzeData, CEData } from '../types';
 import { fetchEuriborRates, generateFinancialReportPDFAnalysis } from '../services/geminiService';
 import { CURRENCY_FORMATTER, VARIABLE_COST_CATEGORIES } from '../constants';
 import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Database, Search, RefreshCw, Pencil, CheckCircle2, Building2 } from 'lucide-react';
@@ -26,6 +26,7 @@ interface CashFlowTimelineProps {
   onUpdateTransaction: (t: Transaction) => void;
   onDeleteTransaction: (id: string) => void;
   rimanenze?: RimanenzeData;
+  ceManualData?: Record<string, Partial<CEData>>;
 }
 
 const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({ 
@@ -43,7 +44,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   onSaveTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
-  rimanenze
+  rimanenze,
+  ceManualData
 }) => {
   const [isEditingBalance, setIsEditingBalance] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -269,7 +271,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     const posIva = calcPosizIoneIVA(transactions, currentYear, true);
 
     // Calculate previous year's taxes to determine currentYear payments
-    const ceDataPrev = buildCEData(transactions, currentYear - 1, undefined, 'competenza', projects, initialData);
+    const manualOverridesPrev = ceManualData?.[(currentYear - 1).toString()];
+    const ceDataPrev = buildCEData(transactions, currentYear - 1, manualOverridesPrev, 'competenza', projects, initialData);
     const ceMetricsPrev = calcCEMetrics(ceDataPrev, transactions, projects, initialData);
     
     // Retrieve previous year's inventory (WIP) values if defined
@@ -305,7 +308,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       },
       posIva
     };
-  }, [transactions, currentYear, projects, initialData, rimanenze]);
+  }, [transactions, currentYear, projects, initialData, rimanenze, ceManualData]);
 
   // --- CALCULATION LOGIC FOR THRESHOLDS ---
   const { avgMonthlyExpense, safetyThreshold, avgMonthlyExpenseForecast, avgMonthlyExpenseActual } = useMemo(() => {

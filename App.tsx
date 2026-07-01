@@ -2000,6 +2000,7 @@ const App: React.FC = () => {
                     isAuthorized={isAuthorized}
                     onGoToManuale={handleGoToManuale}
                     rimanenze={rimanenze}
+                    ceManualData={ceManualData}
                 />
             </div>
 
@@ -2020,6 +2021,7 @@ const App: React.FC = () => {
                   onUpdateTransaction={handleUpdateTransaction}
                   onDeleteTransaction={handleDeleteTransaction}
                   rimanenze={rimanenze}
+                  ceManualData={ceManualData}
                 />
             </div>
           </div>

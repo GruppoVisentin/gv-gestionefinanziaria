@@ -24,6 +24,7 @@ interface ExpenseTimelineProps {
   isAuthorized?: boolean;
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
   rimanenze?: RimanenzeData;
+  ceManualData?: Record<string, Partial<CEData>>;
 }
 
 const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({ 
@@ -40,7 +41,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
   currentYear,
   isAuthorized = false,
   onGoToManuale,
-  rimanenze
+  rimanenze,
+  ceManualData
 }) => {
   const [showHelp, setShowHelp] = useState(false);
   const months = [
@@ -85,7 +87,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
     const posIva = calcPosizIoneIVA(transactions, currentYear, true);
 
     // Calculate previous year's taxes to determine currentYear payments
-    const ceDataPrev = buildCEData(transactions, currentYear - 1, undefined, 'competenza', projects, initialData);
+    const manualOverridesPrev = ceManualData?.[(currentYear - 1).toString()];
+    const ceDataPrev = buildCEData(transactions, currentYear - 1, manualOverridesPrev, 'competenza', projects, initialData);
     const ceMetricsPrev = calcCEMetrics(ceDataPrev, transactions, projects, initialData);
     
     // Retrieve previous year's inventory (WIP) values if defined
@@ -121,7 +124,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       },
       posIva
     };
-  }, [transactions, currentYear, projects, initialData, rimanenze]);
+  }, [transactions, currentYear, projects, initialData, rimanenze, ceManualData]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
