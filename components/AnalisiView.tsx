@@ -1,6 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, CEData, AppView, RimanenzeData, InitialBalanceBreakdown } from '../types';
 import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, parseUTCDate } from '../utils/gasCoreEngine';
+import { CATEGORY_TO_CE_TYPE } from '../constants';
+
+const getCeType = (tx: Transaction): string => {
+  return tx.ceType || (tx.category ? CATEGORY_TO_CE_TYPE[tx.category] : '') || '';
+};
 import { exportAnalisiPDF } from '../utils/analisiPdfExport';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import { HelpButton } from './HelpPanel';
@@ -393,7 +398,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
   const compensoSociPrev = useMemo(() => {
     return (transactions || [])
       .filter(tx => 
-        tx.ceType === 'costo_studio' && 
+        getCeType(tx) === 'costo_studio' && 
         tx.isForecast &&
         parseUTCDate(tx.date).getUTCFullYear() === anno &&
         (tx.category?.toLowerCase().includes('compenso amministratori') || 
@@ -405,12 +410,12 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
   const metricsPrev = useMemo(() => {
     const txPrev = (transactions || []).filter(tx => {
       const d = parseUTCDate(tx.date);
-      return d.getUTCFullYear() === anno && tx.ceType && tx.isForecast;
+      return d.getUTCFullYear() === anno && getCeType(tx) && tx.isForecast;
     });
 
     const sumByType = (types: string[]) =>
       txPrev
-        .filter(tx => types.includes(tx.ceType ?? ''))
+        .filter(tx => types.includes(getCeType(tx)))
         .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
     const fatturato = sumByType(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare']);
@@ -421,7 +426,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     const oneriFin = sumByType(['onere_finanziario']);
     const proventiFin = sumByType(['provento_finanziario']);
     const straordinario = txPrev
-      .filter(tx => tx.ceType === 'straordinario')
+      .filter(tx => getCeType(tx) === 'straordinario')
       .reduce((sum, tx) => sum + (tx.type === 'INCOME' ? Math.abs(tx.amount) : -Math.abs(tx.amount)), 0);
 
     const primoMargine = fatturato - costiVariabili;
