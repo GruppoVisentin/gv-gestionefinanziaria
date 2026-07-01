@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Transaction, TransactionType, Project, InitialBalanceBreakdown, LoanDetails, AppView } from '../types';
+import { Transaction, TransactionType, Project, InitialBalanceBreakdown, LoanDetails, AppView, RimanenzeData } from '../types';
 import { CURRENCY_FORMATTER, DATE_FORMATTER, CATEGORY_TO_CE_TYPE } from '../constants';
 import { Plus, X, Save, ListFilter, Pencil, Trash2, ChevronDown, Calendar, CalendarClock, Landmark, Printer, Briefcase, Shield, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -23,6 +23,7 @@ interface ExpenseTimelineProps {
   currentYear: number;
   isAuthorized?: boolean;
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
+  rimanenze?: RimanenzeData;
 }
 
 const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({ 
@@ -38,7 +39,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
   supplierPresets = {},
   currentYear,
   isAuthorized = false,
-  onGoToManuale
+  onGoToManuale,
+  rimanenze
 }) => {
   const [showHelp, setShowHelp] = useState(false);
   const months = [
@@ -85,8 +87,12 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
     // Calculate previous year's taxes to determine currentYear payments
     const ceDataPrev = buildCEData(transactions, currentYear - 1, undefined, 'competenza', projects, initialData);
     const ceMetricsPrev = calcCEMetrics(ceDataPrev, transactions, projects, initialData);
-    const prevFiscalePrev = calcPrevisioneFiscale(transactions, currentYear - 1, ceMetricsPrev, undefined, 0.24, 0.039, true, initialData);
+    
+    // Retrieve previous year's inventory (WIP) values if defined
+    const prevYearStr = (currentYear - 1).toString();
+    const prevYearRimanenze = rimanenze?.[prevYearStr];
 
+    const prevFiscalePrev = calcPrevisioneFiscale(transactions, currentYear - 1, ceMetricsPrev, prevYearRimanenze, 0.24, 0.039, true, initialData);
     const taxPrev = prevFiscalePrev.totaleImposteStimate; // IRES + IRAP of previous year
 
     // Acconti for currentYear are 40% and 60% of previous year's tax
@@ -115,7 +121,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
       },
       posIva
     };
-  }, [transactions, currentYear, projects, initialData]);
+  }, [transactions, currentYear, projects, initialData, rimanenze]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

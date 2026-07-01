@@ -1986,7 +1986,7 @@ const App: React.FC = () => {
                     Flusso Uscite
                 </h3>
                 <ExpenseTimeline 
-                    transactions={transactions}
+                    transactions={transactions} 
                     projects={projects} // Pass Projects for Estimates
                     initialData={initialData} // Pass Initial Data for Existing Loans
                     onSaveTransaction={handleSaveTransaction}
@@ -1999,6 +1999,7 @@ const App: React.FC = () => {
                     currentYear={timelineYear}
                     isAuthorized={isAuthorized}
                     onGoToManuale={handleGoToManuale}
+                    rimanenze={rimanenze}
                 />
             </div>
 
@@ -2018,6 +2019,7 @@ const App: React.FC = () => {
                   onSaveTransaction={handleSaveTransaction}
                   onUpdateTransaction={handleUpdateTransaction}
                   onDeleteTransaction={handleDeleteTransaction}
+                  rimanenze={rimanenze}
                 />
             </div>
           </div>

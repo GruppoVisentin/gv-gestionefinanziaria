@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project } from '../types';
+import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project, RimanenzeData } from '../types';
 import { fetchEuriborRates, generateFinancialReportPDFAnalysis } from '../services/geminiService';
 import { CURRENCY_FORMATTER, VARIABLE_COST_CATEGORIES } from '../constants';
 import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Database, Search, RefreshCw, Pencil, CheckCircle2, Building2 } from 'lucide-react';
@@ -25,6 +25,7 @@ interface CashFlowTimelineProps {
   onSaveTransaction: (t: Omit<Transaction, 'id'>) => void;
   onUpdateTransaction: (t: Transaction) => void;
   onDeleteTransaction: (id: string) => void;
+  rimanenze?: RimanenzeData;
 }
 
 const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({ 
@@ -41,7 +42,8 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   onOpenImportPuntaNet,
   onSaveTransaction,
   onUpdateTransaction,
-  onDeleteTransaction
+  onDeleteTransaction,
+  rimanenze
 }) => {
   const [isEditingBalance, setIsEditingBalance] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -269,8 +271,12 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     // Calculate previous year's taxes to determine currentYear payments
     const ceDataPrev = buildCEData(transactions, currentYear - 1, undefined, 'competenza', projects, initialData);
     const ceMetricsPrev = calcCEMetrics(ceDataPrev, transactions, projects, initialData);
-    const prevFiscalePrev = calcPrevisioneFiscale(transactions, currentYear - 1, ceMetricsPrev, undefined, 0.24, 0.039, true, initialData);
+    
+    // Retrieve previous year's inventory (WIP) values if defined
+    const prevYearStr = (currentYear - 1).toString();
+    const prevYearRimanenze = rimanenze?.[prevYearStr];
 
+    const prevFiscalePrev = calcPrevisioneFiscale(transactions, currentYear - 1, ceMetricsPrev, prevYearRimanenze, 0.24, 0.039, true, initialData);
     const taxPrev = prevFiscalePrev.totaleImposteStimate; // IRES + IRAP of previous year
 
     // Acconti for currentYear are 40% and 60% of previous year's tax
@@ -299,7 +305,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       },
       posIva
     };
-  }, [transactions, currentYear, projects, initialData]);
+  }, [transactions, currentYear, projects, initialData, rimanenze]);
 
   // --- CALCULATION LOGIC FOR THRESHOLDS ---
   const { avgMonthlyExpense, safetyThreshold, avgMonthlyExpenseForecast, avgMonthlyExpenseActual } = useMemo(() => {
