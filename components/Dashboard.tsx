@@ -109,9 +109,9 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (Array.isArray(spSnapshots)) {
       spSnapshots.forEach(s => {
         if (s && s.dataRiferimento) {
-          const d = new Date(s.dataRiferimento);
+          const d = parseUTCDate(s.dataRiferimento);
           if (!isNaN(d.getTime())) {
-            years.add(d.getFullYear());
+            years.add(d.getUTCFullYear());
           }
         }
       });
@@ -127,16 +127,16 @@ const Dashboard: React.FC<DashboardProps> = ({
     // Filtra gli snapshot per l'anno selezionato per il rating
     const snapshotsForYear = snapshots.filter(s => {
       if (s && s.dataRiferimento) {
-        const d = new Date(s.dataRiferimento);
-        return !isNaN(d.getTime()) && d.getFullYear() === ratingSelectedYear;
+        const d = parseUTCDate(s.dataRiferimento);
+        return !isNaN(d.getTime()) && d.getUTCFullYear() === ratingSelectedYear;
       }
       return false;
     });
     
     // Ordina in modo decrescente per data per prendere il più recente di quell'anno
     const sortedSnapshotsForYear = [...snapshotsForYear].sort((a, b) => {
-      const dateA = a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
-      const dateB = b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
+      const dateA = a.dataRiferimento ? parseUTCDate(a.dataRiferimento).getTime() : 0;
+      const dateB = b.dataRiferimento ? parseUTCDate(b.dataRiferimento).getTime() : 0;
       return dateB - dateA;
     });
     
@@ -144,14 +144,14 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (!activeSP && snapshots.length > 0) {
       // Fallback: se non c'è uno snapshot per quell'anno, prendi il più recente in assoluto
       const sortedAllSnapshots = [...snapshots].sort((a, b) => {
-        const dateA = a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
-        const dateB = b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
+        const dateA = a.dataRiferimento ? parseUTCDate(a.dataRiferimento).getTime() : 0;
+        const dateB = b.dataRiferimento ? parseUTCDate(b.dataRiferimento).getTime() : 0;
         return dateB - dateA;
       });
       activeSP = sortedAllSnapshots[0] || null;
     }
     
-    const ratingYear = activeSP && activeSP.dataRiferimento ? new Date(activeSP.dataRiferimento).getFullYear() : ratingSelectedYear;
+    const ratingYear = activeSP && activeSP.dataRiferimento ? parseUTCDate(activeSP.dataRiferimento).getUTCFullYear() : ratingSelectedYear;
     
     const manualData = ceManualData || {};
     const ceData = buildCEData(txList, ratingYear, manualData[ratingYear.toString()]);
@@ -720,29 +720,29 @@ const Dashboard: React.FC<DashboardProps> = ({
     
     const snapshotsForYear = snapshots.filter(s => {
       if (s && s.dataRiferimento) {
-        const d = new Date(s.dataRiferimento);
-        return !isNaN(d.getTime()) && d.getFullYear() === patrimonioYear;
+        const d = parseUTCDate(s.dataRiferimento);
+        return !isNaN(d.getTime()) && d.getUTCFullYear() === patrimonioYear;
       }
       return false;
     });
     
     const sortedSnapshots = [...snapshotsForYear].sort((a, b) => {
-      const dateA = a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
-      const dateB = b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
+      const dateA = a.dataRiferimento ? parseUTCDate(a.dataRiferimento).getTime() : 0;
+      const dateB = b.dataRiferimento ? parseUTCDate(b.dataRiferimento).getTime() : 0;
       return dateB - dateA;
     });
     
     let activeSP = sortedSnapshots[0] || null;
     if (!activeSP && snapshots.length > 0) {
       const sortedAllSnapshots = [...snapshots].sort((a, b) => {
-        const dateA = a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
-        const dateB = b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
+        const dateA = a.dataRiferimento ? parseUTCDate(a.dataRiferimento).getTime() : 0;
+        const dateB = b.dataRiferimento ? parseUTCDate(b.dataRiferimento).getTime() : 0;
         return dateB - dateA;
       });
       activeSP = sortedAllSnapshots[0] || null;
     }
     
-    const yearToUse = activeSP && activeSP.dataRiferimento ? new Date(activeSP.dataRiferimento).getFullYear() : patrimonioYear;
+    const yearToUse = activeSP && activeSP.dataRiferimento ? parseUTCDate(activeSP.dataRiferimento).getUTCFullYear() : patrimonioYear;
     const manualData = ceManualData || {};
     const ceData = buildCEData(txList, yearToUse, manualData[yearToUse.toString()]);
     const ceMetrics = calcCEMetrics(ceData, txList);
