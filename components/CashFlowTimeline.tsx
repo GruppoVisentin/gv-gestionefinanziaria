@@ -264,11 +264,38 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
   // --- CALCULATION LOGIC FOR TAXES & VAT ---
   const taxForecasts = useMemo(() => {
-    const ceData = buildCEData(transactions, currentYear, undefined, 'competenza', projects, initialData);
-    const ceMetrics = calcCEMetrics(ceData, transactions, projects, initialData);
-    const prevFiscale = calcPrevisioneFiscale(transactions, currentYear, ceMetrics, undefined, 0.24, 0.039, true, initialData);
     const posIva = calcPosizIoneIVA(transactions, currentYear, true);
-    return { prevFiscale, posIva };
+
+    // Calculate previous year's taxes to determine currentYear payments
+    const ceDataPrev = buildCEData(transactions, currentYear - 1, undefined, 'competenza', projects, initialData);
+    const ceMetricsPrev = calcCEMetrics(ceDataPrev, transactions, projects, initialData);
+    const prevFiscalePrev = calcPrevisioneFiscale(transactions, currentYear - 1, ceMetricsPrev, undefined, 0.24, 0.039, true, initialData);
+
+    const taxPrev = prevFiscalePrev.totaleImposteStimate; // IRES + IRAP of previous year
+
+    // Acconti for currentYear are 40% and 60% of previous year's tax
+    const accontoGiugno = taxPrev * 0.40;
+    const accontoNovembre = taxPrev * 0.60;
+
+    // Saldo of previous year paid in currentYear June:
+    // previous year's tax minus the acconti paid in the previous year
+    const accontiPagatiPrev = transactions
+      .filter(tx => {
+        const d = parseUTCDate(tx.date);
+        return d.getUTCFullYear() === (currentYear - 1) && !tx.isForecast && tx.category === '[FISCO] F24 — IRPEF / IRES / IRAP';
+      })
+      .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+
+    const saldoGiugnom = Math.max(0, taxPrev - accontiPagatiPrev);
+
+    return {
+      prevFiscale: {
+        accontoGiugno,
+        accontoNovembre,
+        saldoGiugnom
+      },
+      posIva
+    };
   }, [transactions, currentYear, projects, initialData]);
 
   // --- CALCULATION LOGIC FOR THRESHOLDS ---
