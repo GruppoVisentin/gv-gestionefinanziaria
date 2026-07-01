@@ -1760,11 +1760,14 @@ const App: React.FC = () => {
           const txDate = new Date(startDate.getFullYear(), startDate.getMonth() + absoluteMonthOffset, 1);
           
           const realCeType = CATEGORY_TO_CE_TYPE[voce.categoria] || 'solo_cashflow';
+          const selectedVat = c.costiVatRates && c.costiVatRates[voce.categoria] !== undefined 
+            ? c.costiVatRates[voce.categoria] 
+            : 22;
           const newTx: Transaction = {
             id: crypto.randomUUID(), // N2 fix: usa UUID invece di Math.random()
             date: txDate.toISOString().split('T')[0],
             amount: monthlyAmount,
-            vatRate: 22,
+            vatRate: selectedVat,
             type: TransactionType.EXPENSE,
             category: voce.categoria,
             description: `Previsionale ${c.nome} — ${voce.categoria.split('] ')[1] || voce.categoria}`,

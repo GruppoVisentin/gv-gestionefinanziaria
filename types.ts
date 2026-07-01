@@ -241,6 +241,7 @@ export interface CantierePrev {
   tipologiaId: string;         // riferimento a TipologiaCantiere.id
   dataInizio: string;          // ISO date YYYY-MM-DD
   costiStimati: Record<string, number>; // chiave: categoria, valore: importo totale stimato
+  costiVatRates?: Record<string, number>; // chiave: categoria, valore: aliquota IVA (es. 22, 10, 4, 0)
   previsionaliGenerati: boolean; // true se le transazioni sono già state generate
 }
 

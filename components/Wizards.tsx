@@ -924,11 +924,16 @@ const CantierePrevForm: React.FC<{ cantiere: CantierePrev, tipologie: TipologiaC
   const [tipologiaId, setTipologiaId] = useState(cantiere.tipologiaId);
   const [dataInizio, setDataInizio] = useState(cantiere.dataInizio);
   const [costiStimati, setCostiStimati] = useState<Record<string, number>>(cantiere.costiStimati);
+  const [costiVatRates, setCostiVatRates] = useState<Record<string, number>>(() => cantiere.costiVatRates || {});
 
   const selectedTipologia = useMemo(() => tipologie.find(t => t.id === tipologiaId), [tipologie, tipologiaId]);
 
   const handleUpdateCosto = (cat: string, val: number) => {
     setCostiStimati(prev => ({ ...prev, [cat]: val }));
+  };
+
+  const handleUpdateVat = (cat: string, val: number) => {
+    setCostiVatRates(prev => ({ ...prev, [cat]: val }));
   };
 
   const isValid = nome && tipologiaId && dataInizio;
@@ -984,15 +989,31 @@ const CantierePrevForm: React.FC<{ cantiere: CantierePrev, tipologie: TipologiaC
                 {selectedTipologia.vociAttive.map(v => (
                   <div key={v.categoria} className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-600 truncate mr-2">{v.categoria}</span>
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="number" 
-                        value={costiStimati[v.categoria] || ''} 
-                        onChange={e => handleUpdateCosto(v.categoria, parseFloat(e.target.value) || 0)}
-                        placeholder="0"
-                        className="w-24 p-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-right outline-none focus:ring-2 focus:ring-slate-500"
-                      />
-                      <span className="text-xs font-bold text-slate-400">€</span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1">
+                        <span className="text-[10px] font-black text-slate-400 uppercase">IVA:</span>
+                        <select
+                          value={costiVatRates[v.categoria] !== undefined ? costiVatRates[v.categoria] : 22}
+                          onChange={e => handleUpdateVat(v.categoria, Number(e.target.value))}
+                          className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer focus:ring-0 border-none p-0"
+                        >
+                          <option value="22">22%</option>
+                          <option value="10">10%</option>
+                          <option value="4">4%</option>
+                          <option value="0">0%</option>
+                        </select>
+                      </div>
+                      
+                      <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1">
+                        <input 
+                          type="number" 
+                          value={costiStimati[v.categoria] || ''} 
+                          onChange={e => handleUpdateCosto(v.categoria, parseFloat(e.target.value) || 0)}
+                          placeholder="0"
+                          className="w-20 p-0 bg-transparent text-xs font-mono font-bold text-right outline-none focus:ring-0 border-none"
+                        />
+                        <span className="text-xs font-bold text-slate-400">€</span>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1005,7 +1026,7 @@ const CantierePrevForm: React.FC<{ cantiere: CantierePrev, tipologie: TipologiaC
 
         <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end">
           <button 
-            onClick={() => onSave({ ...cantiere, nome, tipologiaId, dataInizio, costiStimati })}
+            onClick={() => onSave({ ...cantiere, nome, tipologiaId, dataInizio, costiStimati, costiVatRates })}
             disabled={!isValid}
             className={`px-8 py-3 rounded-xl font-bold transition-all shadow-lg flex items-center gap-2 ${isValid ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
           >
