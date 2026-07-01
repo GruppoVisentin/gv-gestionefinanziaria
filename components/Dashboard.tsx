@@ -1,3 +1,4 @@
+// Trigger rebuild and deploy: 2026-07-01
 import React, { useState, useMemo } from 'react';
 import { parseUTCDate, buildCEData, calcCEMetrics, calcSPMetrics } from '../utils/gasCoreEngine';
 import { 
