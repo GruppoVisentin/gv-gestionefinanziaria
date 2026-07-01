@@ -577,11 +577,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
   }, [transactions, speseYear, expenseCategories]);
 
-  // Prepare data for Bar Chart (Last 6 months) usando trendMensileYear
+  // Prepare data for Bar Chart (12 months of trendMensileYear)
   const monthlyData = useMemo(() => {
-    const today = new Date();
-    const systemYear = today.getFullYear();
-    const isCurrentOrFuture = trendMensileYear >= systemYear;
     const data = [];
     const txList = Array.isArray(transactions) ? transactions : [];
     
@@ -593,24 +590,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       parseUTCDate(t.date).getUTCFullYear() === trendMensileYear
     );
     
-    for (let i = 5; i >= 0; i--) {
-      let targetMonth: number;
-      let targetYear: number;
-      
-      if (isCurrentOrFuture) {
-        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-        targetMonth = d.getMonth();
-        targetYear = d.getFullYear();
-      } else {
-        // For past years (e.g. 2025): show July to December
-        // i goes from 5 down to 0:
-        // i = 5 -> targetMonth = 6 (July)
-        // i = 4 -> targetMonth = 7 (August)
-        // ...
-        // i = 0 -> targetMonth = 11 (December)
-        targetMonth = 11 - i;
-        targetYear = trendMensileYear;
-      }
+    for (let targetMonth = 0; targetMonth < 12; targetMonth++) {
+      const targetYear = trendMensileYear;
       
       const dForLabel = new Date(targetYear, targetMonth, 1);
       const monthLabel = dForLabel.toLocaleString('it-IT', { month: 'short' });
