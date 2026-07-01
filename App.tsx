@@ -2410,6 +2410,7 @@ const App: React.FC = () => {
           <CantiereWizard 
             tipologie={tipologieCantiere}
             cantieriPrev={cantieriPrev}
+            projects={projects}
             onSaveCantiere={handleSaveCantierePrev}
             onDeleteCantiere={handleDeleteCantierePrev}
             onGenerateTransactions={handleGenerateCantiereTransactions}

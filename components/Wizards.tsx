@@ -24,7 +24,8 @@ import {
   TipologiaCantiere, 
   CantierePrev, 
   VoceCostoTipologia, 
-  FaseDistribuzione 
+  FaseDistribuzione,
+  Project
 } from '../types';
 import { 
   VARIABLE_COST_CATEGORIES, 
@@ -791,6 +792,7 @@ const TipologiaForm: React.FC<{ tipologia: TipologiaCantiere, onSave: (t: Tipolo
 interface CantiereWizardProps {
   tipologie: TipologiaCantiere[];
   cantieriPrev: CantierePrev[];
+  projects?: Project[];
   onSaveCantiere: (c: CantierePrev) => void;
   onDeleteCantiere: (id: string) => void;
   onGenerateTransactions: (c: CantierePrev) => void;
@@ -801,6 +803,7 @@ interface CantiereWizardProps {
 export const CantiereWizard: React.FC<CantiereWizardProps> = ({ 
   tipologie, 
   cantieriPrev, 
+  projects = [],
   onSaveCantiere, 
   onDeleteCantiere, 
   onGenerateTransactions,
@@ -916,6 +919,7 @@ export const CantiereWizard: React.FC<CantiereWizardProps> = ({
         <CantierePrevForm 
           cantiere={isAdding} 
           tipologie={tipologie} 
+          projects={projects}
           onSave={(c) => { onSaveCantiere(c); setIsAdding(null); }} 
           onClose={() => setIsAdding(null)} 
         />
@@ -924,7 +928,13 @@ export const CantiereWizard: React.FC<CantiereWizardProps> = ({
   );
 };
 
-const CantierePrevForm: React.FC<{ cantiere: CantierePrev, tipologie: TipologiaCantiere[], onSave: (c: CantierePrev) => void, onClose: () => void }> = ({ cantiere, tipologie, onSave, onClose }) => {
+const CantierePrevForm: React.FC<{ 
+  cantiere: CantierePrev;
+  tipologie: TipologiaCantiere[];
+  projects?: Project[];
+  onSave: (c: CantierePrev) => void;
+  onClose: () => void;
+}> = ({ cantiere, tipologie, projects = [], onSave, onClose }) => {
   const [nome, setNome] = useState(cantiere.nome);
   const [tipologiaId, setTipologiaId] = useState(cantiere.tipologiaId);
   const [dataInizio, setDataInizio] = useState(cantiere.dataInizio);
@@ -962,8 +972,14 @@ const CantierePrevForm: React.FC<{ cantiere: CantierePrev, tipologie: TipologiaC
                 value={nome} 
                 onChange={e => setNome(e.target.value)}
                 placeholder="es. Palazzina Via Roma"
+                list="commesse-list"
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-slate-500"
               />
+              <datalist id="commesse-list">
+                {projects.map(p => (
+                  <option key={p.id} value={p.name} />
+                ))}
+              </datalist>
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tipologia</label>
