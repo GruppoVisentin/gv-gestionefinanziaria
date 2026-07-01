@@ -81,8 +81,18 @@ const Dashboard: React.FC<DashboardProps> = ({
   ceManualData = {}
 }) => {
   const [showHelp, setShowHelp] = useState(false);
-  const [dashboardYear, setDashboardYear] = useState<number>(() => new Date().getFullYear());
-  const currentYear = dashboardYear;
+  
+  // Stati degli anni indipendenti per ciascuna sezione
+  const [kpiYear, setKpiYear] = useState<number>(() => new Date().getFullYear());
+  const [ratingSelectedYear, setRatingSelectedYear] = useState<number>(() => new Date().getFullYear());
+  const [patrimonioYear, setPatrimonioYear] = useState<number>(() => new Date().getFullYear());
+  const [speseYear, setSpeseYear] = useState<number>(() => new Date().getFullYear());
+  const [trendMensileYear, setTrendMensileYear] = useState<number>(() => new Date().getFullYear());
+  const [contoCorrenteYear, setContoCorrenteYear] = useState<number>(() => new Date().getFullYear());
+  const [confrontoEntrateYear, setConfrontoEntrateYear] = useState<number>(() => new Date().getFullYear());
+  const [confrontoUsciteYear, setConfrontoUsciteYear] = useState<number>(() => new Date().getFullYear());
+  const [costiFissiYear, setCostiFissiYear] = useState<number>(() => new Date().getFullYear());
+  const [costiVariabiliYear, setCostiVariabiliYear] = useState<number>(() => new Date().getFullYear());
 
   // Calcolo degli anni disponibili per il filtro della dashboard
   const availableYears = useMemo(() => {
@@ -114,11 +124,11 @@ const Dashboard: React.FC<DashboardProps> = ({
     const txList = Array.isArray(transactions) ? transactions : [];
     const snapshots = Array.isArray(spSnapshots) ? spSnapshots.filter(Boolean) : [];
     
-    // Filtra gli snapshot per l'anno selezionato
+    // Filtra gli snapshot per l'anno selezionato per il rating
     const snapshotsForYear = snapshots.filter(s => {
       if (s && s.dataRiferimento) {
         const d = new Date(s.dataRiferimento);
-        return !isNaN(d.getTime()) && d.getFullYear() === currentYear;
+        return !isNaN(d.getTime()) && d.getFullYear() === ratingSelectedYear;
       }
       return false;
     });
@@ -141,7 +151,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       activeSP = sortedAllSnapshots[0] || null;
     }
     
-    const ratingYear = activeSP && activeSP.dataRiferimento ? new Date(activeSP.dataRiferimento).getFullYear() : currentYear;
+    const ratingYear = activeSP && activeSP.dataRiferimento ? new Date(activeSP.dataRiferimento).getFullYear() : ratingSelectedYear;
     
     const manualData = ceManualData || {};
     const ceData = buildCEData(txList, ratingYear, manualData[ratingYear.toString()]);
@@ -290,32 +300,23 @@ const Dashboard: React.FC<DashboardProps> = ({
     // non solo EBITDA / oneriFin (che sarebbe solo Interest Coverage)
     const dscrDenominatore = (ceMetrics.oneriFin + ceMetrics.costiCapitaleRate) || 1;
     return { score, label, color, dscr: ceMetrics.ebitdaTot / dscrDenominatore, breakdown, radarData, spMetrics };
-  }, [transactions, spSnapshots, ceManualData, currentYear]);
+  }, [transactions, spSnapshots, ceManualData, ratingSelectedYear]);
 
-  // Dati mensili per i tre grafici di andamento
-  const monthlyComparisonData = useMemo(() => {
+  // Andamento Conto Corrente (Liquidità Cumulata)
+  const contoCorrenteData = useMemo(() => {
     const txList = Array.isArray(transactions) ? transactions : [];
     const accountsList = Array.isArray(initialAccounts) ? initialAccounts : [];
     const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-    // BUG-001 FIX: BankAccount usa il campo 'balance' non 'saldoIniziale'
     let cumulative = accountsList.reduce((sum, acc) => sum + (acc?.balance || 0), 0) || 0;
     
     return months.map((m, index) => {
       const monthTxs = txList.filter(t => {
         const d = t && t.date ? parseUTCDate(t.date) : null;
-        return d && d.getUTCFullYear() === currentYear && d.getUTCMonth() === index;
+        return d && d.getUTCFullYear() === contoCorrenteYear && d.getUTCMonth() === index;
       });
       
-      const entratePreviste = monthTxs
-        .filter(t => t.type === TransactionType.INCOME && t.isForecast)
-        .reduce((sum, t) => sum + getGrossAmount(t), 0);
-        
       const entrateReali = monthTxs
         .filter(t => t.type === TransactionType.INCOME && !t.isForecast)
-        .reduce((sum, t) => sum + getGrossAmount(t), 0);
-
-      const uscitePreviste = monthTxs
-        .filter(t => t.type === TransactionType.EXPENSE && t.isForecast && t.ceType !== 'ammortamento')
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
       const usciteReali = monthTxs
@@ -326,14 +327,64 @@ const Dashboard: React.FC<DashboardProps> = ({
       
       return {
         name: m,
-        EntratePreviste: entratePreviste,
-        EntrateReali: entrateReali,
-        UscitePreviste: uscitePreviste,
-        UsciteReali: usciteReali,
         LiquiditaCumulata: cumulative
       };
     });
-  }, [transactions, currentYear, initialAccounts]);
+  }, [transactions, contoCorrenteYear, initialAccounts]);
+
+  // Confronto Entrate
+  const confrontoEntrateData = useMemo(() => {
+    const txList = Array.isArray(transactions) ? transactions : [];
+    const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+    
+    return months.map((m, index) => {
+      const monthTxs = txList.filter(t => {
+        const d = t && t.date ? parseUTCDate(t.date) : null;
+        return d && d.getUTCFullYear() === confrontoEntrateYear && d.getUTCMonth() === index;
+      });
+      
+      const entratePreviste = monthTxs
+        .filter(t => t.type === TransactionType.INCOME && t.isForecast)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+        
+      const entrateReali = monthTxs
+        .filter(t => t.type === TransactionType.INCOME && !t.isForecast)
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+        
+      return {
+        name: m,
+        EntratePreviste: entratePreviste,
+        EntrateReali: entrateReali
+      };
+    });
+  }, [transactions, confrontoEntrateYear]);
+
+  // Confronto Uscite
+  const confrontoUsciteData = useMemo(() => {
+    const txList = Array.isArray(transactions) ? transactions : [];
+    const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+    
+    return months.map((m, index) => {
+      const monthTxs = txList.filter(t => {
+        const d = t && t.date ? parseUTCDate(t.date) : null;
+        return d && d.getUTCFullYear() === confrontoUsciteYear && d.getUTCMonth() === index;
+      });
+      
+      const uscitePreviste = monthTxs
+        .filter(t => t.type === TransactionType.EXPENSE && t.isForecast && t.ceType !== 'ammortamento')
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+
+      const usciteReali = monthTxs
+        .filter(t => t.type === TransactionType.EXPENSE && !t.isForecast && t.ceType !== 'ammortamento')
+        .reduce((sum, t) => sum + getGrossAmount(t), 0);
+        
+      return {
+        name: m,
+        UscitePreviste: uscitePreviste,
+        UsciteReali: usciteReali
+      };
+    });
+  }, [transactions, confrontoUsciteYear]);
 
   // Costi Fissi con confronto Previsionale, Consuntivo e Scostamento
   const fixedCostTableData = useMemo(() => {
@@ -343,7 +394,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
       t.date &&
-      parseUTCDate(t.date).getUTCFullYear() === currentYear
+      parseUTCDate(t.date).getUTCFullYear() === costiFissiYear
     );
     
     const prevTxs = txList.filter(t =>
@@ -351,7 +402,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       t.isForecast &&
       t.ceType !== 'ammortamento' &&
       t.date &&
-      parseUTCDate(t.date).getUTCFullYear() === currentYear
+      parseUTCDate(t.date).getUTCFullYear() === costiFissiYear
     );
 
     return FIXED_COST_CATEGORIES.map(cat => {
@@ -370,7 +421,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         diff: actual - forecast
       };
     }).filter(item => item.forecast > 0 || item.actual > 0);
-  }, [transactions, currentYear]);
+  }, [transactions, costiFissiYear]);
 
   // Costi Variabili con confronto Previsionale, Consuntivo e Scostamento
   const variableCostTableData = useMemo(() => {
@@ -380,7 +431,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
       t.date &&
-      parseUTCDate(t.date).getUTCFullYear() === currentYear
+      parseUTCDate(t.date).getUTCFullYear() === costiVariabiliYear
     );
     
     const prevTxs = txList.filter(t =>
@@ -388,7 +439,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       t.isForecast &&
       t.ceType !== 'ammortamento' &&
       t.date &&
-      parseUTCDate(t.date).getUTCFullYear() === currentYear
+      parseUTCDate(t.date).getUTCFullYear() === costiVariabiliYear
     );
 
     return VARIABLE_COST_CATEGORIES.map(cat => {
@@ -407,7 +458,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         diff: actual - forecast
       };
     }).filter(item => item.forecast > 0 || item.actual > 0);
-  }, [transactions, currentYear]);
+  }, [transactions, costiVariabiliYear]);
 
   const renderDashboardCostTable = (data: {name: string, forecast: number, actual: number, diff: number}[]) => {
     if (data.length === 0) return <p className="text-xs text-slate-400 p-4 italic">Nessun dato registrato per questo periodo.</p>;
@@ -484,14 +535,15 @@ const Dashboard: React.FC<DashboardProps> = ({
     );
   };
 
-  const { actualTransactions, totalIncome, totalExpense, balance, expenseData, fixedCostData, variableCostData } = useMemo(() => {
+  // Calcolo KPI di riepilogo usando kpiYear
+  const { totalIncome, totalExpense, balance } = useMemo(() => {
     const txList = Array.isArray(transactions) ? transactions : [];
     const actTxs = txList.filter(t =>
       t &&
       !t.isForecast &&
       t.ceType !== 'ammortamento' &&
       t.date &&
-      parseUTCDate(t.date).getUTCFullYear() === currentYear
+      parseUTCDate(t.date).getUTCFullYear() === kpiYear
     );
 
     const inc = actTxs
@@ -502,40 +554,44 @@ const Dashboard: React.FC<DashboardProps> = ({
       .filter(t => t && t.type === TransactionType.EXPENSE)
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
+    return { totalIncome: inc, totalExpense: exp, balance: inc - exp };
+  }, [transactions, kpiYear]);
+
+  // Calcolo spese per categoria usando speseYear
+  const expenseData = useMemo(() => {
+    const txList = Array.isArray(transactions) ? transactions : [];
+    const actTxs = txList.filter(t =>
+      t &&
+      !t.isForecast &&
+      t.ceType !== 'ammortamento' &&
+      t.date &&
+      parseUTCDate(t.date).getUTCFullYear() === speseYear
+    );
+    
     const expCategoriesList = Array.isArray(expenseCategories) ? expenseCategories : [];
-    const expData = expCategoriesList.map(cat => {
+    return expCategoriesList.map(cat => {
       const value = actTxs
         .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
       return { name: cat, value };
     }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
+  }, [transactions, speseYear, expenseCategories]);
 
-    // Costi Fissi per categoria
-    const fixedData = FIXED_COST_CATEGORIES.map(cat => {
-      const value = actTxs
-        .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
-        .reduce((sum, t) => sum + getGrossAmount(t), 0);
-      return { name: cat, value };
-    }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
-
-    // Costi Variabili per categoria
-    const varData = VARIABLE_COST_CATEGORIES.map(cat => {
-      const value = actTxs
-        .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
-        .reduce((sum, t) => sum + getGrossAmount(t), 0);
-      return { name: cat, value };
-    }).filter(item => item.value > 0).sort((a, b) => b.value - a.value);
-
-    return { actualTransactions: actTxs, totalIncome: inc, totalExpense: exp, balance: inc - exp, expenseData: expData, fixedCostData: fixedData, variableCostData: varData };
-  }, [transactions, currentYear, expenseCategories]);
-
-  // Prepare data for Bar Chart (Last 6 months)
+  // Prepare data for Bar Chart (Last 6 months) usando trendMensileYear
   const monthlyData = useMemo(() => {
     const today = new Date();
     const systemYear = today.getFullYear();
-    const isCurrentOrFuture = currentYear >= systemYear;
+    const isCurrentOrFuture = trendMensileYear >= systemYear;
     const data = [];
-    const txList = Array.isArray(actualTransactions) ? actualTransactions : [];
+    const txList = Array.isArray(transactions) ? transactions : [];
+    
+    const actTxs = txList.filter(t =>
+      t &&
+      !t.isForecast &&
+      t.ceType !== 'ammortamento' &&
+      t.date &&
+      parseUTCDate(t.date).getUTCFullYear() === trendMensileYear
+    );
     
     for (let i = 5; i >= 0; i--) {
       let targetMonth: number;
@@ -553,13 +609,13 @@ const Dashboard: React.FC<DashboardProps> = ({
         // ...
         // i = 0 -> targetMonth = 11 (December)
         targetMonth = 11 - i;
-        targetYear = currentYear;
+        targetYear = trendMensileYear;
       }
       
       const dForLabel = new Date(targetYear, targetMonth, 1);
       const monthLabel = dForLabel.toLocaleString('it-IT', { month: 'short' });
       
-      const monthTransactions = txList.filter(t => {
+      const monthTransactions = actTxs.filter(t => {
         const tDate = t && t.date ? parseUTCDate(t.date) : null;
         return tDate && tDate.getUTCMonth() === targetMonth && tDate.getUTCFullYear() === targetYear;
       });
@@ -575,71 +631,73 @@ const Dashboard: React.FC<DashboardProps> = ({
       data.push({ name: monthLabel, Entrate: income, Uscite: expense });
     }
     return data;
-  }, [actualTransactions, currentYear]);
+  }, [transactions, trendMensileYear]);
 
   // BUG-002 FIX: ivaData deve essere memoizzata per evitare ricalcoli su ogni render
   const ivaData = useMemo(
-    () => calcPosizIoneIVA(Array.isArray(transactions) ? transactions : [], currentYear),
-    [transactions, currentYear]
+    () => calcPosizIoneIVA(Array.isArray(transactions) ? transactions : [], kpiYear),
+    [transactions, kpiYear]
   );
 
   // Calcolo stringhe calculatedValues per i tooltip della Dashboard
-  const entrateCalculatedValues = `Analisi Entrate ${currentYear}:\n- Totale Entrate Consuntive: ${CURRENCY_FORMATTER.format(totalIncome)}\n- Composto da ricavi operativi reali incassati per SAL, vendite immobili, affitti e manutenzioni.`;
+  const entrateCalculatedValues = `Analisi Entrate ${kpiYear}:\n- Totale Entrate Consuntive: ${CURRENCY_FORMATTER.format(totalIncome)}\n- Composto da ricavi operativi reali incassati per SAL, vendite immobili, affitti e manutenzioni.`;
 
-  const usciteCalculatedValues = `Analisi Uscite ${currentYear}:\n- Totale Uscite Consuntive: ${CURRENCY_FORMATTER.format(totalExpense)}\n- Composto da costi fissi, variabili, oneri finanziari, tasse e investimenti pagati.`;
+  const usciteCalculatedValues = `Analisi Uscite ${kpiYear}:\n- Totale Uscite Consuntive: ${CURRENCY_FORMATTER.format(totalExpense)}\n- Composto da costi fissi, variabili, oneri finanziari, tasse e investimenti pagati.`;
 
-  const saldoCalculatedValues = `Flusso di Cassa Netto ${currentYear}:\n- Entrate Consuntive: ${CURRENCY_FORMATTER.format(totalIncome)}\n- Uscite Consuntive: -${CURRENCY_FORMATTER.format(totalExpense)}\n--------------------\n- Saldo Netto: ${CURRENCY_FORMATTER.format(balance)}`;
+  const saldoCalculatedValues = `Flusso di Cassa Netto ${kpiYear}:\n- Entrate Consuntive: ${CURRENCY_FORMATTER.format(totalIncome)}\n- Uscite Consuntive: -${CURRENCY_FORMATTER.format(totalExpense)}\n--------------------\n- Saldo Netto: ${CURRENCY_FORMATTER.format(balance)}`;
 
-  const ivaCalculatedValues = `Posizione IVA ${currentYear}:\n- Liquidazione cumulativa calcolata: ${CURRENCY_FORMATTER.format(Math.abs(ivaData.creditoDebitoResiduo))} ${ivaData.creditoDebitoResiduo > 0 ? '(a Debito)' : '(a Credito)'}\n- Include l'IVA a debito sulle entrate e l'IVA a credito deducibile sugli acquisti consuntivati.`;
+  const ivaCalculatedValues = `Posizione IVA ${kpiYear}:\n- Liquidazione cumulativa calcolata: ${CURRENCY_FORMATTER.format(Math.abs(ivaData.creditoDebitoResiduo))} ${ivaData.creditoDebitoResiduo > 0 ? '(a Debito)' : '(a Credito)'}\n- Include l'IVA a debito sulle entrate e l'IVA a credito deducibile sugli acquisti consuntivati.`;
 
   const ratingCalculatedValues = ratingData.breakdown && ratingData.breakdown.length > 0
-    ? `Scomposizione Punteggio Rating (Basilea 3):\n` + 
+    ? `Scomposizione Punteggio Rating (Basilea 3) ${ratingSelectedYear}:\n` + 
       ratingData.breakdown.map(i => `- ${i.name}: Punteggio ${i.score.toFixed(1)} / 1.0 (Target: ${i.target})`).join('\n') +
       `\n--------------------\n- Punteggio Totale: ${ratingData.score.toFixed(1)} / 7.0\n- Giudizio: ${ratingData.label}`
     : `Dati patrimoniali o Conto Economico incompleti per calcolare il rating.`;
 
   const speseCategoriaCalculatedValues = expenseData && expenseData.length > 0
-    ? `Spese per Categoria (Top Costi):\n` +
+    ? `Spese per Categoria (Top Costi) ${speseYear}:\n` +
       expenseData.slice(0, 3).map((e, idx) => `${idx + 1}. ${e.name}: ${CURRENCY_FORMATTER.format(e.value)}`).join('\n') +
       `\n- Altre categorie: ${CURRENCY_FORMATTER.format(expenseData.slice(3).reduce((s, e) => s + e.value, 0))}`
     : `Nessun costo registrato per le categorie di spesa.`;
 
   const andamentoMensileCalculatedValues = monthlyData && monthlyData.length > 0
-    ? `Andamento Mensile:\n- Mese con maggiori Entrate: ${
+    ? `Andamento Mensile ${trendMensileYear}:\n- Mese con maggiori Entrate: ${
         [...monthlyData].sort((a,b) => b.Entrate - a.Entrate)[0]?.name || 'N/A'
       } (${CURRENCY_FORMATTER.format([...monthlyData].sort((a,b) => b.Entrate - a.Entrate)[0]?.Entrate || 0)})\n- Mese con maggiori Uscite: ${
         [...monthlyData].sort((a,b) => b.Uscite - a.Uscite)[0]?.name || 'N/A'
       } (${CURRENCY_FORMATTER.format([...monthlyData].sort((a,b) => b.Uscite - a.Uscite)[0]?.Uscite || 0)})`
     : `Nessun dato mensile disponibile.`;
 
-  const contoCorrenteCalculatedValues = `Liquidità Cumulata:\n- Saldo iniziale conti corrente: ${
-    // BUG-001 FIX: BankAccount usa il campo 'balance' non 'saldoIniziale'
-    CURRENCY_FORMATTER.format(Array.isArray(initialAccounts) ? initialAccounts.reduce((sum, acc) => sum + (acc?.balance || 0), 0) : 0)
-  }\n- Flusso netto cumulato dell'anno: ${CURRENCY_FORMATTER.format(balance)}\n- Saldo finale progressivo stimato: ${
-    CURRENCY_FORMATTER.format((Array.isArray(initialAccounts) ? initialAccounts.reduce((sum, acc) => sum + (acc?.balance || 0), 0) : 0) + balance)
+  const initialAccountsBalance = Array.isArray(initialAccounts) ? initialAccounts.reduce((sum, acc) => sum + (acc?.balance || 0), 0) : 0;
+  const finalCCBalance = contoCorrenteData[contoCorrenteData.length - 1]?.LiquiditaCumulata ?? initialAccountsBalance;
+  const netCCFlow = finalCCBalance - initialAccountsBalance;
+  const contoCorrenteCalculatedValues = `Liquidità Cumulata ${contoCorrenteYear}:\n- Saldo iniziale conti corrente: ${
+    CURRENCY_FORMATTER.format(initialAccountsBalance)
+  }\n- Flusso netto cumulato dell'anno: ${CURRENCY_FORMATTER.format(netCCFlow)}\n- Saldo finale progressivo stimato: ${
+    CURRENCY_FORMATTER.format(finalCCBalance)
   }`;
 
-  const confrontoEntrateCalculatedValues = `Confronto Entrate:\n- Previste (Budget): ${
-    CURRENCY_FORMATTER.format(monthlyComparisonData.reduce((s, m) => s + m.EntratePreviste, 0))
+  const confrontoEntrateCalculatedValues = `Confronto Entrate ${confrontoEntrateYear}:\n- Previste (Budget): ${
+    CURRENCY_FORMATTER.format(confrontoEntrateData.reduce((s, m) => s + m.EntratePreviste, 0))
   }\n- Reali (Consuntivate): ${
-    CURRENCY_FORMATTER.format(monthlyComparisonData.reduce((s, m) => s + m.EntrateReali, 0))
+    CURRENCY_FORMATTER.format(confrontoEntrateData.reduce((s, m) => s + m.EntrateReali, 0))
   }\n- Scostamento complessivo YTD: ${
     CURRENCY_FORMATTER.format(
-      monthlyComparisonData.reduce((s, m) => s + m.EntrateReali, 0) - monthlyComparisonData.reduce((s, m) => s + m.EntratePreviste, 0)
+      confrontoEntrateData.reduce((s, m) => s + m.EntrateReali, 0) - confrontoEntrateData.reduce((s, m) => s + m.EntratePreviste, 0)
     )
   }`;
 
-  const confrontoUsciteCalculatedValues = `Confronto Uscite:\n- Previste (Budget): ${
-    CURRENCY_FORMATTER.format(monthlyComparisonData.reduce((s, m) => s + m.UscitePreviste, 0))
+  const confrontoUsciteCalculatedValues = `Confronto Uscite ${confrontoUsciteYear}:\n- Previste (Budget): ${
+    CURRENCY_FORMATTER.format(confrontoUsciteData.reduce((s, m) => s + m.UscitePreviste, 0))
   }\n- Reali (Consuntivate): ${
-    CURRENCY_FORMATTER.format(monthlyComparisonData.reduce((s, m) => s + m.UsciteReali, 0))
+    CURRENCY_FORMATTER.format(confrontoUsciteData.reduce((s, m) => s + m.UsciteReali, 0))
   }\n- Scostamento complessivo YTD: ${
     CURRENCY_FORMATTER.format(
-      monthlyComparisonData.reduce((s, m) => s + m.UsciteReali, 0) - monthlyComparisonData.reduce((s, m) => s + m.UscitePreviste, 0)
+      confrontoUsciteData.reduce((s, m) => s + m.UsciteReali, 0) - confrontoUsciteData.reduce((s, m) => s + m.UscitePreviste, 0)
     )
   }`;
 
-  const costiFissiCalculatedValues = `Dettaglio Costi Fissi ${currentYear}:\n- Previsto Totale: ${
+  const costiFissiCalculatedValues = `Dettaglio Costi Fissi ${costiFissiYear}:\n- Previsto Totale: ${
     CURRENCY_FORMATTER.format(fixedCostTableData.reduce((s, i) => s + i.forecast, 0))
   }\n- Reale Consuntivato: ${
     CURRENCY_FORMATTER.format(fixedCostTableData.reduce((s, i) => s + i.actual, 0))
@@ -647,7 +705,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     CURRENCY_FORMATTER.format(fixedCostTableData.reduce((s, i) => s + i.diff, 0))
   }`;
 
-  const costiVariabiliCalculatedValues = `Dettaglio Costi Variabili ${currentYear}:\n- Previsto Totale: ${
+  const costiVariabiliCalculatedValues = `Dettaglio Costi Variabili ${costiVariabiliYear}:\n- Previsto Totale: ${
     CURRENCY_FORMATTER.format(variableCostTableData.reduce((s, i) => s + i.forecast, 0))
   }\n- Reale Consuntivato: ${
     CURRENCY_FORMATTER.format(variableCostTableData.reduce((s, i) => s + i.actual, 0))
@@ -655,8 +713,42 @@ const Dashboard: React.FC<DashboardProps> = ({
     CURRENCY_FORMATTER.format(variableCostTableData.reduce((s, i) => s + i.diff, 0))
   }`;
 
-  // Preparazione dei dati per il grafico e la tabella della struttura patrimoniale
-  const spMetrics = ratingData.spMetrics;
+  // Calcolo spMetrics e dati per la struttura patrimoniale usando patrimonioYear
+  const spMetrics = useMemo(() => {
+    const txList = Array.isArray(transactions) ? transactions : [];
+    const snapshots = Array.isArray(spSnapshots) ? spSnapshots.filter(Boolean) : [];
+    
+    const snapshotsForYear = snapshots.filter(s => {
+      if (s && s.dataRiferimento) {
+        const d = new Date(s.dataRiferimento);
+        return !isNaN(d.getTime()) && d.getFullYear() === patrimonioYear;
+      }
+      return false;
+    });
+    
+    const sortedSnapshots = [...snapshotsForYear].sort((a, b) => {
+      const dateA = a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
+      const dateB = b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
+      return dateB - dateA;
+    });
+    
+    let activeSP = sortedSnapshots[0] || null;
+    if (!activeSP && snapshots.length > 0) {
+      const sortedAllSnapshots = [...snapshots].sort((a, b) => {
+        const dateA = a.dataRiferimento ? new Date(a.dataRiferimento).getTime() : 0;
+        const dateB = b.dataRiferimento ? new Date(b.dataRiferimento).getTime() : 0;
+        return dateB - dateA;
+      });
+      activeSP = sortedAllSnapshots[0] || null;
+    }
+    
+    const yearToUse = activeSP && activeSP.dataRiferimento ? new Date(activeSP.dataRiferimento).getFullYear() : patrimonioYear;
+    const manualData = ceManualData || {};
+    const ceData = buildCEData(txList, yearToUse, manualData[yearToUse.toString()]);
+    const ceMetrics = calcCEMetrics(ceData, txList);
+    return activeSP ? calcSPMetrics(activeSP, ceMetrics, txList) : null;
+  }, [transactions, spSnapshots, ceManualData, patrimonioYear]);
+
   const structureChartData = useMemo(() => {
     if (!spMetrics) return [];
     return [
@@ -679,30 +771,34 @@ const Dashboard: React.FC<DashboardProps> = ({
     return `${((val / total) * 100).toFixed(1)}%`;
   };
 
+  const renderYearSelect = (value: number, onChange: (year: number) => void) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-400 transition-all cursor-pointer font-sans no-print"
+    >
+      {availableYears.map(year => (
+        <option key={year} value={year}>{year}</option>
+      ))}
+    </select>
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center no-print">
         <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Anno:</span>
-            <select
-              value={dashboardYear}
-              onChange={(e) => setDashboardYear(Number(e.target.value))}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all cursor-pointer font-sans"
-            >
-              {availableYears.map(year => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-xl px-2.5 py-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Filtro KPIs:</span>
+            {renderYearSelect(kpiYear, setKpiYear)}
           </div>
           <HelpButton onClick={() => setShowHelp(true)} />
           <PDFExportButton 
             config={{
               elementId: "dashboard-report-content",
-              nomeFile: `Dashboard_Finanziaria_${dashboardYear}`,
-              titolo: `Dashboard Finanziaria - ${dashboardYear}`,
-              sottotitolo: `Riepilogo Consuntivo e Andamento ${dashboardYear}`,
+              nomeFile: "Dashboard_Finanziaria_Completa",
+              titolo: "Dashboard Finanziaria",
+              sottotitolo: "Riepilogo Consuntivo e Andamento",
               orientazione: "portrait"
             }}
           />
@@ -729,15 +825,15 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <SummaryCard title={`Entrate ${currentYear}`} amount={totalIncome} type="income" termId="fatturato" calculatedValues={entrateCalculatedValues} />
-          <SummaryCard title={`Uscite ${currentYear}`} amount={totalExpense} type="expense" termId="uscite" calculatedValues={usciteCalculatedValues} />
-          <SummaryCard title={`Saldo ${currentYear}`} amount={balance} type="balance" termId="saldo_cassa" calculatedValues={saldoCalculatedValues} />
+          <SummaryCard title={`Entrate ${kpiYear}`} amount={totalIncome} type="income" termId="fatturato" calculatedValues={entrateCalculatedValues} />
+          <SummaryCard title={`Uscite ${kpiYear}`} amount={totalExpense} type="expense" termId="uscite" calculatedValues={usciteCalculatedValues} />
+          <SummaryCard title={`Saldo ${kpiYear}`} amount={balance} type="balance" termId="saldo_cassa" calculatedValues={saldoCalculatedValues} />
           
           {/* Posizione IVA Card */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between">
             <div>
               <div className="flex items-center gap-1.5 mb-1">
-                <p className="text-sm font-medium text-slate-500">Posizione IVA {currentYear}</p>
+                <p className="text-sm font-medium text-slate-500">Posizione IVA {kpiYear}</p>
                 <InfoTooltip termId="posizione_iva" size="sm" calculatedValues={ivaCalculatedValues} />
               </div>
               <h3 className={`text-2xl font-bold tracking-tight ${ivaData.creditoDebitoResiduo > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
@@ -759,11 +855,15 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <ShieldCheck size={20} className="text-slate-900" />
               Valutazione Banca (Merito Creditizio Basilea 3)
+              <span className="print-only ml-2 text-slate-400 text-xs font-semibold">({ratingSelectedYear})</span>
               <InfoTooltip termId="rating_bancario" size="md" calculatedValues={ratingCalculatedValues} />
             </h3>
-            <span className={`text-sm font-black px-3 py-1 bg-slate-100 rounded-full ${ratingData.color}`}>
-              Punteggio: {ratingData.score.toFixed(1)} / 7.0
-            </span>
+            <div className="flex items-center gap-3">
+              {renderYearSelect(ratingSelectedYear, setRatingSelectedYear)}
+              <span className={`text-sm font-black px-3 py-1 bg-slate-100 rounded-full ${ratingData.color}`}>
+                Punteggio: {ratingData.score.toFixed(1)} / 7.0
+              </span>
+            </div>
           </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
@@ -829,17 +929,21 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <TrendingUp size={20} className="text-slate-900" />
               Struttura Patrimoniale (Fonti vs Impieghi)
+              <span className="print-only ml-2 text-slate-400 text-xs font-semibold">({patrimonioYear})</span>
               <InfoTooltip termId="struttura_patrimoniale" size="md" calculatedValues={
                 spMetrics 
-                  ? `Analisi Struttura Patrimoniale ${currentYear}:\n- Totale Attivo (Impieghi): ${CURRENCY_FORMATTER.format(spMetrics.totAttivo)}\n- Totale Passivo & Netto (Fonti): ${CURRENCY_FORMATTER.format(spMetrics.totPassivo)}\n- Capitale Immobilizzato: ${CURRENCY_FORMATTER.format(spMetrics.totAttivoImm)} (${formatPercent(spMetrics.totAttivoImm, spMetrics.totAttivo)})\n- Capitale Circolante: ${CURRENCY_FORMATTER.format(spMetrics.totAttivoCirc)} (${formatPercent(spMetrics.totAttivoCirc, spMetrics.totAttivo)})`
+                  ? `Analisi Struttura Patrimoniale ${patrimonioYear}:\n- Totale Attivo (Impieghi): ${CURRENCY_FORMATTER.format(spMetrics.totAttivo)}\n- Totale Passivo & Netto (Fonti): ${CURRENCY_FORMATTER.format(spMetrics.totPassivo)}\n- Capitale Immobilizzato: ${CURRENCY_FORMATTER.format(spMetrics.totAttivoImm)} (${formatPercent(spMetrics.totAttivoImm, spMetrics.totAttivo)})\n- Capitale Circolante: ${CURRENCY_FORMATTER.format(spMetrics.totAttivoCirc)} (${formatPercent(spMetrics.totAttivoCirc, spMetrics.totAttivo)})`
                   : 'Nessun dato di Stato Patrimoniale disponibile per questo anno.'
               } />
             </h3>
-            {spMetrics && (
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${spMetrics.quadratura ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
-                {spMetrics.quadratura ? 'Stato Patrimoniale Quadrato' : 'Differenza di Quadratura rilevata'}
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {renderYearSelect(patrimonioYear, setPatrimonioYear)}
+              {spMetrics && (
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${spMetrics.quadratura ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                  {spMetrics.quadratura ? 'Stato Patrimoniale Quadrato' : 'Differenza di Quadratura rilevata'}
+                </span>
+              )}
+            </div>
           </div>
 
           {spMetrics ? (
@@ -975,7 +1079,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           ) : (
             <div className="py-8 flex flex-col items-center justify-center text-slate-400 gap-2 border border-dashed border-slate-200 rounded-xl">
               <AlertCircle size={24} className="text-slate-300" />
-              <span className="text-xs italic">Nessuno Stato Patrimoniale caricato o calcolato per l'anno {currentYear}.</span>
+              <span className="text-xs italic">Nessuno Stato Patrimoniale caricato o calcolato per l'anno {patrimonioYear}.</span>
             </div>
           )}
         </div>
@@ -983,10 +1087,14 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Expense Breakdown Pie */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              Spese per Categoria
-              <InfoTooltip termId="spese_categoria" size="md" calculatedValues={speseCategoriaCalculatedValues} />
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                Spese per Categoria
+                <span className="print-only ml-2 text-slate-400 text-xs font-semibold">({speseYear})</span>
+                <InfoTooltip termId="spese_categoria" size="md" calculatedValues={speseCategoriaCalculatedValues} />
+              </h3>
+              {renderYearSelect(speseYear, setSpeseYear)}
+            </div>
             {expenseData.length > 0 ? (
               <div className="flex flex-col gap-4">
                 <div className="h-56 w-full">
@@ -1029,42 +1137,52 @@ const Dashboard: React.FC<DashboardProps> = ({
               </div>
             ) : (
               <div className="h-64 flex items-center justify-center text-slate-400">
-                Nessuna spesa registrata
+                Nessuna spesa registrata per questo anno.
               </div>
             )}
           </div>
 
           {/* Monthly Trend */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
-            <h3 className="text-lg font-semibold text-slate-800 mb-6 flex items-center gap-2">
-              Andamento Mensile
-              <InfoTooltip termId="andamento_mensile" size="md" calculatedValues={andamentoMensileCalculatedValues} />
-            </h3>
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#64748b', fontSize: 12 }} 
-                    dy={10}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#64748b', fontSize: 12 }}
-                  />
-                  <Tooltip 
-                    cursor={{ fill: '#f1f5f9' }}
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Bar dataKey="Entrate" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} name="Entrate" />
-                  <Bar dataKey="Uscite" fill="#f43f5e" radius={[4, 4, 0, 0]} barSize={20} name="Uscite" />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                Andamento Mensile
+                <span className="print-only ml-2 text-slate-400 text-xs font-semibold">({trendMensileYear})</span>
+                <InfoTooltip termId="andamento_mensile" size="md" calculatedValues={andamentoMensileCalculatedValues} />
+              </h3>
+              {renderYearSelect(trendMensileYear, setTrendMensileYear)}
             </div>
+            {monthlyData.length > 0 ? (
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#64748b', fontSize: 12 }} 
+                      dy={10}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#64748b', fontSize: 12 }}
+                    />
+                    <Tooltip 
+                      cursor={{ fill: '#f1f5f9' }}
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    />
+                    <Bar dataKey="Entrate" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} name="Entrate" />
+                    <Bar dataKey="Uscite" fill="#f43f5e" radius={[4, 4, 0, 0]} barSize={20} name="Uscite" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center text-slate-400">
+                Nessun dato mensile disponibile per questo anno.
+              </div>
+            )}
           </div>
         </div>
 
@@ -1073,14 +1191,18 @@ const Dashboard: React.FC<DashboardProps> = ({
           
           {/* Conto Corrente (Liquidità Cumulata) */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col w-full">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-              <CalendarClock size={18} className="text-slate-900" />
-              Andamento Conto Corrente (Liquidità Cumulata)
-              <InfoTooltip termId="conto_corrente" size="md" calculatedValues={contoCorrenteCalculatedValues} />
-            </h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <CalendarClock size={18} className="text-slate-900" />
+                Andamento Conto Corrente (Liquidità Cumulata)
+                <span className="print-only ml-2 text-slate-400 text-xs font-semibold">({contoCorrenteYear})</span>
+                <InfoTooltip termId="conto_corrente" size="md" calculatedValues={contoCorrenteCalculatedValues} />
+              </h3>
+              {renderYearSelect(contoCorrenteYear, setContoCorrenteYear)}
+            </div>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={monthlyComparisonData}>
+                <LineChart data={contoCorrenteData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
                   <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
@@ -1096,14 +1218,18 @@ const Dashboard: React.FC<DashboardProps> = ({
 
           {/* Confronto Entrate */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col w-full">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-              <ArrowUpRight size={18} className="text-emerald-600" />
-              Confronto Entrate (Consuntivo vs Previsionale)
-              <InfoTooltip termId="confronto_entrate" size="md" calculatedValues={confrontoEntrateCalculatedValues} />
-            </h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <ArrowUpRight size={18} className="text-emerald-600" />
+                Confronto Entrate (Consuntivo vs Previsionale)
+                <span className="print-only ml-2 text-slate-400 text-xs font-semibold">({confrontoEntrateYear})</span>
+                <InfoTooltip termId="confronto_entrate" size="md" calculatedValues={confrontoEntrateCalculatedValues} />
+              </h3>
+              {renderYearSelect(confrontoEntrateYear, setConfrontoEntrateYear)}
+            </div>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={monthlyComparisonData}>
+                <ComposedChart data={confrontoEntrateData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
                   <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
@@ -1122,14 +1248,18 @@ const Dashboard: React.FC<DashboardProps> = ({
 
           {/* Confronto Uscite */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col w-full">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-              <ArrowDownRight size={18} className="text-rose-600" />
-              Confronto Uscite (Consuntivo vs Previsionale)
-              <InfoTooltip termId="confronto_uscite" size="md" calculatedValues={confrontoUsciteCalculatedValues} />
-            </h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <ArrowDownRight size={18} className="text-rose-600" />
+                Confronto Uscite (Consuntivo vs Previsionale)
+                <span className="print-only ml-2 text-slate-400 text-xs font-semibold">({confrontoUsciteYear})</span>
+                <InfoTooltip termId="confronto_uscite" size="md" calculatedValues={confrontoUsciteCalculatedValues} />
+              </h3>
+              {renderYearSelect(confrontoUsciteYear, setConfrontoUsciteYear)}
+            </div>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={monthlyComparisonData}>
+                <ComposedChart data={confrontoUsciteData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
                   <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
@@ -1152,19 +1282,27 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Costi Fissi Table */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              Costi Fissi
-              <InfoTooltip termId="costi_fissi" size="md" calculatedValues={costiFissiCalculatedValues} />
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                Costi Fissi
+                <span className="print-only ml-2 text-slate-400 text-xs font-semibold">({costiFissiYear})</span>
+                <InfoTooltip termId="costi_fissi" size="md" calculatedValues={costiFissiCalculatedValues} />
+              </h3>
+              {renderYearSelect(costiFissiYear, setCostiFissiYear)}
+            </div>
             {renderDashboardCostTable(fixedCostTableData)}
           </div>
 
           {/* Costi Variabili Table */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              Costi Variabili
-              <InfoTooltip termId="costi_variabili" size="md" calculatedValues={costiVariabiliCalculatedValues} />
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                Costi Variabili
+                <span className="print-only ml-2 text-slate-400 text-xs font-semibold">({costiVariabiliYear})</span>
+                <InfoTooltip termId="costi_variabili" size="md" calculatedValues={costiVariabiliCalculatedValues} />
+              </h3>
+              {renderYearSelect(costiVariabiliYear, setCostiVariabiliYear)}
+            </div>
             {renderDashboardCostTable(variableCostTableData)}
           </div>
         </div>
