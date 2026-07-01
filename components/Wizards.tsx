@@ -885,7 +885,12 @@ export const CantiereWizard: React.FC<CantiereWizardProps> = ({
                       
                       {c.previsionaliGenerati ? (
                         <button 
-                          onClick={() => { if(window.confirm('Rigenerare i previsionali? Quelli esistenti per questo cantiere verranno eliminati.')) onDeleteGenerated(c); }}
+                          onClick={() => { 
+                            if(window.confirm('Rigenerare i previsionali? Quelli esistenti per questo cantiere verranno ricreati.')) {
+                              onDeleteGenerated(c);
+                              onGenerateTransactions(c);
+                            }
+                          }}
                           className="bg-slate-100 text-slate-900 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all border border-slate-200 flex items-center gap-2"
                         >
                           <CheckCircle2 size={16} /> Rigenera Flussi

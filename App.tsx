@@ -1728,6 +1728,12 @@ const App: React.FC = () => {
       if (exists) return prev.map(item => item.id === c.id ? c : item);
       return [...prev, c];
     });
+
+    // Se il cantiere aveva già i flussi generati, rigenerali automaticamente per riflettere le modifiche
+    if (c.previsionaliGenerati) {
+      setTransactions(prev => prev.filter(tx => !(tx.isForecast && tx.sourceRef === c.id)));
+      handleGenerateCantiereTransactions(c);
+    }
   };
 
   const handleDeleteCantierePrev = (id: string) => {
