@@ -1870,7 +1870,9 @@ const CEView: React.FC<CEViewProps> = ({
         {effettoRimanenze && (() => {
           const cassaRicavi = tipoRettifica === 'consuntivo' ? metrics.fatturato : metrics.proiezioneFatturato;
           const cassaCostiVar = tipoRettifica === 'consuntivo' ? metrics.totCostiVar.reduce((a,b)=>a+b,0) : metrics.proiezioneCostiVariabili;
-          const cassaUtile = tipoRettifica === 'consuntivo' ? metrics.utileNettoTot : metrics.proiezioneUtile;
+          const cassaUtile = tipoRettifica === 'consuntivo' 
+            ? metrics.utileNettoTot 
+            : (rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario - previsioneFiscale.totaleImposteStimate);
 
           const rettificatoRicavi = cassaRicavi + effettoRimanenze.deltaWip;
           const rettificatoCostiVar = cassaCostiVar - effettoRimanenze.deltaMateriali;
