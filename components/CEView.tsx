@@ -126,12 +126,18 @@ const CEView: React.FC<CEViewProps> = ({
   );
 
   const metrics = useMemo(() => {
-    const utileProj = rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario - previsioneFiscale.totaleImposteStimate;
+    const varRim = rimanenzeAnno 
+      ? ((rimanenzeAnno.wipFine || 0) - (rimanenzeAnno.wipInizio || 0)) +
+        ((rimanenzeAnno.materialiFine || 0) - (rimanenzeAnno.materialiInizio || 0)) +
+        ((rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0))
+      : 0;
+
+    const utileProj = rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario + varRim - previsioneFiscale.totaleImposteStimate;
     return {
       ...rawMetrics,
       proiezioneUtile: utileProj
     };
-  }, [rawMetrics, previsioneFiscale.totaleImposteStimate]);
+  }, [rawMetrics, previsioneFiscale.totaleImposteStimate, rimanenzeAnno]);
 
   const txAnno = useMemo(() => 
     (transactions || []).filter(tx => parseUTCDate((modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date).getUTCFullYear() === selectedYear),

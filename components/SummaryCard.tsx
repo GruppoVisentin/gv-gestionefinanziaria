@@ -1,7 +1,12 @@
 import React from 'react';
-import { CURRENCY_FORMATTER } from '../constants';
 import { ArrowUpRight, ArrowDownRight, Wallet } from 'lucide-react';
 import InfoTooltip from './InfoTooltip';
+
+const CURRENCY_FORMATTER = new Intl.NumberFormat('it-IT', {
+  style: 'currency',
+  currency: 'EUR',
+  useGrouping: 'always' as any,
+});
 
 interface SummaryCardProps {
   title: string;
