@@ -111,6 +111,14 @@ const CEView: React.FC<CEViewProps> = ({
   const rawMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
 
   const rimanenzeAnno = rimanenze?.[selectedYear.toString()];
+
+  const varRim = useMemo(() => {
+    if (!rimanenzeAnno) return 0;
+    return ((rimanenzeAnno.wipFine || 0) - (rimanenzeAnno.wipInizio || 0)) +
+           ((rimanenzeAnno.materialiFine || 0) - (rimanenzeAnno.materialiInizio || 0)) +
+           ((rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0));
+  }, [rimanenzeAnno]);
+
   const previsioneFiscale = useMemo(() =>
     calcPrevisioneFiscale(
       transactions,
@@ -126,18 +134,12 @@ const CEView: React.FC<CEViewProps> = ({
   );
 
   const metrics = useMemo(() => {
-    const varRim = rimanenzeAnno 
-      ? ((rimanenzeAnno.wipFine || 0) - (rimanenzeAnno.wipInizio || 0)) +
-        ((rimanenzeAnno.materialiFine || 0) - (rimanenzeAnno.materialiInizio || 0)) +
-        ((rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0))
-      : 0;
-
     const utileProj = rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario + varRim - previsioneFiscale.totaleImposteStimate;
     return {
       ...rawMetrics,
       proiezioneUtile: utileProj
     };
-  }, [rawMetrics, previsioneFiscale.totaleImposteStimate, rimanenzeAnno]);
+  }, [rawMetrics, previsioneFiscale.totaleImposteStimate, varRim]);
 
   const txAnno = useMemo(() => 
     (transactions || []).filter(tx => parseUTCDate((modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date).getUTCFullYear() === selectedYear),
@@ -517,10 +519,10 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'Imposte IRES/IRAP stimate dell\'anno', valore: imp, isPositivo: false, isRisultato: true, percentualeSu: fat }
         ],
         ceTypes: ['imposta_ce'],
-        proiezioneValore: metrics.proiezioneEbt + metrics.proiezioneStraordinario - metrics.proiezioneUtile,
-        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? (metrics.proiezioneEbt + metrics.proiezioneStraordinario - metrics.proiezioneUtile) / metrics.proiezioneFatturato : 0,
+        proiezioneValore: previsioneFiscale.totaleImposteStimate,
+        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? previsioneFiscale.totaleImposteStimate / metrics.proiezioneFatturato : 0,
         proiezioneSteps: [
-          { label: 'Imposte IRES/IRAP stimate dell\'anno [Proiezione]', valore: metrics.proiezioneEbt + metrics.proiezioneStraordinario - metrics.proiezioneUtile, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
+          { label: 'Imposte IRES/IRAP stimate dell\'anno [Proiezione]', valore: previsioneFiscale.totaleImposteStimate, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
         ],
         soloPrevisionaleValore: prevTaxes,
         soloPrevisionalePercentuale: prevFat > 0 ? prevTaxes / prevFat : 0,
@@ -670,7 +672,9 @@ const CEView: React.FC<CEViewProps> = ({
         proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneUtile / metrics.proiezioneFatturato : 0,
         proiezioneSteps: [
           { label: 'EBT [Proiezione]', valore: metrics.proiezioneEbt, isPositivo: true, percentualeSu: metrics.proiezioneFatturato },
-          { label: 'Imposte stimate [Proiezione]', valore: metrics.proiezioneEbt + metrics.proiezioneStraordinario - metrics.proiezioneUtile, isPositivo: false, indent: true },
+          { label: 'Risultato Straordinario [Proiezione]', valore: metrics.proiezioneStraordinario, isPositivo: metrics.proiezioneStraordinario > 0, indent: true },
+          { label: 'Variazione Rimanenze [Proiezione]', valore: varRim, isPositivo: varRim > 0, indent: true },
+          { label: 'Imposte stimate [Proiezione]', valore: previsioneFiscale.totaleImposteStimate, isPositivo: false, indent: true },
           { label: 'Utile Netto [Proiezione]', valore: metrics.proiezioneUtile, isPositivo: metrics.proiezioneUtile > 0, isRisultato: true, percentualeSu: metrics.proiezioneFatturato },
         ],
         soloPrevisionaleValore: prevUtile,
