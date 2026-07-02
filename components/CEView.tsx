@@ -101,6 +101,7 @@ const CEView: React.FC<CEViewProps> = ({
   const [modalita, setModalita] = useState<'cassa' | 'competenza'>('cassa');
   const [showHelp, setShowHelp] = useState(false);
   const [drawerKpi, setDrawerKpi] = useState<string | null>(null);
+  const [tipoRettifica, setTipoRettifica] = useState<'consuntivo' | 'proiezione'>('consuntivo');
 
   const ceData = useMemo(() => 
     buildCEData(transactions, selectedYear, manualData[selectedYear.toString()], modalita, projects, initialData), 
@@ -1785,97 +1786,126 @@ const CEView: React.FC<CEViewProps> = ({
         </div>
 
         {/* RISULTATI RETTIFICATI — visibili solo se rimanenze inserite */}
-        {effettoRimanenze && (
-          <>
-            <div className="mx-6 border-t border-slate-100" />
+        {effettoRimanenze && (() => {
+          const cassaRicavi = tipoRettifica === 'consuntivo' ? metrics.fatturato : metrics.proiezioneFatturato;
+          const cassaCostiVar = tipoRettifica === 'consuntivo' ? metrics.totCostiVar.reduce((a,b)=>a+b,0) : metrics.proiezioneCostiVariabili;
+          const cassaUtile = tipoRettifica === 'consuntivo' ? metrics.utileNettoTot : metrics.proiezioneUtile;
 
-            <div className="p-6 space-y-4">
-              <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest">
-                CE Rettificato — Confronto Cassa vs Competenza con Rimanenze
-              </h4>
+          const rettificatoRicavi = cassaRicavi + effettoRimanenze.deltaWip;
+          const rettificatoCostiVar = cassaCostiVar - effettoRimanenze.deltaMateriali;
+          const rettificatoUtile = cassaUtile + effettoRimanenze.variazioneRimanenzeNetta;
+          const baseIRES = (tipoRettifica === 'consuntivo' ? metrics.ebitTot : metrics.proiezioneEbit) + effettoRimanenze.variazioneRimanenzeNetta;
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="pb-3 text-[10px] font-black text-indigo-500 uppercase tracking-wider w-[220px]">Voce</th>
-                      <th className="pb-3 text-right text-[10px] font-black text-sky-500 uppercase tracking-wider">Per Cassa (app)</th>
-                      <th className="pb-3 text-right text-[10px] font-black text-amber-500 uppercase tracking-wider">Rettifica Rimanenze</th>
-                      <th className="pb-3 text-right text-[10px] font-black text-emerald-500 uppercase tracking-wider">Valore Rettificato</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    <tr>
-                      <td className="py-3 text-xs font-bold text-slate-600">Fatturato / Ricavi</td>
-                      <td className="py-3 text-right text-xs font-medium text-slate-500 font-mono">{formatEuro(metrics.fatturato)}</td>
-                      <td className={`py-3 text-right text-xs font-bold font-mono ${effettoRimanenze.deltaWip >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {effettoRimanenze.deltaWip >= 0 ? '+' : ''}{formatEuro(effettoRimanenze.deltaWip)}
-                      </td>
-                      <td className="py-3 text-right text-sm font-black text-slate-900 font-mono">{formatEuro(effettoRimanenze.fatturatoCompetenzaRettificato)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-3 text-xs font-bold text-slate-600">Costi Variabili</td>
-                      <td className="py-3 text-right text-xs font-medium text-slate-500 font-mono">{formatEuro(metrics.totCostiVar.reduce((a,b)=>a+b,0))}</td>
-                      <td className={`py-3 text-right text-xs font-bold font-mono ${effettoRimanenze.deltaMateriali >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {effettoRimanenze.deltaMateriali >= 0 ? '-' : '+'}{formatEuro(Math.abs(effettoRimanenze.deltaMateriali))}
-                      </td>
-                      <td className="py-3 text-right text-sm font-black text-slate-900 font-mono">{formatEuro(effettoRimanenze.costiVariabiliRettificati)}</td>
-                    </tr>
-                    <tr className="bg-slate-50/50">
-                      <td className="py-3 text-xs font-black text-slate-800 uppercase">Utile Netto</td>
-                      <td className="py-3 text-right text-xs font-bold text-slate-500 font-mono">{formatEuro(metrics.utileNettoTot)}</td>
-                      <td className={`py-3 text-right text-xs font-black font-mono ${effettoRimanenze.variazioneRimanenzeNetta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {effettoRimanenze.variazioneRimanenzeNetta >= 0 ? '+' : ''}{formatEuro(effettoRimanenze.variazioneRimanenzeNetta)}
-                      </td>
-                      <td className={`py-3 text-right text-lg font-black font-mono ${effettoRimanenze.utileRettificato >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {formatEuro(effettoRimanenze.utileRettificato)}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-3 text-xs font-bold text-slate-600">Base Imponibile IRES (stima)</td>
-                      <td className="py-3 text-right text-xs font-medium text-slate-400 font-mono">—</td>
-                      <td className="py-3 text-right text-xs font-medium text-slate-400 font-mono">—</td>
-                      <td className="py-3 text-right text-sm font-black text-slate-700 font-mono">{formatEuro(effettoRimanenze.baseImponibileIRES)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+          return (
+            <>
+              <div className="mx-6 border-t border-slate-100" />
 
-              {/* Nota rimanenze */}
-              <div className="flex items-start gap-3 bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
-                <div className="text-[10px] text-slate-500 leading-relaxed space-y-1">
-                  <p>
-                    <span className="font-black">Δ WIP positivo</span> = hai prodotto più di quanto fatturato →
-                    aumenta il fatturato di competenza e l'utile fiscale.
-                  </p>
-                  <p>
-                    <span className="font-black">Δ Materiali positivo</span> = hai in magazzino più di quanto usato →
-                    riduce i costi variabili e aumenta l'utile fiscale.
-                  </p>
-                  <p>
-                    La base imponibile IRES è una stima semplificata — il commercialista applica
-                    ulteriori rettifiche (deduzioni ACE, variazioni permanenti/temporanee, ecc.).
-                  </p>
+              <div className="p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest">
+                    CE Rettificato — Confronto Cassa vs Competenza con Rimanenze
+                  </h4>
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold self-start sm:self-auto">
+                    <button
+                      onClick={() => setTipoRettifica('consuntivo')}
+                      className={`px-3 py-1 rounded-md transition-all ${tipoRettifica === 'consuntivo' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      Consuntivo YTD
+                    </button>
+                    <button
+                      onClick={() => setTipoRettifica('proiezione')}
+                      className={`px-3 py-1 rounded-md transition-all ${tipoRettifica === 'proiezione' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      Proiezione a fine Anno
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-100">
+                        <th className="pb-3 text-[10px] font-black text-indigo-500 uppercase tracking-wider w-[220px]">Voce</th>
+                        <th className="pb-3 text-right text-[10px] font-black text-sky-500 uppercase tracking-wider">
+                          {tipoRettifica === 'consuntivo' ? 'Per Cassa (YTD)' : 'Per Cassa (Proiezione)'}
+                        </th>
+                        <th className="pb-3 text-right text-[10px] font-black text-amber-500 uppercase tracking-wider">Rettifica Rimanenze</th>
+                        <th className="pb-3 text-right text-[10px] font-black text-emerald-500 uppercase tracking-wider">Valore Rettificato</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      <tr>
+                        <td className="py-3 text-xs font-bold text-slate-600">Fatturato / Ricavi</td>
+                        <td className="py-3 text-right text-xs font-medium text-slate-500 font-mono">{formatEuro(cassaRicavi)}</td>
+                        <td className={`py-3 text-right text-xs font-bold font-mono ${effettoRimanenze.deltaWip >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {effettoRimanenze.deltaWip >= 0 ? '+' : ''}{formatEuro(effettoRimanenze.deltaWip)}
+                        </td>
+                        <td className="py-3 text-right text-sm font-black text-slate-900 font-mono">{formatEuro(rettificatoRicavi)}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-3 text-xs font-bold text-slate-600">Costi Variabili</td>
+                        <td className="py-3 text-right text-xs font-medium text-slate-500 font-mono">{formatEuro(cassaCostiVar)}</td>
+                        <td className={`py-3 text-right text-xs font-bold font-mono ${effettoRimanenze.deltaMateriali >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {effettoRimanenze.deltaMateriali >= 0 ? '-' : '+'}{formatEuro(Math.abs(effettoRimanenze.deltaMateriali))}
+                        </td>
+                        <td className="py-3 text-right text-sm font-black text-slate-900 font-mono">{formatEuro(rettificatoCostiVar)}</td>
+                      </tr>
+                      <tr className="bg-slate-50/50">
+                        <td className="py-3 text-xs font-black text-slate-800 uppercase">Utile Netto</td>
+                        <td className="py-3 text-right text-xs font-bold text-slate-500 font-mono">{formatEuro(cassaUtile)}</td>
+                        <td className={`py-3 text-right text-xs font-black font-mono ${effettoRimanenze.variazioneRimanenzeNetta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {effettoRimanenze.variazioneRimanenzeNetta >= 0 ? '+' : ''}{formatEuro(effettoRimanenze.variazioneRimanenzeNetta)}
+                        </td>
+                        <td className={`py-3 text-right text-lg font-black font-mono ${rettificatoUtile >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {formatEuro(rettificatoUtile)}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="py-3 text-xs font-bold text-slate-600">Base Imponibile IRES (stima)</td>
+                        <td className="py-3 text-right text-xs font-medium text-slate-400 font-mono">—</td>
+                        <td className="py-3 text-right text-xs font-medium text-slate-400 font-mono">—</td>
+                        <td className="py-3 text-right text-sm font-black text-slate-700 font-mono">{formatEuro(baseIRES)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Nota rimanenze */}
+                <div className="flex items-start gap-3 bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                  <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                  <div className="text-[10px] text-slate-500 leading-relaxed space-y-1">
+                    <p>
+                      <span className="font-black">Δ WIP positivo</span> = hai prodotto più di quanto fatturato →
+                      aumenta il fatturato di competenza e l'utile fiscale.
+                    </p>
+                    <p>
+                      <span className="font-black">Δ Materiali positivo</span> = hai in magazzino più di quanto usato →
+                      riduce i costi variabili e aumenta l'utile fiscale.
+                    </p>
+                    <p>
+                      La base imponibile IRES è una stima semplificata — il commercialista applica
+                      ulteriori rettifiche (deduzioni ACE, variazioni permanenti/temporanee, ecc.).
+                    </p>
+                  </div>
+                </div>
+
+                {/* Campo note */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">
+                    Note / Riferimento inventario
+                  </label>
+                  <textarea
+                    value={rimanenzeAnno?.note || ''}
+                    onChange={e => handleRimanenzeField('note', e.target.value)}
+                    placeholder="es. Inventario del 31/12 a cura di Ragionier Ferreri — WIP da perizia cantiere Rossanese"
+                    rows={2}
+                    className="w-full bg-indigo-50/30 border border-indigo-100 rounded-xl px-4 py-3 text-xs text-slate-700 outline-none focus:border-indigo-300 resize-none"
+                  />
                 </div>
               </div>
-
-              {/* Campo note */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">
-                  Note / Riferimento inventario
-                </label>
-                <textarea
-                  value={rimanenzeAnno?.note || ''}
-                  onChange={e => handleRimanenzeField('note', e.target.value)}
-                  placeholder="es. Inventario del 31/12 a cura di Ragionier Ferreri — WIP da perizia cantiere Rossanese"
-                  rows={2}
-                  className="w-full bg-indigo-50/30 border border-indigo-100 rounded-xl px-4 py-3 text-xs text-slate-700 outline-none focus:border-indigo-300 resize-none"
-                />
-              </div>
-            </div>
-          </>
-        )}
+            </>
+          );
+        })()}
 
         {/* Placeholder se rimanenze non ancora inserite */}
         {!effettoRimanenze && (
