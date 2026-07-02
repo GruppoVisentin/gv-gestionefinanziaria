@@ -335,21 +335,38 @@ export const getDynamicDepreciation = (
   
   transactions.forEach(t => {
     if (t.ceType === 'capex') {
+      // Escludi categorie non ammortizzabili o di rimborso debito
+      if (t.category === '[FINANZA] Quota Capitale Rate Finanziamenti' ||
+          t.category === '[INVESTIMENTI] Acquisto Terreni per Sviluppo' ||
+          t.category === '[INVESTIMENTI] Investimento in Nuova Società' ||
+          t.category === '[INVESTIMENTI] Acquisto Immobili per Sviluppo') {
+        return;
+      }
+
       const tDate = parseUTCDate(t.date);
       const tYear = tDate.getUTCFullYear();
       
-      // Auto-ammortamento standard a 5 anni (20% annuo)
-      if (tYear <= anno && tYear > anno - 5) {
+      // Auto-ammortamento standard a 5 anni (60 mesi) con pro-rata temporis
+      const yearsDiff = anno - tYear;
+      if (yearsDiff >= 0 && yearsDiff <= 5) {
         const annualDepreciation = Math.abs(t.amount) * 0.20;
+        const startMonth = tDate.getUTCMonth();
         
-        if (tYear === anno) {
-          const startMonth = tDate.getUTCMonth();
-          const firstYearQuota = annualDepreciation * ((12 - startMonth) / 12);
-          const monthlyAmount = firstYearQuota / (12 - startMonth);
+        if (yearsDiff === 0) {
+          // Primo anno: pro-rata per i mesi attivi rimanenti dell'anno
+          const activeMonths = 12 - startMonth;
+          const monthlyAmount = annualDepreciation / 12;
           for (let m = startMonth; m < 12; m++) {
             depreciation[m] += monthlyAmount;
           }
+        } else if (yearsDiff === 5) {
+          // Sesto anno: quota di completamento per i primi startMonth mesi
+          const monthlyAmount = annualDepreciation / 12;
+          for (let m = 0; m < startMonth; m++) {
+            depreciation[m] += monthlyAmount;
+          }
         } else {
+          // Anni intermedi: 12 mesi completi
           const monthlyAmount = annualDepreciation / 12;
           for (let m = 0; m < 12; m++) {
             depreciation[m] += monthlyAmount;
@@ -877,8 +894,8 @@ export const calcPrevisioneFiscale = (
   // Utile netto stimato dopo imposte
   // Corretto: dobbiamo includere anche gli oneri finanziari, proventi finanziari e voci straordinarie per calcolare l'utile netto finale
   const utileDopoImposte = includeForecast
-    ? (ceMetrics.proiezioneEbt + variazioneRimanenze - totaleImposteStimate)
-    : (ceMetrics.ebtTot + variazioneRimanenze - totaleImposteStimate);
+    ? (ceMetrics.proiezioneEbt + ceMetrics.proiezioneStraordinario + variazioneRimanenze - totaleImposteStimate)
+    : (ceMetrics.ebtTot + ceMetrics.straordinario + variazioneRimanenze - totaleImposteStimate);
 
   return {
     ebtCompetenza,

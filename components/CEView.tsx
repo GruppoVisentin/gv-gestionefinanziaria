@@ -135,10 +135,29 @@ const CEView: React.FC<CEViewProps> = ({
 
   const metrics = useMemo(() => {
     const varRimEffettivo = modalita === 'competenza' ? varRim : 0;
+    
+    // Proiezioni
+    const proiezioneEbitda = rawMetrics.proiezioneEbitda + varRimEffettivo;
+    const proiezioneEbit = rawMetrics.proiezioneEbit + varRimEffettivo;
+    const proiezioneEbt = rawMetrics.proiezioneEbt + varRimEffettivo;
     const utileProj = rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario + varRimEffettivo - previsioneFiscale.totaleImposteStimate;
+
+    // YTD Actuals (Consuntivo)
+    const ebitdaTot = rawMetrics.ebitdaTot + varRimEffettivo;
+    const ebitTot = rawMetrics.ebitTot + varRimEffettivo;
+    const ebtTot = rawMetrics.ebtTot + varRimEffettivo;
+    const utileNettoTot = rawMetrics.utileNettoTot + varRimEffettivo;
+
     return {
       ...rawMetrics,
-      proiezioneUtile: utileProj
+      proiezioneEbitda,
+      proiezioneEbit,
+      proiezioneEbt,
+      proiezioneUtile: utileProj,
+      ebitdaTot,
+      ebitTot,
+      ebtTot,
+      utileNettoTot
     };
   }, [rawMetrics, previsioneFiscale.totaleImposteStimate, varRim, modalita]);
 
@@ -1306,7 +1325,7 @@ const CEView: React.FC<CEViewProps> = ({
                 <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda/metrics.proiezioneFatturato : 0)}</td>
               </tr>
 
-              {effettoRimanenze && (
+              {effettoRimanenze && modalita === 'cassa' && (
                 <tr className="bg-emerald-50/50 font-bold border-b border-emerald-100">
                   <td className="py-3 px-4 text-xs sticky left-0 bg-emerald-50/50 z-10 text-emerald-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                     <div className="flex flex-col">
@@ -1359,8 +1378,8 @@ const CEView: React.FC<CEViewProps> = ({
                   </div>
                 </td>
                 {activeTab === 'monthly' && metrics.ebt.map((v, i) => <CalcCell key={i} value={v} />)}
-                <CalcCell value={metrics.ebt.reduce((a,b)=>a+b,0)} isKPI />
-                <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.ebt.reduce((a,b)=>a+b,0)/metrics.fatturato : 0)}</td>
+                <CalcCell value={metrics.ebtTot} isKPI />
+                <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.ebtTot/metrics.fatturato : 0)}</td>
                 <ProjectionCell value={metrics.proiezioneEbt} />
                 <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbt/metrics.proiezioneFatturato : 0)}</td>
               </tr>
@@ -1876,9 +1895,11 @@ const CEView: React.FC<CEViewProps> = ({
             : (rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario - previsioneFiscale.totaleImposteStimate);
 
           const rettificatoRicavi = cassaRicavi + effettoRimanenze.deltaWip;
-          const rettificatoCostiVar = cassaCostiVar - effettoRimanenze.deltaMateriali;
+          const rettificatoCostiVar = cassaCostiVar - effettoRimanenze.deltaMateriali - effettoRimanenze.deltaTerreni;
           const rettificatoUtile = cassaUtile + effettoRimanenze.variazioneRimanenzeNetta;
-          const baseIRES = (tipoRettifica === 'consuntivo' ? metrics.ebitTot : metrics.proiezioneEbit) + effettoRimanenze.variazioneRimanenzeNetta;
+          const baseIRES = Math.max(0, tipoRettifica === 'consuntivo'
+            ? (rawMetrics.ebtTot + rawMetrics.straordinario + effettoRimanenze.variazioneRimanenzeNetta)
+            : (rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario + effettoRimanenze.variazioneRimanenzeNetta));
 
           return (
             <>
