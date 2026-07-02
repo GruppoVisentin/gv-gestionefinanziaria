@@ -997,15 +997,18 @@ const App: React.FC = () => {
     }
   }, [regolePuntaNet, rulesFileHandle, appState]);
 
-  // --- AUTO-SAVE ---
+  // --- REACTIVE DEBUNCED AUTO-SAVE ---
+  // Ogni volta che cambia un qualsiasi dato (transazioni, rimanenze, budget, etc.),
+  // salva automaticamente sul file 1.5 secondi dopo che l'utente ha smesso di digitare.
   useEffect(() => {
     if (!fileHandle || appState !== 'ready') return;
     
-    const interval = setInterval(() => {
+    const timer = setTimeout(() => {
       saveToFile(fileHandle, backupFileHandle);
-    }, 3 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fileHandle, backupFileHandle, appState, saveToFile]);
+    }, 1500);
+    
+    return () => clearTimeout(timer);
+  }, [buildBackupData, fileHandle, backupFileHandle, appState, saveToFile]);
 
   // --- KEYBOARD SHORTCUTS ---
   useEffect(() => {
