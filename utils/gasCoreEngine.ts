@@ -676,9 +676,10 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
 export interface EffettoRimanenze {
   deltaWip: number;               // wipFine - wipInizio (positivo = aumento = ricavo)
   deltaMateriali: number;         // materialiFine - materialiInizio (positivo = aumento = meno costo)
-  variazioneRimanenzeNetta: number; // deltaWip + deltaMateriali
+  deltaTerreni: number;           // terreniFine - terreniInizio (positivo = aumento = meno costo)
+  variazioneRimanenzeNetta: number; // deltaWip + deltaMateriali + deltaTerreni
   fatturatoCompetenzaRettificato: number; // fatturato cassa + deltaWip
-  costiVariabiliRettificati: number;      // costi variabili - deltaMateriali
+  costiVariabiliRettificati: number;      // costi variabili - deltaMateriali - deltaTerreni
   utileRettificato: number;               // utile netto + variazioneRimanenzeNetta
   baseImponibileIRES: number;             // approssimazione base IRES
 }
@@ -690,15 +691,16 @@ export const calcEffettoRimanenze = (
 
   const deltaWip = rimanenze.wipFine - rimanenze.wipInizio;
   const deltaMateriali = rimanenze.materialiFine - rimanenze.materialiInizio;
-  const variazioneRimanenzeNetta = deltaWip + deltaMateriali;
+  const deltaTerreni = (rimanenze.terreniFine || 0) - (rimanenze.terreniInizio || 0);
+  const variazioneRimanenzeNetta = deltaWip + deltaMateriali + deltaTerreni;
 
   // Il deltaWip aumenta il fatturato di competenza
   // (hai prodotto valore non ancora fatturato)
   const fatturatoCompetenzaRettificato = ceMetrics.fatturato + deltaWip;
 
-  // Il deltaMateriali riduce i costi variabili
-  // (hai comprato materiali che sono ancora in magazzino, non ancora consumati)
-  const costiVariabiliRettificati = ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) - deltaMateriali;
+  // Il deltaMateriali e deltaTerreni riducono i costi variabili
+  // (hai comprato materiali/terreni che sono ancora in magazzino/propriet, non ancora consumati/edificati)
+  const costiVariabiliRettificati = ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) - deltaMateriali - deltaTerreni;
 
   // Utile rettificato = utile per cassa + effetto rimanenze
   const utileRettificato = ceMetrics.utileNettoTot + variazioneRimanenzeNetta;
@@ -710,6 +712,7 @@ export const calcEffettoRimanenze = (
   return {
     deltaWip,
     deltaMateriali,
+    deltaTerreni,
     variazioneRimanenzeNetta,
     fatturatoCompetenzaRettificato,
     costiVariabiliRettificati,
@@ -763,9 +766,14 @@ export const calcPrevisioneFiscale = (
 ): PrevisioneFiscale => {
 
   // Variazione rimanenze (da modulo B)
+  const deltaTerreni = rimanenze
+    ? (rimanenze.terreniFine || 0) - (rimanenze.terreniInizio || 0)
+    : 0;
+
   const variazioneRimanenze = rimanenze
     ? (rimanenze.wipFine - rimanenze.wipInizio) +
-      (rimanenze.materialiFine - rimanenze.materialiInizio)
+      (rimanenze.materialiFine - rimanenze.materialiInizio) +
+      deltaTerreni
     : 0;
 
   // Base imponibile IRES
@@ -778,8 +786,11 @@ export const calcPrevisioneFiscale = (
   const deltaWip = rimanenze
     ? rimanenze.wipFine - rimanenze.wipInizio
     : 0;
+  const deltaMateriali = rimanenze
+    ? rimanenze.materialiFine - rimanenze.materialiInizio
+    : 0;
 
-  const valoreProduzione = (includeForecast ? ceMetrics.proiezioneFatturato : ceMetrics.fatturato) + deltaWip;
+  const valoreProduzione = (includeForecast ? ceMetrics.proiezioneFatturato : ceMetrics.fatturato) + deltaWip + deltaMateriali + deltaTerreni;
 
   // Costo del personale dipendente (escluso dall'IRAP)
   const costoPersonaleDipendente = transactions

@@ -186,6 +186,10 @@ export interface RimanenzeAnno {
   materialiInizio: number;  // valore materiali a inizio anno
   materialiFine: number;    // valore materiali a fine anno
 
+  // Rimanenze terreni edificabili
+  terreniInizio?: number;   // valore terreni a inizio anno
+  terreniFine?: number;     // valore terreni a fine anno
+
   // Note libere (es. riferimento a perizia o inventario)
   note?: string;
 }

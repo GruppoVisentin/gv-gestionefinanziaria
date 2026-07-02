@@ -276,13 +276,16 @@ const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, o
     if (rimAnno) {
       const deltaWip = (rimAnno.wipFine || 0) - (rimAnno.wipInizio || 0);
       const deltaMat = (rimAnno.materialiFine || 0) - (rimAnno.materialiInizio || 0);
-      return baseUtile + deltaWip + deltaMat;
+      const deltaTer = (rimAnno.terreniFine || 0) - (rimAnno.terreniInizio || 0);
+      return baseUtile + deltaWip + deltaMat + deltaTer;
     }
     return baseUtile;
   }, [ceMetrics, rimanenze, targetYear]);
 
   const autoRimanenze = useMemo(() => {
-    return rimanenze[String(targetYear)]?.wipFine || 0;
+    const rim = rimanenze[String(targetYear)];
+    if (!rim) return 0;
+    return (rim.wipFine || 0) + (rim.materialiFine || 0) + (rim.terreniFine || 0);
   }, [rimanenze, targetYear]);
 
   const autoFixedAssets = useMemo(() => {

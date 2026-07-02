@@ -169,6 +169,7 @@ const CEView: React.FC<CEViewProps> = ({
     const current = rimanenzeAnno ?? {
       wipInizio: 0, wipFine: 0,
       materialiInizio: 0, materialiFine: 0,
+      terreniInizio: 0, terreniFine: 0,
     };
     onRimanenzeChange?.(selectedYear, { ...current, [field]: value });
   };
@@ -1642,7 +1643,7 @@ const CEView: React.FC<CEViewProps> = ({
           )}
         </div>
 
-        <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
 
           {/* INPUT — Lavori in corso (WIP) */}
           <div className="space-y-4">
@@ -1783,6 +1784,76 @@ const CEView: React.FC<CEViewProps> = ({
               )}
             </div>
           </div>
+
+          {/* INPUT — Rimanenze Terreni Edificabili */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <h4 className="text-xs font-black text-emerald-700 uppercase tracking-widest">
+                Rimanenze Terreni Edificabili
+              </h4>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">
+                  Terreni a inizio {selectedYear} (= fine {selectedYear - 1})
+                </label>
+                <div className="flex items-center bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 focus-within:border-emerald-400 transition-all">
+                  <span className="text-sm font-bold text-emerald-400 mr-3">€</span>
+                  <input
+                    type="number"
+                    value={rimanenzeAnno?.terreniInizio || ''}
+                    placeholder="0"
+                    onChange={e => handleRimanenzeField('terreniInizio', parseFloat(e.target.value) || 0)}
+                    className="w-full bg-transparent text-sm font-bold text-emerald-900 outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Valore terreni edificabili in inventario al 31/12/{selectedYear - 1}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">
+                  Terreni a fine {selectedYear}
+                </label>
+                <div className="flex items-center bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 focus-within:border-emerald-400 transition-all">
+                  <span className="text-sm font-bold text-emerald-400 mr-3">€</span>
+                  <input
+                    type="number"
+                    value={rimanenzeAnno?.terreniFine || ''}
+                    placeholder="0"
+                    onChange={e => handleRimanenzeField('terreniFine', parseFloat(e.target.value) || 0)}
+                    className="w-full bg-transparent text-sm font-bold text-emerald-900 outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Valore terreni edificabili in inventario al 31/12/{selectedYear}
+                </p>
+              </div>
+
+              {rimanenzeAnno && (
+                <div className={`flex items-center justify-between px-4 py-3 rounded-xl ${
+                  (rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0) >= 0
+                    ? 'bg-emerald-50 border border-emerald-200'
+                    : 'bg-rose-50 border border-rose-200'
+                }`}>
+                  <span className="text-xs font-black text-slate-600 uppercase tracking-wide">
+                    Δ Terreni
+                  </span>
+                  <span className={`text-sm font-black ${
+                    (rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0) >= 0
+                      ? 'text-emerald-600'
+                      : 'text-rose-600'
+                  }`}>
+                    {(rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0) >= 0 ? '+' : ''}
+                    {formatEuro((rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0))}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* RISULTATI RETTIFICATI — visibili solo se rimanenze inserite */}
@@ -1843,10 +1914,17 @@ const CEView: React.FC<CEViewProps> = ({
                         <td className="py-3 text-right text-sm font-black text-slate-900 font-mono">{formatEuro(rettificatoRicavi)}</td>
                       </tr>
                       <tr>
-                        <td className="py-3 text-xs font-bold text-slate-600">Costi Variabili</td>
+                        <td className="py-3 text-xs font-bold text-slate-600">
+                          <div className="flex flex-col">
+                            <span>Costi Variabili</span>
+                            <span className="text-[9px] font-normal text-slate-400">
+                              Mat. {effettoRimanenze.deltaMateriali >= 0 ? '+' : ''}{formatEuro(effettoRimanenze.deltaMateriali)} | Terreni {effettoRimanenze.deltaTerreni >= 0 ? '+' : ''}{formatEuro(effettoRimanenze.deltaTerreni)}
+                            </span>
+                          </div>
+                        </td>
                         <td className="py-3 text-right text-xs font-medium text-slate-500 font-mono">{formatEuro(cassaCostiVar)}</td>
-                        <td className={`py-3 text-right text-xs font-bold font-mono ${effettoRimanenze.deltaMateriali >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {effettoRimanenze.deltaMateriali >= 0 ? '-' : '+'}{formatEuro(Math.abs(effettoRimanenze.deltaMateriali))}
+                        <td className={`py-3 text-right text-xs font-bold font-mono ${effettoRimanenze.deltaMateriali + effettoRimanenze.deltaTerreni >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {effettoRimanenze.deltaMateriali + effettoRimanenze.deltaTerreni >= 0 ? '-' : '+'}{formatEuro(Math.abs(effettoRimanenze.deltaMateriali + effettoRimanenze.deltaTerreni))}
                         </td>
                         <td className="py-3 text-right text-sm font-black text-slate-900 font-mono">{formatEuro(rettificatoCostiVar)}</td>
                       </tr>
