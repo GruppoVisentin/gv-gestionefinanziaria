@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Transaction, TransactionType, Project, InitialBalanceBreakdown, LoanDetails, AppView, RimanenzeData } from '../types';
+import { Transaction, TransactionType, Project, InitialBalanceBreakdown, LoanDetails, AppView, RimanenzeData, CEData } from '../types';
 import { CURRENCY_FORMATTER, DATE_FORMATTER, CATEGORY_TO_CE_TYPE } from '../constants';
 import { Plus, X, Save, ListFilter, Pencil, Trash2, ChevronDown, Calendar, CalendarClock, Landmark, Printer, Briefcase, Shield, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';

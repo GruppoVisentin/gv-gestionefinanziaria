@@ -75,7 +75,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   expenseCategories, 
   onGoToManuale,
   initialAccounts = [],
-  initialData = {},
+  initialData = { accounts: [], previousFinancing: 0 },
   projects = [],
   spSnapshots = [],
   ceManualData = {}
@@ -154,8 +154,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     const ratingYear = activeSP && activeSP.dataRiferimento ? parseUTCDate(activeSP.dataRiferimento).getUTCFullYear() : ratingSelectedYear;
     
     const manualData = ceManualData || {};
-    const ceData = buildCEData(txList, ratingYear, manualData[ratingYear.toString()]);
-    const ceMetrics = calcCEMetrics(ceData, txList);
+    const ceData = buildCEData(txList, ratingYear, manualData[ratingYear.toString()], 'competenza', projects, initialData);
+    const ceMetrics = calcCEMetrics(ceData, txList, projects, initialData);
     const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, txList) : null;
     
     if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0, breakdown: [], radarData: [], spMetrics: null };
@@ -300,7 +300,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     // non solo EBITDA / oneriFin (che sarebbe solo Interest Coverage)
     const dscrDenominatore = (ceMetrics.oneriFin + ceMetrics.costiCapitaleRate) || 1;
     return { score, label, color, dscr: ceMetrics.ebitdaTot / dscrDenominatore, breakdown, radarData, spMetrics };
-  }, [transactions, spSnapshots, ceManualData, ratingSelectedYear]);
+  }, [transactions, spSnapshots, ceManualData, ratingSelectedYear, projects, initialData]);
 
   // Andamento Conto Corrente (Liquidità Cumulata)
   const contoCorrenteData = useMemo(() => {
@@ -725,10 +725,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     
     const yearToUse = activeSP && activeSP.dataRiferimento ? parseUTCDate(activeSP.dataRiferimento).getUTCFullYear() : patrimonioYear;
     const manualData = ceManualData || {};
-    const ceData = buildCEData(txList, yearToUse, manualData[yearToUse.toString()]);
-    const ceMetrics = calcCEMetrics(ceData, txList);
+    const ceData = buildCEData(txList, yearToUse, manualData[yearToUse.toString()], 'competenza', projects, initialData);
+    const ceMetrics = calcCEMetrics(ceData, txList, projects, initialData);
     return activeSP ? calcSPMetrics(activeSP, ceMetrics, txList) : null;
-  }, [transactions, spSnapshots, ceManualData, patrimonioYear]);
+  }, [transactions, spSnapshots, ceManualData, patrimonioYear, projects, initialData]);
 
   const structureChartData = useMemo(() => {
     if (!spMetrics) return [];

@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Transaction, SPSnapshot, AppView, CEData } from '../types';
+import { Transaction, SPSnapshot, AppView, CEData, Project } from '../types';
 import { buildCEData, calcCEMetrics, calcSPMetrics, calculateRepayment, parseUTCDate, getDynamicDepreciation, generateDefault2025Snapshot } from '../utils/gasCoreEngine';
 import { exportSPPDF } from '../utils/spPdfExport';
-import PDFExportButton from './PDFExportButton';
 import * as XLSX from 'xlsx';
 import { parseDettaglioFEP, parseDettaglioFEA } from '../utils/puntaNetImporter';
 import { calcOutstandingInvoices } from '../utils/spReconciliation';
@@ -38,6 +37,7 @@ interface SPViewProps {
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
   saldoInizialeCF: SaldoInizialeCashFlow;
   rimanenze: RimanenzeData;
+  projects?: Project[];
 }
 
 const formatEuro = (val: number) => 
@@ -164,7 +164,7 @@ const ManualInput = ({ label, value, onChange, icon: Icon, isManual, tooltipText
   );
 };
 
-const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, onUpdateSnapshots, ceManualData, onGoToManuale, saldoInizialeCF, rimanenze }) => {
+const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, onUpdateSnapshots, ceManualData, onGoToManuale, saldoInizialeCF, rimanenze, projects = [] }) => {
   const [currentSnap, setCurrentSnap] = useState<SPSnapshot>(snapshots[0] || EMPTY_SNAPSHOT);
   const [isEditing, setIsEditing] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -266,9 +266,9 @@ const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, o
 
   const ceMetrics = useMemo(() => {
     const year = parseUTCDate(currentSnap.dataRiferimento).getUTCFullYear();
-    const ceData = buildCEData(transactions, year, ceManualData[year.toString()]);
-    return calcCEMetrics(ceData, transactions);
-  }, [transactions, currentSnap.dataRiferimento, ceManualData]);
+    const ceData = buildCEData(transactions, year, ceManualData[year.toString()], 'competenza', projects, initialData);
+    return calcCEMetrics(ceData, transactions, projects, initialData);
+  }, [transactions, currentSnap.dataRiferimento, ceManualData, projects, initialData]);
 
   const autoUtile = useMemo(() => {
     const baseUtile = ceMetrics.utileNettoTot || 0;

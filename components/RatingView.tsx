@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Transaction, SPSnapshot, CEData, AppView } from '../types';
+import { Transaction, SPSnapshot, CEData, AppView, Project, InitialBalanceBreakdown } from '../types';
 import { buildCEData, calcCEMetrics, calcSPMetrics, calcRollingDSODPO } from '../utils/gasCoreEngine';
 import PDFExportButton from './PDFExportButton';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
@@ -22,6 +22,8 @@ interface RatingViewProps {
   spSnapshots: SPSnapshot[];
   ceManualData: Record<string, Partial<CEData>>;
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
+  projects?: Project[];
+  initialData?: InitialBalanceBreakdown;
 }
 
 const formatEuro = (val: number) => 
@@ -30,7 +32,7 @@ const formatEuro = (val: number) =>
 const formatPercent = (val: number) => 
   new Intl.NumberFormat('it-IT', { style: 'percent', minimumFractionDigits: 1 }).format(val);
 
-const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceManualData, onGoToManuale }) => {
+const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceManualData, onGoToManuale, projects = [], initialData }) => {
   const [showHelp, setShowHelp] = useState(false);
   
   const sortedSnapshots = useMemo(() => 
@@ -54,11 +56,11 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
   );
 
   const ceData = useMemo(() => 
-    buildCEData(transactions, ratingYear, ceManualData[ratingYear.toString()]), 
-    [transactions, ratingYear, ceManualData]
+    buildCEData(transactions, ratingYear, ceManualData[ratingYear.toString()], 'competenza', projects, initialData), 
+    [transactions, ratingYear, ceManualData, projects, initialData]
   );
 
-  const ceMetrics = useMemo(() => calcCEMetrics(ceData, transactions), [ceData, transactions]);
+  const ceMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
 
   const spMetrics = useMemo(() => 
     activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions) : null,

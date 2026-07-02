@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, CEData, CERow, BudgetData, RimanenzeAnno, RimanenzeData, AppView, Project, InitialBalanceBreakdown } from '../types';
-import { buildCEData, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, getDynamicLoansInterests, calculateRepayment, parseUTCDate } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, getDynamicLoansInterests, calculateRepayment, parseUTCDate, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
 import { exportCEPDF } from '../utils/cePdfExport';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import CalcoloDrawer, { FormulaStep } from './CalcoloDrawer';
@@ -27,6 +27,8 @@ interface CEViewProps {
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
   projects?: Project[];
   initialData?: InitialBalanceBreakdown;
+  aliquotaIRES?: number;
+  aliquotaIRAP?: number;
 }
 
 const formatEuro = (val: number) => 
@@ -90,6 +92,8 @@ const CEView: React.FC<CEViewProps> = ({
   onGoToManuale,
   projects,
   initialData,
+  aliquotaIRES = 24,
+  aliquotaIRAP = 3.9,
 }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [activeTab, setActiveTab] = useState<'ytd' | 'projection' | 'monthly' | 'scostamenti'>('ytd');
@@ -105,6 +109,21 @@ const CEView: React.FC<CEViewProps> = ({
 
   const metrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
 
+  const rimanenzeAnno = rimanenze?.[selectedYear.toString()];
+  const previsioneFiscale = useMemo(() =>
+    calcPrevisioneFiscale(
+      transactions,
+      selectedYear,
+      metrics,
+      rimanenzeAnno,
+      aliquotaIRES / 100,
+      aliquotaIRAP / 100,
+      true,
+      initialData
+    ),
+    [transactions, selectedYear, metrics, rimanenzeAnno, aliquotaIRES, aliquotaIRAP, initialData]
+  );
+
   const txAnno = useMemo(() => 
     (transactions || []).filter(tx => parseUTCDate((modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date).getUTCFullYear() === selectedYear),
     [transactions, selectedYear, modalita]
@@ -119,8 +138,6 @@ const CEView: React.FC<CEViewProps> = ({
       manualData[selectedYear.toString()]
     );
   }, [transactions, selectedYear, meseScostamento, budgetData, manualData]);
-
-  const rimanenzeAnno = rimanenze?.[selectedYear.toString()];
 
   const effettoRimanenze = useMemo(() => {
     if (!rimanenzeAnno) return null;
@@ -1327,7 +1344,7 @@ const CEView: React.FC<CEViewProps> = ({
                 <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbt/metrics.proiezioneFatturato : 0)}</td>
               </tr>
 
-              {renderRow('Imposte Stimate (Manuale)', ceData.imposte, 'manual', 'imposte', ceData.imposte.reduce((a,b)=>a+b,0))}
+              {renderRow('Imposte Stimate (Manuale)', ceData.imposte, 'manual', 'imposte', previsioneFiscale.totaleImposteStimate)}
 
               <tr className="bg-slate-900 text-white font-black">
                 <td className="py-4 px-4 text-sm sticky left-0 bg-slate-900 z-10">

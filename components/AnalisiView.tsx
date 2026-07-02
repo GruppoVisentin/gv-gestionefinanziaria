@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Transaction, CEData, AppView, RimanenzeData, InitialBalanceBreakdown } from '../types';
+import { Transaction, CEData, AppView, RimanenzeData, InitialBalanceBreakdown, Project } from '../types';
 import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, parseUTCDate } from '../utils/gasCoreEngine';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
@@ -54,6 +54,7 @@ interface AnalisiViewProps {
   onChangeAliquotaIRES: (v: number) => void;
   onChangeAliquotaIRAP: (v: number) => void;
   initialData?: InitialBalanceBreakdown;
+  projects?: Project[];
 }
 
 type Coloresoglia = 'ottimo' | 'buono' | 'attenzione' | 'critico';
@@ -114,6 +115,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
   onChangeAliquotaIRES,
   onChangeAliquotaIRAP,
   initialData,
+  projects = [],
 }) => {
   const [activeTab, setActiveTab] = useState<'indici' | 'preventivo' | 'orario' | 'sacri' | 'fiscale'>('indici');
   const [showHelp, setShowHelp] = useState(false);
@@ -390,10 +392,10 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
 
   const ceData = useMemo(() => {
     const manual = ceManualData ? ceManualData[anno.toString()] : undefined;
-    return buildCEData(transactions, anno, manual);
-  }, [transactions, anno, ceManualData]);
+    return buildCEData(transactions, anno, manual, 'competenza', projects, initialData);
+  }, [transactions, anno, ceManualData, projects, initialData]);
 
-  const metrics = useMemo(() => calcCEMetrics(ceData, transactions), [ceData, transactions]);
+  const metrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
 
   const compensoSociPrev = useMemo(() => {
     return (transactions || [])
@@ -446,7 +448,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     const breakEven = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + ammortamenti) / (1 - pctCostiVar) : 0;
 
     const costiCapitaleRate = txPrev
-      .filter(tx => tx.ceType === 'capex' && tx.category?.includes('[FINANZA] Quota Capitale Rate Finanziamenti'))
+      .filter(tx => getCeType(tx) === 'capex' && tx.category?.includes('[FINANZA] Quota Capitale Rate Finanziamenti'))
       .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
     const breakEvenCassa = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + costiCapitaleRate) / (1 - pctCostiVar) : 0;
 
@@ -476,7 +478,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
       vistaPrevFiscale,
       initialData
     ),
-    [transactions, anno, metrics, rimanenzeAnno, aliquotaIRES, aliquotaIRAP, vistaPrevFiscale]
+    [transactions, anno, metrics, rimanenzeAnno, aliquotaIRES, aliquotaIRAP, vistaPrevFiscale, initialData]
   );
 
 

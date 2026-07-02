@@ -1,7 +1,209 @@
 {
   "version": "4.0",
-  "timestamp": "2026-06-27T07:08:08.446Z",
+  "timestamp": "2026-07-01T14:37:48.900Z",
   "transactions": [
+    {
+      "date": "2026-11-15",
+      "description": "Esclusione F24 - Acconto 2",
+      "amount": 0,
+      "type": "EXPENSE",
+      "category": "[FISCO] F24 — IRPEF / IRES / IRAP",
+      "isForecast": true,
+      "vatRate": 0,
+      "ceType": "solo_cashflow",
+      "id": "762e31d8-c37a-4880-ad5b-73ffc149dafa"
+    },
+    {
+      "date": "2026-06-15",
+      "description": "Esclusione F24 - Acconto 1 + Saldo",
+      "amount": 0,
+      "type": "EXPENSE",
+      "category": "[FISCO] F24 — IRPEF / IRES / IRAP",
+      "isForecast": true,
+      "vatRate": 0,
+      "ceType": "solo_cashflow",
+      "id": "69e84d2b-82d0-44e9-b95f-a9f849bbfbda"
+    },
+    {
+      "amount": 100000,
+      "vatRate": 10,
+      "date": "2028-03-15",
+      "description": "Visman Srl - Visman Srl - saldo",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "272ff584-0870-4e03-b24c-6b5ff3d6e5f2"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2028-01-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "ca55f744-f95e-49c4-9cd6-e2af392a26dd"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-12-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "f322351c-a703-4ace-9745-8a5983a03c79"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-11-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "3163893c-9d2f-4666-8aa9-57cf4deaa5bf"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-10-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "c94431ef-b535-4f97-93b8-98f644e35b0e"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-09-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "b18a0355-5cf3-46ab-acec-b1333d1b8de9"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-08-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "e6bc9503-0d2f-4dd3-8f06-e0307c53551e"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-07-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "8510efa3-1d93-4be5-93c3-9e8798177337"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-06-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "d573e3f0-4dce-4307-b2f1-1bf741525d4d"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-05-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "ac9701d5-1bbb-42d0-b37f-6c821ba176c9"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-04-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "434480d1-a69d-48c0-80a2-c4393211e01c"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-03-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "4fc283c8-7bd2-42ba-a61d-159372df569a"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-02-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "fd9f943b-2ee7-4b97-9c22-e260712fb5f8"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2027-01-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "3a0718ba-da30-4c02-bfc0-c09c732c6ebb"
+    },
+    {
+      "amount": 150000,
+      "vatRate": 10,
+      "date": "2026-08-15",
+      "description": "Visman Srl - Visman Srl - acconto",
+      "type": "INCOME",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "ricavo_core",
+      "id": "12f2b220-e0f9-401e-8b99-6b70d21145ce"
+    },
     {
       "amount": 246.94,
       "vatRate": 0,
@@ -693,66 +895,6 @@
       "isForecast": true,
       "ceType": "solo_cashflow",
       "id": "11512e03-8d4c-405f-9bdb-a9f9e6375152",
-      "sourceRef": "Wizard Inizio Anno"
-    },
-    {
-      "amount": 30000,
-      "vatRate": 0,
-      "date": "2026-12-15",
-      "description": "SUBAPPALTI MANODOPERA",
-      "type": "EXPENSE",
-      "category": "[PERSONALE] Subappalti Manodopera",
-      "isForecast": true,
-      "ceType": "costo_variabile",
-      "id": "c150d107-7045-4249-9d4d-f450073b121b",
-      "sourceRef": "Wizard Inizio Anno"
-    },
-    {
-      "amount": 30000,
-      "vatRate": 0,
-      "date": "2026-11-15",
-      "description": "SUBAPPALTI MANODOPERA",
-      "type": "EXPENSE",
-      "category": "[PERSONALE] Subappalti Manodopera",
-      "isForecast": true,
-      "ceType": "costo_variabile",
-      "id": "a152f804-cc22-423f-a8d1-f4723d473d1a",
-      "sourceRef": "Wizard Inizio Anno"
-    },
-    {
-      "amount": 30000,
-      "vatRate": 0,
-      "date": "2026-10-15",
-      "description": "SUBAPPALTI MANODOPERA",
-      "type": "EXPENSE",
-      "category": "[PERSONALE] Subappalti Manodopera",
-      "isForecast": true,
-      "ceType": "costo_variabile",
-      "id": "64c5868e-b376-464a-b5e4-c1e8ce89380c",
-      "sourceRef": "Wizard Inizio Anno"
-    },
-    {
-      "amount": 30000,
-      "vatRate": 0,
-      "date": "2026-09-15",
-      "description": "SUBAPPALTI MANODOPERA",
-      "type": "EXPENSE",
-      "category": "[PERSONALE] Subappalti Manodopera",
-      "isForecast": true,
-      "ceType": "costo_variabile",
-      "id": "88055e41-6c6d-4ba1-9094-b6882f1966b1",
-      "sourceRef": "Wizard Inizio Anno"
-    },
-    {
-      "amount": 30000,
-      "vatRate": 0,
-      "date": "2026-08-15",
-      "description": "SUBAPPALTI MANODOPERA",
-      "type": "EXPENSE",
-      "category": "[PERSONALE] Subappalti Manodopera",
-      "isForecast": true,
-      "ceType": "costo_variabile",
-      "id": "ccd66dc4-8b30-4ac2-9d0a-6251a891cdb9",
       "sourceRef": "Wizard Inizio Anno"
     },
     {
@@ -2054,54 +2196,6 @@
     {
       "amount": 90000,
       "vatRate": 22,
-      "date": "2026-12-15",
-      "description": "FORNITORI MATERIALI",
-      "type": "EXPENSE",
-      "category": "[FORNITORI] Fornitori Materiali",
-      "isForecast": true,
-      "ceType": "costo_variabile",
-      "id": "901fe0c6-0498-456b-a09b-c40b1bfa17a5",
-      "sourceRef": "Wizard Inizio Anno"
-    },
-    {
-      "amount": 90000,
-      "vatRate": 22,
-      "date": "2026-11-15",
-      "description": "FORNITORI MATERIALI",
-      "type": "EXPENSE",
-      "category": "[FORNITORI] Fornitori Materiali",
-      "isForecast": true,
-      "ceType": "costo_variabile",
-      "id": "55d0135a-5256-42a2-bf48-4f59c34e322f",
-      "sourceRef": "Wizard Inizio Anno"
-    },
-    {
-      "amount": 90000,
-      "vatRate": 22,
-      "date": "2026-10-15",
-      "description": "FORNITORI MATERIALI",
-      "type": "EXPENSE",
-      "category": "[FORNITORI] Fornitori Materiali",
-      "isForecast": true,
-      "ceType": "costo_variabile",
-      "id": "4f746d63-5523-4d3d-b0b5-6005ea613804",
-      "sourceRef": "Wizard Inizio Anno"
-    },
-    {
-      "amount": 90000,
-      "vatRate": 22,
-      "date": "2026-09-15",
-      "description": "FORNITORI MATERIALI",
-      "type": "EXPENSE",
-      "category": "[FORNITORI] Fornitori Materiali",
-      "isForecast": true,
-      "ceType": "costo_variabile",
-      "id": "b16ecb6d-d327-484f-b4da-58baa8173392",
-      "sourceRef": "Wizard Inizio Anno"
-    },
-    {
-      "amount": 90000,
-      "vatRate": 22,
       "date": "2026-08-15",
       "description": "FORNITORI MATERIALI",
       "type": "EXPENSE",
@@ -2480,96 +2574,36 @@
       "ceType": "ricavo_core"
     },
     {
-      "amount": 145000,
-      "vatRate": 4,
+      "amount": 150000,
+      "vatRate": 10,
       "date": "2026-12-15",
-      "description": "SOCIETA' DA DEFINIRE - acconto",
+      "description": "Visman Srl - Visman Srl - acconto",
       "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
-      "project": "Residence Living Sky",
-      "isForecast": true,
-      "id": "5f313c36-8617-43f9-abcd-6768ab413115",
-      "ceType": "ricavo_core"
-    },
-    {
-      "amount": 145000,
-      "vatRate": 4,
-      "date": "2026-11-15",
-      "description": "SOCIETA' DA DEFINIRE - acconto",
-      "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
-      "project": "Residence Living Sky",
-      "isForecast": true,
-      "id": "6145e149-a0e5-4625-b6f0-5900aaa68dfc",
-      "ceType": "ricavo_core"
-    },
-    {
-      "amount": 145000,
-      "vatRate": 4,
-      "date": "2026-10-15",
-      "description": "SOCIETA' DA DEFINIRE - acconto",
-      "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
-      "project": "Residence Living Sky",
-      "isForecast": true,
-      "id": "827cad86-21a3-454d-9cd0-2f7ec63a176a",
-      "ceType": "ricavo_core"
-    },
-    {
-      "amount": 145000,
-      "vatRate": 4,
-      "date": "2026-09-15",
-      "description": "SOCIETA' DA DEFINIRE - acconto",
-      "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
-      "project": "Residence Living Sky",
-      "isForecast": true,
-      "id": "ad8b95ba-04ef-4d08-8079-07a7468882a2",
-      "ceType": "ricavo_core"
-    },
-    {
-      "amount": 145000,
-      "vatRate": 4,
-      "date": "2026-07-15",
-      "description": "SOCIETA' DA DEFINIRE - acconto",
-      "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
-      "project": "Residence Living Sky",
-      "isForecast": true,
-      "id": "97d332da-7292-4dff-a8fe-549d9fbf0ef6",
-      "ceType": "ricavo_core"
-    },
-    {
-      "amount": 145000,
-      "vatRate": 4,
-      "date": "2026-12-15",
-      "description": "Visman Srl - acconto",
-      "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
       "project": "Residence Living City",
       "isForecast": true,
       "id": "1a8d5e88-723b-4d57-b2db-67f336bbea01",
       "ceType": "ricavo_core"
     },
     {
-      "amount": 145000,
-      "vatRate": 4,
+      "amount": 150000,
+      "vatRate": 10,
       "date": "2026-11-15",
-      "description": "Visman Srl - acconto",
+      "description": "Visman Srl - Visman Srl - acconto",
       "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
       "project": "Residence Living City",
       "isForecast": true,
       "id": "aa266a36-73b0-4bab-a61a-458898fe6ac6",
       "ceType": "ricavo_core"
     },
     {
-      "amount": 145000,
-      "vatRate": 4,
+      "amount": 150000,
+      "vatRate": 10,
       "date": "2026-10-15",
-      "description": "Visman Srl - acconto",
+      "description": "Visman Srl - Visman Srl - acconto",
       "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
       "project": "Residence Living City",
       "isForecast": true,
       "id": "f569f262-1847-422d-8300-c4847896a552",
@@ -2660,12 +2694,12 @@
       "ceType": "ricavo_core"
     },
     {
-      "amount": 145000,
-      "vatRate": 4,
+      "amount": 150000,
+      "vatRate": 10,
       "date": "2026-09-15",
-      "description": "Visman Srl - acconto",
+      "description": "Visman Srl - Visman Srl - acconto",
       "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
       "project": "Residence Living City",
       "isForecast": true,
       "id": "fa0e384f-c52c-4b51-ac3a-910f0c98a975",
@@ -2696,27 +2730,15 @@
       "ceType": "ricavo_core"
     },
     {
-      "amount": 145000,
-      "vatRate": 4,
+      "amount": 150000,
+      "vatRate": 10,
       "date": "2026-07-15",
-      "description": "Visman Srl - acconto",
+      "description": "Visman Srl - Visman Srl - acconto",
       "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
+      "category": "[CANTIERE] Anticipi da Clienti su Commessa",
       "project": "Residence Living City",
       "isForecast": true,
       "id": "ebc2970c-7a9d-4cb0-ac81-a637bc5bd830",
-      "ceType": "ricavo_core"
-    },
-    {
-      "amount": 145000,
-      "vatRate": 4,
-      "date": "2026-06-15",
-      "description": "Visman Srl - acconto",
-      "type": "INCOME",
-      "category": "[CANTIERE] SAL — Stato Avanzamento Lavori",
-      "project": "Residence Living City",
-      "isForecast": true,
-      "id": "f37a0bc0-0724-425f-844b-c0c7616cd297",
       "ceType": "ricavo_core"
     },
     {
@@ -27985,6 +28007,604 @@
       "description": "DIFFERENZIALE SU CONTRATTO DERIVATI DI TASSO - Home banking",
       "sourceRef": "Punta Net · 19/02/2026",
       "isForecast": false
+    },
+    {
+      "id": "35f98e49-34e7-4065-abd9-6c89322dfe6a",
+      "date": "2026-08-01",
+      "amount": 5940,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "8bd319de-a7c1-4753-8d9f-43a1379e6456",
+      "date": "2026-09-01",
+      "amount": 5940,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "f48d219b-4342-4881-82d2-1dcf665477bc",
+      "date": "2026-10-01",
+      "amount": 5940,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "8d39bca8-8319-4180-b4fe-76a742c19d6b",
+      "date": "2026-11-01",
+      "amount": 5940,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "0a517707-226f-4ea2-9f72-4f64485ae6ca",
+      "date": "2026-12-01",
+      "amount": 5940,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "fea4f4c0-3afc-4093-89d9-45d1340a4cf8",
+      "date": "2027-01-01",
+      "amount": 5940,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "945eb659-7c8f-473b-83c6-1b60f8bbd22c",
+      "date": "2027-02-01",
+      "amount": 5940,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "1d428e81-b713-4aed-b6d7-1940fcf01e57",
+      "date": "2027-03-01",
+      "amount": 5940,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "7a273d46-9b7a-4380-8149-d12be704e48b",
+      "date": "2027-04-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "06607d11-2197-4c79-99bd-28002a1181e4",
+      "date": "2027-05-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "22cbdd0f-9506-40f8-9b5d-e1a9aa238497",
+      "date": "2027-06-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "1aaeed18-d4ce-48da-b6e6-79e2c0c550bb",
+      "date": "2027-07-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "b86cfe13-5184-4396-894b-affa094e7b0d",
+      "date": "2027-08-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "955981ca-ce07-47fc-9590-3d1e153d06ee",
+      "date": "2027-09-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "2efd57f0-28dd-429e-9378-9b720bcecbb4",
+      "date": "2027-10-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "cdc7ed13-e044-49a9-a40d-9ff597c86de4",
+      "date": "2027-11-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "0b93b413-dbe4-4151-a69e-5a5f4cc79f59",
+      "date": "2027-12-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "44d1e7fb-ce1e-4e41-9cbd-5b5fa5b57073",
+      "date": "2028-01-01",
+      "amount": 528,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[PERSONALE] Subappalti Manodopera",
+      "description": "Previsionale Residence Living City — Subappalti Manodopera",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "45ad6e1c-1ecf-401d-a96c-88eacf7dfa0f",
+      "date": "2026-08-01",
+      "amount": 65293.079625000006,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "5a76a5f4-aba2-4998-8ef3-2e940a6f4e47",
+      "date": "2026-09-01",
+      "amount": 65293.079625000006,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "deeef027-3780-480c-9334-92c12ba0d8df",
+      "date": "2026-10-01",
+      "amount": 65293.079625000006,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "6804d69c-1f46-44f9-b867-d6eb368ef866",
+      "date": "2026-11-01",
+      "amount": 65293.079625000006,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "3440621f-45ef-4ebb-bc2c-f2993e090ef2",
+      "date": "2026-12-01",
+      "amount": 65293.079625000006,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "1a5c351c-a9af-462f-a155-2d44917c71a8",
+      "date": "2027-01-01",
+      "amount": 65293.079625000006,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "50d7e0a6-b0fb-4f9e-a73c-823d6962a1db",
+      "date": "2027-02-01",
+      "amount": 65293.079625000006,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "a6a2556b-734c-43b3-bf33-da02c5237b70",
+      "date": "2027-03-01",
+      "amount": 65293.079625000006,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "c28fb3d1-b53c-4a50-aebb-fedfacfd2257",
+      "date": "2027-04-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "37d99021-d3a5-4063-b8f3-2ebd6b7842e9",
+      "date": "2027-05-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "2cfda387-e002-4bd1-a1ce-222bbddcfa82",
+      "date": "2027-06-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "62f5e840-c05a-400d-ad41-c9cc57b47481",
+      "date": "2027-07-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "e9229218-a013-4d46-8151-a581c4f5e9d0",
+      "date": "2027-08-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "99fdcbb0-0b4f-482b-9bf5-a15e22603cb9",
+      "date": "2027-09-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "ff50a9c0-5165-4d5d-826a-b000bb11122b",
+      "date": "2027-10-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "01edb438-e229-4d18-8510-c0d868bffbe1",
+      "date": "2027-11-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "e409224b-e21b-45c6-9d96-2182b48ee49d",
+      "date": "2027-12-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "f8770b87-d50c-4cfb-99d5-0b4cd25cddbe",
+      "date": "2028-01-01",
+      "amount": 5803.8293,
+      "vatRate": 22,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Fornitori Materiali",
+      "description": "Previsionale Residence Living City — Fornitori Materiali",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "8ad6e332-04e1-422f-abb7-dceaef9b171f",
+      "date": "2027-04-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "c4748344-396b-49b3-ae16-d060e238b551",
+      "date": "2027-05-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "e64fc202-7bbb-4a1a-93b7-b28898eef16f",
+      "date": "2027-06-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "a5062395-8a2f-45bc-aa7b-ab5d3012c497",
+      "date": "2027-07-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "adfde455-f2a8-4e9a-84e8-8e096ce10175",
+      "date": "2027-08-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "4c58aa5d-f0b5-4fe9-91b5-14b7785fc73d",
+      "date": "2027-09-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "9a18eb9f-2f50-4fff-8700-65a6c4c37fea",
+      "date": "2027-10-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "8b8936b6-8b14-49b1-8c2c-540f451eb3dd",
+      "date": "2027-11-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "da7f64ad-baf3-449a-a552-8f8cfbd04ff2",
+      "date": "2027-12-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
+    },
+    {
+      "id": "72110131-2730-48c9-a00a-8e7876f028f0",
+      "date": "2028-01-01",
+      "amount": 146008.173,
+      "vatRate": 0,
+      "type": "EXPENSE",
+      "category": "[FORNITORI] Subappalti su Cantieri",
+      "description": "Previsionale Residence Living City — Subappalti su Cantieri",
+      "project": "Residence Living City",
+      "isForecast": true,
+      "ceType": "costo_variabile",
+      "sourceRef": "pd50ece3b"
     }
   ],
   "projects": [
@@ -28898,10 +29518,19 @@
       "RITENUTE SU BONIFICI"
     ],
     "[FISCO] F24 — IRPEF / IRES / IRAP": [
+      "Esclusione F24 - Acconto 1 + Saldo",
+      "Esclusione F24 - Acconto 2",
+      "F24 IRES/IRAP - Acconto 1 + Saldo",
       "IRPEF/IRES/IRAP"
     ],
     "[CANTIERE] Oneri Comunali, Abaco e Occupazioni": [
       "ABACO"
+    ],
+    "[CANTIERE] Anticipi da Clienti su Commessa": [
+      "Visman Srl - Anticipo previsionale",
+      "Visman Srl - Visman Srl - acconto",
+      "Visman Srl - Visman Srl - saldo",
+      "Visman Srl - acconto"
     ]
   },
   "initialData": {
@@ -28956,7 +29585,8 @@
     ],
     "accontiClienti": 0,
     "altriDebitiBT": 0,
-    "mutuiBT": 0
+    "mutuiBT": 0,
+    "imposteAnnoPrecedente": 0
   },
   "saldoInizialeCF": {
     "annoBase": 2026,
@@ -29050,9 +29680,161 @@
       }
     ]
   },
-  "tipologieCantiere": [],
-  "cantieriPrev": [],
-  "rimanenze": {},
+  "tipologieCantiere": [
+    {
+      "id": "nhadn6c83",
+      "nome": "Residence 4/6 alloggi",
+      "descrizione": "Immobiliare",
+      "vociAttive": [
+        {
+          "categoria": "[PERSONALE] Subappalti Manodopera",
+          "ceType": "costo_variabile",
+          "fasi": [
+            {
+              "id": "e27rftep2",
+              "meseInizio": 1,
+              "meseFine": 8,
+              "percentuale": 90
+            },
+            {
+              "id": "lthciaok1",
+              "meseInizio": 9,
+              "meseFine": 18,
+              "percentuale": 10
+            }
+          ]
+        },
+        {
+          "categoria": "[FORNITORI] Fornitori Materiali",
+          "ceType": "costo_variabile",
+          "fasi": [
+            {
+              "id": "9h799yu8p",
+              "meseInizio": 1,
+              "meseFine": 8,
+              "percentuale": 90
+            },
+            {
+              "id": "h55n1zb31",
+              "meseInizio": 9,
+              "meseFine": 18,
+              "percentuale": 10
+            }
+          ]
+        },
+        {
+          "categoria": "[FORNITORI] Subappalti su Cantieri",
+          "ceType": "costo_variabile",
+          "fasi": [
+            {
+              "id": "to5yhvb1w",
+              "meseInizio": 9,
+              "meseFine": 18,
+              "percentuale": 100
+            }
+          ]
+        },
+        {
+          "categoria": "[CONSULENZE] Professionisti Esterni di Cantiere",
+          "ceType": "costo_variabile",
+          "fasi": [
+            {
+              "id": "4xg9qopc3",
+              "meseInizio": -1,
+              "meseFine": -3,
+              "percentuale": 100
+            }
+          ]
+        },
+        {
+          "categoria": "[CANTIERE] Assicurazione Cantieri",
+          "ceType": "costo_variabile",
+          "fasi": [
+            {
+              "id": "4w429os59",
+              "meseInizio": -1,
+              "meseFine": -1,
+              "percentuale": 100
+            }
+          ]
+        },
+        {
+          "categoria": "[INVESTIMENTI] Acquisto Terreni per Sviluppo",
+          "ceType": "capex",
+          "fasi": [
+            {
+              "id": "rv5oehgpm",
+              "meseInizio": -6,
+              "meseFine": -6,
+              "percentuale": 100
+            }
+          ]
+        },
+        {
+          "categoria": "[INVESTIMENTI] Investimento in Nuova Società",
+          "ceType": "capex",
+          "fasi": [
+            {
+              "id": "1l31h28dw",
+              "meseInizio": -6,
+              "meseFine": -6,
+              "percentuale": 100
+            }
+          ]
+        },
+        {
+          "categoria": "[CANTIERE] Mediazione Agenzia",
+          "ceType": "costo_variabile",
+          "fasi": [
+            {
+              "id": "1orx3cdow",
+              "meseInizio": 18,
+              "meseFine": 18,
+              "percentuale": 100
+            }
+          ]
+        },
+        {
+          "categoria": "[FINANZA] Interessi su Mutuo Cantiere",
+          "ceType": "onere_finanziario",
+          "fasi": [
+            {
+              "id": "4ka9wz0gv",
+              "meseInizio": 1,
+              "meseFine": 18,
+              "percentuale": 100
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "cantieriPrev": [
+    {
+      "id": "pd50ece3b",
+      "nome": "Residence Living City",
+      "tipologiaId": "nhadn6c83",
+      "dataInizio": "2026-08-24",
+      "costiStimati": {
+        "[PERSONALE] Subappalti Manodopera": 52800,
+        "[FORNITORI] Fornitori Materiali": 580382.93,
+        "[FORNITORI] Subappalti su Cantieri": 1460081.73
+      },
+      "previsionaliGenerati": true,
+      "costiVatRates": {
+        "[PERSONALE] Subappalti Manodopera": 0,
+        "[FORNITORI] Subappalti su Cantieri": 0
+      }
+    }
+  ],
+  "rimanenze": {
+    "2026": {
+      "wipInizio": 0,
+      "wipFine": 0,
+      "materialiInizio": 0,
+      "materialiFine": 0
+    }
+  },
   "regolePuntaNet": [
     {
       "entityKey": "ADDEBITO CARTA DI CREDITO - HOME BANKING",

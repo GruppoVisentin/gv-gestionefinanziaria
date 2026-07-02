@@ -202,6 +202,8 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             onGoToManuale={props.onGoToManuale}
             projects={props.projects}
             initialData={props.initialData}
+            aliquotaIRES={props.aliquotaIRES}
+            aliquotaIRAP={props.aliquotaIRAP}
           />
         )}
         {activeTab === 'sp' && (
@@ -214,6 +216,7 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             onGoToManuale={props.onGoToManuale}
             saldoInizialeCF={props.saldoInizialeCF}
             rimanenze={props.rimanenze}
+            projects={props.projects}
           />
         )}
         {activeTab === 'budget' && (
@@ -230,6 +233,8 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             spSnapshots={props.spSnapshots}
             ceManualData={props.ceManualData}
             onGoToManuale={props.onGoToManuale}
+            projects={props.projects}
+            initialData={props.initialData}
           />
         )}
         {activeTab === 'analisi' && (
@@ -247,6 +252,7 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             onChangeAliquotaIRES={props.onChangeAliquotaIRES}
             onChangeAliquotaIRAP={props.onChangeAliquotaIRAP}
             initialData={props.initialData}
+            projects={props.projects}
           />
         )}
         {activeTab === 'iva' && (
