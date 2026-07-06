@@ -1258,11 +1258,38 @@ export const calcPosizIoneIVA = (
   }
 
   // Calcoliamo la posizione netta finale per ogni mese
+  const nextYear = anno + 1;
+  
+  // Trova i versamenti F24 IVA effettivi registrati a gennaio/febbraio dell'anno successivo
+  const versamentiNextYear = transactions.filter(tx => {
+    const d = parseUTCDate(tx.date);
+    return d.getUTCFullYear() === nextYear &&
+           tx.type === 'EXPENSE' &&
+           tx.category === '[FISCO] Versamento IVA' &&
+           !tx.isForecast;
+  });
+
+  const getVersamentoMeseNextYear = (m: number) => 
+    versamentiNextYear
+      .filter(tx => parseUTCDate(tx.date).getUTCMonth() === m)
+      .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+
   if (frequenzaLiquidazione === 'mensile') {
-    mensileCalcolato.forEach(m => {
-      m.posizionNetta = m.saldoIVA - m.versamentoIVA;
+    const decVersamentoNextYear = getVersamentoMeseNextYear(0); // Gennaio anno+1
+
+    mensileCalcolato.forEach((m, idx) => {
+      if (idx === 11) {
+        const decVersamento = decVersamentoNextYear || m.versamentoIVA;
+        m.posizionNetta = m.saldoIVA - decVersamento;
+      } else {
+        const nextMonthVersamento = mensileCalcolato[idx + 1]?.versamentoIVA || 0;
+        m.posizionNetta = m.saldoIVA - nextMonthVersamento;
+      }
     });
   } else {
+    // Q4 versamento avviene a Febbraio (mese 1) o Gennaio (mese 0) del prossimo anno
+    const q4VersamentoNextYear = getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0);
+
     mensileCalcolato.forEach((m, idx) => {
       if (idx === 2) {
         const q1Saldo = mensileCalcolato[0].saldoIVA + mensileCalcolato[1].saldoIVA + mensileCalcolato[2].saldoIVA;
@@ -1278,10 +1305,7 @@ export const calcPosizIoneIVA = (
         m.posizionNetta = q3Saldo - q3Versamenti;
       } else if (idx === 11) {
         const q4Saldo = mensileCalcolato[9].saldoIVA + mensileCalcolato[10].saldoIVA + mensileCalcolato[11].saldoIVA;
-        // BUG-009 FIX: Q4 versamento (pagato a feb anno successivo) va sottratto come residuo finale
-        // Il versamento Q4 avviene a febbraio anno+1, quindi rimane come debito da saldare
-        // ma la posizionNetta del trimestre è il saldo lordo del Q4 (residuo da versare a feb)
-        const q4Versamento = mensileCalcolato[11].versamentoIVA;
+        const q4Versamento = q4VersamentoNextYear || mensileCalcolato[11].versamentoIVA;
         m.posizionNetta = q4Saldo - q4Versamento;
       } else {
         m.posizionNetta = 0;
@@ -1291,7 +1315,21 @@ export const calcPosizIoneIVA = (
 
   const totaleIvaIncassata  = mensileCalcolato.reduce((s, m) => s + m.ivaIncassata, 0);
   const totaleIvaPagata     = mensileCalcolato.reduce((s, m) => s + m.ivaPagata, 0);
-  const totaleVersato        = mensileCalcolato.reduce((s, m) => s + m.versamentoIVA, 0);
+
+  // Calcolo totale versato riferito al periodo d'imposta dell'anno selezionato
+  let totaleVersato = 0;
+  if (frequenzaLiquidazione === 'mensile') {
+    const activeMonthsVersato = mensileCalcolato.slice(1).reduce((s, m) => s + m.versamentoIVA, 0);
+    const decVersamentoNextYear = getVersamentoMeseNextYear(0);
+    totaleVersato = activeMonthsVersato + decVersamentoNextYear;
+  } else {
+    const q1Payment = mensileCalcolato[4].versamentoIVA;
+    const q2Payment = mensileCalcolato[7].versamentoIVA;
+    const q3Payment = mensileCalcolato[10].versamentoIVA;
+    const q4Payment = getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0) || mensileCalcolato[11].versamentoIVA;
+    totaleVersato = q1Payment + q2Payment + q3Payment + q4Payment;
+  }
+
   const creditoDebitoResiduo = totaleIvaIncassata - totaleIvaPagata - totaleVersato;
 
   return {
