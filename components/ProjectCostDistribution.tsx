@@ -38,8 +38,8 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
     if (activeProjects.length === 0) return { months: [], data: {} };
 
     // 1. Determine Global Date Range
-    let minDate = new Date();
-    let maxDate = new Date();
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
     let hasEstimates = false;
 
     activeProjects.forEach(p => {
@@ -50,16 +50,16 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
             // Profs start 2 months before
             const profStart = new Date(start);
             profStart.setMonth(start.getMonth() - 2);
-            if (profStart < minDate) minDate = profStart;
+            if (!minDate || profStart < minDate) minDate = profStart;
 
             // Subs end 18 months after start (6 months initial + 12 months subs)
             const end = new Date(start);
             end.setMonth(start.getMonth() + 18);
-            if (end > maxDate) maxDate = end;
+            if (!maxDate || end > maxDate) maxDate = end;
         }
     });
 
-    if (!hasEstimates) return { months: [], data: {} };
+    if (!hasEstimates || !minDate || !maxDate) return { months: [], data: {} };
 
     // 2. Generate Month Headers
     const months: Date[] = [];
@@ -122,6 +122,37 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
 
     return { months, data };
   }, [activeProjects]);
+
+  const columnTotals = useMemo(() => {
+    const totals: Record<string, { labor: number; mat: number; sub: number; prof: number; total: number }> = {};
+    let grandTotal = 0;
+
+    timelineData.months.forEach(m => {
+        const key = `${m.getFullYear()}-${m.getMonth()}`;
+        let labor = 0;
+        let mat = 0;
+        let sub = 0;
+        let prof = 0;
+        let total = 0;
+
+        activeProjects.forEach(p => {
+            const pData = timelineData.data[p.id];
+            if (pData && pData[key]) {
+                const cell = pData[key];
+                labor += cell.labor;
+                mat += cell.mat;
+                sub += cell.sub;
+                prof += cell.prof;
+                total += cell.labor + cell.mat + cell.sub + cell.prof;
+            }
+        });
+
+        totals[key] = { labor, mat, sub, prof, total };
+        grandTotal += total;
+    });
+
+    return { totals, grandTotal };
+  }, [timelineData, activeProjects]);
 
 
   // Handlers
@@ -395,6 +426,33 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
                                     );
                                 })}
                             </tbody>
+                            <tfoot className="bg-slate-100 font-bold text-slate-800 text-xs border-t-2 border-slate-300">
+                                <tr>
+                                    <th className="px-4 py-3 sticky left-0 bg-slate-100 z-10 border-r border-slate-200">Totale Mensile</th>
+                                    {timelineData.months.map(m => {
+                                        const key = `${m.getFullYear()}-${m.getMonth()}`;
+                                        const col = columnTotals.totals[key];
+                                        if (!col || col.total === 0) return <td key={key} className="px-2 py-2 border-r border-slate-200 text-center text-slate-400 font-mono">-</td>;
+
+                                        return (
+                                            <td key={key} className="px-1 py-2 border-r border-slate-200 text-center align-top">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="font-mono text-slate-900">{CURRENCY_FORMATTER.format(col.total)}</span>
+                                                    <div className="flex h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                                        {col.prof > 0 && <div className="h-full bg-slate-400" style={{width: `${(col.prof/col.total)*100}%`}} title={`Prof: ${CURRENCY_FORMATTER.format(col.prof)}`}></div>}
+                                                        {col.labor > 0 && <div className="h-full bg-slate-500" style={{width: `${(col.labor/col.total)*100}%`}} title={`Mano: ${CURRENCY_FORMATTER.format(col.labor)}`}></div>}
+                                                        {col.mat > 0 && <div className="h-full bg-slate-600" style={{width: `${(col.mat/col.total)*100}%`}} title={`Mat: ${CURRENCY_FORMATTER.format(col.mat)}`}></div>}
+                                                        {col.sub > 0 && <div className="h-full bg-slate-700" style={{width: `${(col.sub/col.total)*100}%`}} title={`Sub: ${CURRENCY_FORMATTER.format(col.sub)}`}></div>}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        );
+                                    })}
+                                    <th className="px-2 py-3 text-center font-mono text-slate-900 bg-slate-200 border-l border-slate-300">
+                                        {CURRENCY_FORMATTER.format(columnTotals.grandTotal)}
+                                    </th>
+                                </tr>
+                            </tfoot>
                         </table>
                     )}
                 </div>
