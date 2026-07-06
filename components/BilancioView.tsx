@@ -227,6 +227,7 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             budgetData={props.budgetData}
             onBudgetChange={props.onBudgetChange}
             onGoToManuale={props.onGoToManuale}
+            projects={props.projects}
           />
         )}
         {activeTab === 'rating' && (

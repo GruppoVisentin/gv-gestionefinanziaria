@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Transaction, BudgetData, BudgetRow, AppView } from '../types';
+import { Transaction, BudgetData, BudgetRow, AppView, Project } from '../types';
 import { aggregateByMonthAndType } from '../utils/gasCoreEngine';
 import { exportBudgetPDF } from '../utils/budgetPdfExport';
 import PDFExportButton from './PDFExportButton';
@@ -25,6 +25,7 @@ interface BudgetViewProps {
   budgetData: Record<string, BudgetData>;
   onBudgetChange: (anno: number, data: BudgetData) => void;
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
+  projects?: Project[];
 }
 
 const formatEuro = (val: number) => 
@@ -44,11 +45,12 @@ const DEFAULT_BUDGET_ROWS: BudgetRow[] = [
   { categoria: 'Compenso Soci', ceType: 'distribuzione_utile', budgetAnnuo: 0, budgetMensile: Array(12).fill(0) },
 ];
 
-const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBudgetChange, onGoToManuale }) => {
+const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBudgetChange, onGoToManuale, projects = [] }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [isEditing, setIsEditing] = useState(false);
   const [showCopyBanner, setShowCopyBanner] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [modalita, setModalita] = useState<'cassa' | 'competenza'>('cassa');
 
   const currentBudget = useMemo(() => 
     budgetData[selectedYear.toString()] || { anno: selectedYear, righe: DEFAULT_BUDGET_ROWS }, 
@@ -94,8 +96,8 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
   };
 
   const actuals = useMemo(() => 
-    aggregateByMonthAndType(transactions, selectedYear), 
-    [transactions, selectedYear]
+    aggregateByMonthAndType(transactions, selectedYear, modalita, projects), 
+    [transactions, selectedYear, modalita, projects]
   );
 
   const totalBudgetRevenues = useMemo(() => currentBudget.righe.filter(r => r.ceType.startsWith('ricavo')).reduce((sum, r) => sum + r.budgetAnnuo, 0), [currentBudget]);
@@ -114,9 +116,9 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
   };
 
   const calculateScostamento = (actual: number, budget: number, ceType: string) => {
-    const diff = actual - budget;
     const isIncome = ceType.startsWith('ricavo');
-    const isPositive = isIncome ? diff >= 0 : diff <= 0;
+    const diff = isIncome ? (actual - budget) : (budget - actual);
+    const isPositive = diff >= 0;
     return { diff, isPositive };
   };
 
@@ -147,6 +149,31 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
 
           <div className="flex items-center gap-4">
             <HelpButton onClick={() => setShowHelp(true)} />
+
+            {/* Toggle modalità */}
+            <div className="flex items-center bg-slate-100 rounded-xl p-1 no-print">
+              <button
+                onClick={() => setModalita('cassa')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  modalita === 'cassa'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Per cassa
+              </button>
+              <button
+                onClick={() => setModalita('competenza')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  modalita === 'competenza'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Per competenza
+              </button>
+            </div>
+
             <div className="flex items-center bg-slate-100 rounded-xl p-1 no-print">
               <button 
                 onClick={() => setSelectedYear(prev => prev - 1)}
@@ -174,7 +201,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
             )}
 
             <button
-              onClick={() => exportBudgetPDF({ selectedYear, budgetData: currentBudget, actuals })}
+              onClick={() => exportBudgetPDF({ selectedYear, budgetData: currentBudget, actuals, modalita })}
               className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-800 text-xs font-black rounded-xl transition-all active:scale-95 shadow-sm bg-white"
               title="Esporta Budget e Scostamenti in PDF Tecnico"
             >

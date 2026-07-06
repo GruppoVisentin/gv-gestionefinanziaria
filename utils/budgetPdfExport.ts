@@ -6,6 +6,7 @@ interface BudgetPdfOptions {
   selectedYear: number;
   budgetData: BudgetData;
   actuals: Record<string, number[]>;
+  modalita?: 'cassa' | 'competenza';
 }
 
 const formatEuro = (val: number) => 
@@ -17,7 +18,8 @@ const formatPercent = (val: number) =>
 export const exportBudgetPDF = ({
   selectedYear,
   budgetData,
-  actuals
+  actuals,
+  modalita = 'cassa'
 }: BudgetPdfOptions) => {
   const pdf = new jsPDF('p', 'mm', 'a4'); // Portrait to match SP view layout and allow deep analysis page
   const pdfW = pdf.internal.pageSize.getWidth();
@@ -37,7 +39,7 @@ export const exportBudgetPDF = ({
 
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(`Esercizio di Pianificazione: ${selectedYear} · Analisi di Controllo di Gestione`, 15, 26);
+  pdf.text(`Esercizio di Pianificazione: ${selectedYear} · Analisi di Controllo di Gestione · Metodo: ${modalita.toUpperCase()}`, 15, 26);
   pdf.text(`Documento di Analisi Strategica Interna · Generato: ${new Date().toLocaleDateString('it-IT')}`, 15, 30);
 
   // Badge Stato
@@ -53,16 +55,16 @@ export const exportBudgetPDF = ({
   // Draw main structure table
   const tableBody = budgetData.righe.map(r => {
     const actualTotal = Math.abs(actuals[r.ceType]?.reduce((a, b) => a + b, 0) || 0);
-    const diff = actualTotal - r.budgetAnnuo;
     const isIncome = r.ceType.startsWith('ricavo');
-    const isPositive = isIncome ? diff >= 0 : diff <= 0;
+    const diff = isIncome ? (actualTotal - r.budgetAnnuo) : (r.budgetAnnuo - actualTotal);
+    const isPositive = diff >= 0;
     const pct = r.budgetAnnuo > 0 ? (actualTotal / r.budgetAnnuo) : 0;
     return [
       r.categoria,
       { content: formatEuro(r.budgetAnnuo), styles: { textColor: [180, 83, 9] as [number, number, number], fontStyle: 'bold' as const } }, // amber-700
       { content: formatEuro(actualTotal), styles: { textColor: [12, 74, 110] as [number, number, number], fontStyle: 'bold' as const } }, // sky-900
       { 
-        content: `${diff >= 0 ? '+' : ''}${formatEuro(diff)}`, 
+        content: `${isPositive ? '+' : ''}${formatEuro(diff)}`, 
         styles: { 
           textColor: (isPositive ? [5, 150, 105] : [225, 29, 72]) as [number, number, number], // emerald-600 or rose-600
           fontStyle: 'bold' as const
