@@ -395,7 +395,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     return buildCEData(transactions, anno, manual, 'competenza', projects, initialData);
   }, [transactions, anno, ceManualData, projects, initialData]);
 
-  const metrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
+  const rawMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
 
   const compensoSociPrev = useMemo(() => {
     return (transactions || [])
@@ -471,15 +471,91 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     calcPrevisioneFiscale(
       transactions,
       anno,
-      metrics,
+      rawMetrics,
       rimanenzeAnno,
       aliquotaIRES / 100,
       aliquotaIRAP / 100,
       vistaPrevFiscale,
       initialData
     ),
-    [transactions, anno, metrics, rimanenzeAnno, aliquotaIRES, aliquotaIRAP, vistaPrevFiscale, initialData]
+    [transactions, anno, rawMetrics, rimanenzeAnno, aliquotaIRES, aliquotaIRAP, vistaPrevFiscale, initialData]
   );
+
+  const varRim = useMemo(() => {
+    if (!rimanenzeAnno) return 0;
+    return ((rimanenzeAnno.wipFine || 0) - (rimanenzeAnno.wipInizio || 0)) +
+           ((rimanenzeAnno.materialiFine || 0) - (rimanenzeAnno.materialiInizio || 0)) +
+           ((rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0));
+  }, [rimanenzeAnno]);
+
+  const deltaWip = useMemo(() => {
+    if (!rimanenzeAnno) return 0;
+    return (rimanenzeAnno.wipFine || 0) - (rimanenzeAnno.wipInizio || 0);
+  }, [rimanenzeAnno]);
+
+  const metrics = useMemo(() => {
+    // Valori Consuntivo (YTD)
+    const ebitdaTot = rawMetrics.ebitdaTot + varRim;
+    const ebitTot = rawMetrics.ebitTot + varRim;
+    const ebtTot = rawMetrics.ebtTot + varRim;
+    const utileNettoTot = rawMetrics.utileNettoTot + varRim;
+
+    const fatturatoCompetenza = rawMetrics.fatturato + deltaWip;
+
+    const ebitdaPercent = fatturatoCompetenza > 0 ? ebitdaTot / fatturatoCompetenza : 0;
+    const ebitPercent = fatturatoCompetenza > 0 ? ebitTot / fatturatoCompetenza : 0;
+    const ebtPercent = fatturatoCompetenza > 0 ? ebtTot / fatturatoCompetenza : 0;
+    const utileNettoPercent = fatturatoCompetenza > 0 ? utileNettoTot / fatturatoCompetenza : 0;
+
+    // Valori Previsionali (12m Proiezione)
+    const proiezioneEbitda = rawMetrics.proiezioneEbitda + varRim;
+    const proiezioneEbit = rawMetrics.proiezioneEbit + varRim;
+    const proiezioneEbt = rawMetrics.proiezioneEbt + varRim;
+    const proiezioneUtile = rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario + varRim - previsioneFiscale.totaleImposteStimate;
+
+    const proiezioneFatturatoCompetenza = rawMetrics.proiezioneFatturato + deltaWip;
+
+    const projCostiVariabiliCompetenza = rawMetrics.proiezioneCostiVariabili - (rimanenzeAnno ? ((rimanenzeAnno.materialiFine || 0) - (rimanenzeAnno.materialiInizio || 0) + (rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0)) : 0);
+
+    const proiezioneEbitdaPercent = proiezioneFatturatoCompetenza > 0 ? proiezioneEbitda / proiezioneFatturatoCompetenza : 0;
+    const proiezioneEbitPercent = proiezioneFatturatoCompetenza > 0 ? proiezioneEbit / proiezioneFatturatoCompetenza : 0;
+    const proiezioneUtileNettoPercent = proiezioneFatturatoCompetenza > 0 ? proiezioneUtile / proiezioneFatturatoCompetenza : 0;
+
+    // Ricalcolo Break-even di competenza
+    const projCostiFissiTot = proiezioneEbitda - proiezioneEbit; // Ammortamenti di competenza
+    const projCostiFissiOperativi = rawMetrics.proiezioneCostiFissi + rawMetrics.proiezioneCostiStudio;
+    const projCostiFissiCompleti = projCostiFissiOperativi + projCostiFissiTot;
+
+    const projPctCostiVar = proiezioneFatturatoCompetenza > 0 ? projCostiVariabiliCompetenza / proiezioneFatturatoCompetenza : 0;
+    const breakEven = (1 - projPctCostiVar) > 0 ? projCostiFissiCompleti / (1 - projPctCostiVar) : 0;
+
+    const projCostiFissiCassa = projCostiFissiOperativi + rawMetrics.costiCapitaleRate;
+    const breakEvenCassa = (1 - projPctCostiVar) > 0 ? projCostiFissiCassa / (1 - projPctCostiVar) : 0;
+
+    return {
+      ...rawMetrics,
+      ebitdaTot,
+      ebitTot,
+      ebtTot,
+      utileNettoTot,
+      fatturato: fatturatoCompetenza,
+      ebitdaPercent,
+      ebitPercent,
+      ebtPercent,
+      utileNettoPercent,
+      proiezioneEbitda,
+      proiezioneEbit,
+      proiezioneEbt,
+      proiezioneUtile,
+      proiezioneFatturato: proiezioneFatturatoCompetenza,
+      proiezioneCostiVariabili: projCostiVariabiliCompetenza,
+      proiezioneEbitdaPercent,
+      proiezioneEbitPercent,
+      proiezioneUtileNettoPercent,
+      breakEven,
+      breakEvenCassa
+    };
+  }, [rawMetrics, varRim, deltaWip, previsioneFiscale.totaleImposteStimate, rimanenzeAnno]);
 
 
   const { projBreakEven, projBreakEvenCassa } = useMemo(() => {
