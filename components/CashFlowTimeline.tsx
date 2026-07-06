@@ -27,6 +27,8 @@ interface CashFlowTimelineProps {
   onDeleteTransaction: (id: string) => void;
   rimanenze?: RimanenzeData;
   ceManualData?: Record<string, Partial<CEData>>;
+  aliquotaIRES?: number;
+  aliquotaIRAP?: number;
 }
 
 const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({ 
@@ -45,7 +47,9 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   onUpdateTransaction,
   onDeleteTransaction,
   rimanenze,
-  ceManualData
+  ceManualData,
+  aliquotaIRES = 24,
+  aliquotaIRAP = 3.9
 }) => {
   const [isEditingBalance, setIsEditingBalance] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -279,7 +283,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     const prevYearStr = (currentYear - 1).toString();
     const prevYearRimanenze = rimanenze?.[prevYearStr];
 
-    const prevFiscalePrev = calcPrevisioneFiscale(transactions, currentYear - 1, ceMetricsPrev, prevYearRimanenze, 0.24, 0.039, true, initialData);
+    const prevFiscalePrev = calcPrevisioneFiscale(transactions, currentYear - 1, ceMetricsPrev, prevYearRimanenze, aliquotaIRES / 100, aliquotaIRAP / 100, true, initialData);
     const taxPrev = prevFiscalePrev.totaleImposteStimate; // IRES + IRAP of previous year
 
     // Acconti for currentYear are 40% and 60% of previous year's tax
@@ -308,7 +312,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       },
       posIva
     };
-  }, [transactions, currentYear, projects, initialData, rimanenze, ceManualData]);
+  }, [transactions, currentYear, projects, initialData, rimanenze, ceManualData, aliquotaIRES, aliquotaIRAP]);
 
   // --- CALCULATION LOGIC FOR THRESHOLDS ---
   const { avgMonthlyExpense, safetyThreshold, avgMonthlyExpenseForecast, avgMonthlyExpenseActual } = useMemo(() => {
@@ -620,16 +624,27 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
   const mesiARischio = useMemo(() => {
     const result: { mese: number; saldo: number; tipo: 'negativo' | 'attenzione' }[] = [];
-    // Evaluate strictly based on the forecast scenario
+    const today = new Date();
+    const isPastYear = currentYear < today.getUTCFullYear();
+    
+    if (isPastYear) return []; // Nessun rischio futuro per anni passati
+
+    const isCurrentYear = currentYear === today.getUTCFullYear();
+    const currentMonth = today.getUTCMonth();
+
+    // Valutazione basata sullo scenario previsionale
     let cumulativo = saldoInizialePrevisionale;
 
     for (let i = 0; i < 12; i++) {
       cumulativo += calculateMonthlyFlow(i, true);
 
-      if (cumulativo < 0) {
-        result.push({ mese: i, saldo: cumulativo, tipo: 'negativo' });
-      } else if (cumulativo < safetyThreshold) {
-        result.push({ mese: i, saldo: cumulativo, tipo: 'attenzione' });
+      // Segnala solo mesi correnti o futuri dell'anno corrente, o tutti i mesi degli anni futuri
+      if (!isCurrentYear || i >= currentMonth) {
+        if (cumulativo < 0) {
+          result.push({ mese: i, saldo: cumulativo, tipo: 'negativo' });
+        } else if (cumulativo < safetyThreshold) {
+          result.push({ mese: i, saldo: cumulativo, tipo: 'attenzione' });
+        }
       }
     }
     return result;

@@ -2025,6 +2025,8 @@ const App: React.FC = () => {
                   onDeleteTransaction={handleDeleteTransaction}
                   rimanenze={rimanenze}
                   ceManualData={ceManualData}
+                  aliquotaIRES={aliquotaIRES}
+                  aliquotaIRAP={aliquotaIRAP}
                 />
             </div>
           </div>
