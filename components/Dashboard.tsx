@@ -309,6 +309,19 @@ const Dashboard: React.FC<DashboardProps> = ({
     const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
     let cumulative = accountsList.reduce((sum, acc) => sum + (acc?.balance || 0), 0) || 0;
     
+    // Aggiunge i flussi reali degli anni precedenti per avere il corretto saldo di partenza del conto corrente dell'anno selezionato
+    txList.forEach(t => {
+      const d = t && t.date ? parseUTCDate(t.date) : null;
+      if (d && d.getUTCFullYear() < contoCorrenteYear && !t.isForecast && t.ceType !== 'ammortamento') {
+        const amt = getGrossAmount(t);
+        if (t.type === TransactionType.INCOME) {
+          cumulative += amt;
+        } else {
+          cumulative -= amt;
+        }
+      }
+    });
+    
     return months.map((m, index) => {
       const monthTxs = txList.filter(t => {
         const d = t && t.date ? parseUTCDate(t.date) : null;
