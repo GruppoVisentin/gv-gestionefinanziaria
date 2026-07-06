@@ -135,7 +135,13 @@ const CEView: React.FC<CEViewProps> = ({
 
   const metrics = useMemo(() => {
     const varRimEffettivo = modalita === 'competenza' ? varRim : 0;
-    
+    const deltaWip = (modalita === 'competenza' && rimanenzeAnno)
+      ? ((rimanenzeAnno.wipFine || 0) - (rimanenzeAnno.wipInizio || 0))
+      : 0;
+
+    // Fatturato rettificato per competenza (OIC)
+    const fatturatoCompetenza = rawMetrics.fatturato + deltaWip;
+
     // Proiezioni
     const proiezioneEbitda = rawMetrics.proiezioneEbitda + varRimEffettivo;
     const proiezioneEbit = rawMetrics.proiezioneEbit + varRimEffettivo;
@@ -148,6 +154,12 @@ const CEView: React.FC<CEViewProps> = ({
     const ebtTot = rawMetrics.ebtTot + varRimEffettivo;
     const utileNettoTot = rawMetrics.utileNettoTot + varRimEffettivo;
 
+    // Recalculate percentages relative to adjusted revenue
+    const ebitdaPercent = fatturatoCompetenza > 0 ? ebitdaTot / fatturatoCompetenza : 0;
+    const ebitPercent = fatturatoCompetenza > 0 ? ebitTot / fatturatoCompetenza : 0;
+    const ebtPercent = fatturatoCompetenza > 0 ? ebtTot / fatturatoCompetenza : 0;
+    const utileNettoPercent = fatturatoCompetenza > 0 ? utileNettoTot / fatturatoCompetenza : 0;
+
     return {
       ...rawMetrics,
       proiezioneEbitda,
@@ -157,9 +169,13 @@ const CEView: React.FC<CEViewProps> = ({
       ebitdaTot,
       ebitTot,
       ebtTot,
-      utileNettoTot
+      utileNettoTot,
+      ebitdaPercent,
+      ebitPercent,
+      ebtPercent,
+      utileNettoPercent
     };
-  }, [rawMetrics, previsioneFiscale.totaleImposteStimate, varRim, modalita]);
+  }, [rawMetrics, previsioneFiscale.totaleImposteStimate, varRim, modalita, rimanenzeAnno]);
 
   const txAnno = useMemo(() => 
     (transactions || []).filter(tx => parseUTCDate((modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date).getUTCFullYear() === selectedYear),
