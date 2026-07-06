@@ -2726,7 +2726,6 @@ const App: React.FC = () => {
         <input 
           type="file" 
           ref={fileInputRef} 
-          accept=".gvcf,.json,application/json,text/plain,*/*" 
           className="hidden" 
           onChange={handleMobileFileChange} 
         />

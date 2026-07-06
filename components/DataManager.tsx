@@ -369,7 +369,6 @@ const DataManager: React.FC<DataManagerProps> = ({
                 type="file" 
                 ref={fileInputRef} 
                 className="hidden" 
-                accept=".json,.gvcf,application/json,text/plain,*/*" 
                 onChange={handleFileChange}
             />
             <button 
