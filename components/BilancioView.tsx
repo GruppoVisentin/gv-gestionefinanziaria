@@ -238,6 +238,9 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             onGoToManuale={props.onGoToManuale}
             projects={props.projects}
             initialData={props.initialData}
+            rimanenze={props.rimanenze}
+            aliquotaIRES={props.aliquotaIRES}
+            aliquotaIRAP={props.aliquotaIRAP}
           />
         )}
         {activeTab === 'analisi' && (

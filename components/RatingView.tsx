@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Transaction, SPSnapshot, CEData, AppView, Project, InitialBalanceBreakdown } from '../types';
-import { buildCEData, calcCEMetrics, calcSPMetrics, calcRollingDSODPO } from '../utils/gasCoreEngine';
+import { Transaction, SPSnapshot, CEData, AppView, Project, InitialBalanceBreakdown, RimanenzeData } from '../types';
+import { buildCEData, calcCEMetrics, calcSPMetrics, calcRollingDSODPO, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
 import PDFExportButton from './PDFExportButton';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import { HelpButton } from './HelpPanel';
@@ -24,6 +24,9 @@ interface RatingViewProps {
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
   projects?: Project[];
   initialData?: InitialBalanceBreakdown;
+  rimanenze?: RimanenzeData;
+  aliquotaIRES?: number;
+  aliquotaIRAP?: number;
 }
 
 const formatEuro = (val: number) => 
@@ -32,7 +35,17 @@ const formatEuro = (val: number) =>
 const formatPercent = (val: number) => 
   new Intl.NumberFormat('it-IT', { style: 'percent', minimumFractionDigits: 1 }).format(val);
 
-const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceManualData, onGoToManuale, projects = [], initialData }) => {
+const RatingView: React.FC<RatingViewProps> = ({ 
+  transactions, 
+  spSnapshots, 
+  ceManualData, 
+  onGoToManuale, 
+  projects = [], 
+  initialData,
+  rimanenze,
+  aliquotaIRES = 24,
+  aliquotaIRAP = 3.9
+}) => {
   const [showHelp, setShowHelp] = useState(false);
   
   const sortedSnapshots = useMemo(() => 
@@ -72,18 +85,57 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
     [transactions]
   );
 
+  const previsioneFiscale = useMemo(() => {
+    const rimAnno = rimanenze?.[ratingYear.toString()];
+    return calcPrevisioneFiscale(
+      transactions,
+      ratingYear,
+      ceMetrics,
+      rimAnno,
+      aliquotaIRES / 100,
+      aliquotaIRAP / 100,
+      true,
+      initialData
+    );
+  }, [transactions, ratingYear, ceMetrics, rimanenze, aliquotaIRES, aliquotaIRAP, initialData]);
+
   const indicators = useMemo(() => {
     if (!spMetrics) return [];
+
+    const rimAnno = rimanenze?.[ratingYear.toString()];
+    const deltaWip = rimAnno ? ((rimAnno.wipFine || 0) - (rimAnno.wipInizio || 0)) : 0;
+    const deltaMat = rimAnno ? ((rimAnno.materialiFine || 0) - (rimAnno.materialiInizio || 0)) : 0;
+    const deltaTer = rimAnno ? ((rimAnno.terreniFine || 0) - (rimAnno.terreniInizio || 0)) : 0;
+    const varRim = deltaWip + deltaMat + deltaTer;
+
+    // EBITDA di Competenza
+    const ebitdaDiCompetenza = ceMetrics.ebitdaTot + varRim;
+
+    // Utile Netto e Ricavi di Competenza
+    const fatturatoCompetenza = ceMetrics.fatturato + deltaWip;
+    const utileNettoCompetenza = previsioneFiscale.utileDopoImposte;
+    const utileNettoPercentCompetenza = fatturatoCompetenza > 0 ? utileNettoCompetenza / fatturatoCompetenza : 0;
     
-    // PFN / EBITDA
+    // PFN / EBITDA (re-calculate using competence EBITDA and handle negative EBITDA correctly)
     let pfnEbitdaHealth: 'green' | 'orange' | 'red' = 'red';
     let pfnEbitdaScore = 0;
-    if (spMetrics.pfnSuEbitda <= 3) {
-      pfnEbitdaHealth = 'green';
-      pfnEbitdaScore = 1;
-    } else if (spMetrics.pfnSuEbitda <= 4.5) {
-      pfnEbitdaHealth = 'orange';
-      pfnEbitdaScore = 1; // Count as 1 for total score or count as partial
+    if (ebitdaDiCompetenza <= 0) {
+      if (spMetrics.pfn <= 0) {
+        pfnEbitdaHealth = 'green';
+        pfnEbitdaScore = 1;
+      } else {
+        pfnEbitdaHealth = 'red';
+        pfnEbitdaScore = 0;
+      }
+    } else {
+      const ratio = spMetrics.pfn / ebitdaDiCompetenza;
+      if (ratio <= 3) {
+        pfnEbitdaHealth = 'green';
+        pfnEbitdaScore = 1;
+      } else if (ratio <= 4.5) {
+        pfnEbitdaHealth = 'orange';
+        pfnEbitdaScore = 0.5;
+      }
     }
     
     // EBITDA / Oneri Fin.
@@ -93,13 +145,13 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
       ebitdaOneriHealth = 'green';
       ebitdaOneriScore = 1;
     } else {
-      const ebitdaOneriRatio = ceMetrics.ebitdaTot / ceMetrics.oneriFin;
+      const ebitdaOneriRatio = ebitdaDiCompetenza / ceMetrics.oneriFin;
       if (ebitdaOneriRatio >= 3) {
         ebitdaOneriHealth = 'green';
         ebitdaOneriScore = 1;
       } else if (ebitdaOneriRatio >= 1.5) {
         ebitdaOneriHealth = 'orange';
-        ebitdaOneriScore = 1;
+        ebitdaOneriScore = 0.5;
       }
     }
     
@@ -111,7 +163,7 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
       currentRatioScore = 1;
     } else if (spMetrics.currentRatio >= 1.0) {
       currentRatioHealth = 'orange';
-      currentRatioScore = 1;
+      currentRatioScore = 0.5;
     }
     
     // Solidità Patrimoniale
@@ -122,18 +174,18 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
       soliditaScore = 1;
     } else if (spMetrics.soliditaPatr >= 0.15) {
       soliditaHealth = 'orange';
-      soliditaScore = 1;
+      soliditaScore = 0.5;
     }
     
     // Utile Netto %
     let utileHealth: 'green' | 'orange' | 'red' = 'red';
     let utileScore = 0;
-    if (ceMetrics.utileNettoPercent >= 0.03) {
+    if (utileNettoPercentCompetenza >= 0.03) {
       utileHealth = 'green';
       utileScore = 1;
-    } else if (ceMetrics.utileNettoPercent >= 0) {
+    } else if (utileNettoPercentCompetenza >= 0) {
       utileHealth = 'orange';
-      utileScore = 1;
+      utileScore = 0.5;
     }
     
     // DSO (Giorni Incasso)
@@ -144,7 +196,7 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
       dsoScore = 1;
     } else if (spMetrics.dso <= 90) {
       dsoHealth = 'orange';
-      dsoScore = 1;
+      dsoScore = 0.5;
     }
     
     // DPO (Giorni Pagamento)
@@ -155,20 +207,24 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
       dpoScore = 1;
     } else if ((spMetrics.dpo >= 20 && spMetrics.dpo < 30) || (spMetrics.dpo > 90 && spMetrics.dpo <= 120)) {
       dpoHealth = 'orange';
-      dpoScore = 1;
+      dpoScore = 0.5;
     }
     
     return [
       { 
         label: 'PFN / EBITDA', 
-        value: spMetrics.pfnSuEbitda.toFixed(2) + 'x',
+        value: ebitdaDiCompetenza <= 0 
+          ? (spMetrics.pfn <= 0 ? 'Cash Positive (N/A)' : 'EBITDA <= 0 (Inf.)') 
+          : (spMetrics.pfn / ebitdaDiCompetenza).toFixed(2) + 'x',
         score: pfnEbitdaScore,
         target: '< 3x',
         health: pfnEbitdaHealth
       },
       { 
         label: 'EBITDA / Oneri Fin.', 
-        value: ceMetrics.oneriFin > 0 ? (ceMetrics.ebitdaTot / ceMetrics.oneriFin).toFixed(2) + 'x' : 'N/A',
+        value: ceMetrics.oneriFin > 0 
+          ? (ebitdaDiCompetenza / ceMetrics.oneriFin).toFixed(2) + 'x' 
+          : 'N/A',
         score: ebitdaOneriScore,
         target: '> 3x',
         health: ebitdaOneriHealth
@@ -189,7 +245,7 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
       },
       { 
         label: 'Utile Netto %', 
-        value: formatPercent(ceMetrics.utileNettoPercent),
+        value: formatPercent(utileNettoPercentCompetenza),
         score: utileScore,
         target: '> 3%',
         health: utileHealth
@@ -209,7 +265,7 @@ const RatingView: React.FC<RatingViewProps> = ({ transactions, spSnapshots, ceMa
         health: dpoHealth
       }
     ];
-  }, [spMetrics, ceMetrics]);
+  }, [spMetrics, ceMetrics, rimanenze, ratingYear, previsioneFiscale.utileDopoImposte]);
 
   const totalScore = indicators.reduce((a, b) => a + (b.health === 'green' ? 1 : b.health === 'orange' ? 0.5 : 0), 0);
   const rating = totalScore >= 5.5 ? { label: 'AAA / AA — Eccellente', color: 'slate-900' } :
