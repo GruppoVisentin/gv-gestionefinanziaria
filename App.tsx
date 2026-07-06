@@ -899,7 +899,23 @@ const App: React.FC = () => {
     updatedTxs?: Transaction[], 
     updatedSessions?: ImportSession[],
     updatedStoricoImportato?: boolean,
-    updatedCantieriPrev?: CantierePrev[]
+    updatedCantieriPrev?: CantierePrev[],
+    overrides?: {
+      rimanenze?: RimanenzeData;
+      ceManualData?: Record<string, Partial<CEData>>;
+      spSnapshots?: SPSnapshot[];
+      budgetData?: Record<string, BudgetData>;
+      oreStorico?: Record<string, number>;
+      oreOperaiStorico?: Record<string, any>;
+      tipologieCantiere?: TipologiaCantiere[];
+      operators?: string[];
+      saldoInizialeCF?: SaldoInizialeCashFlow;
+      fixedCategories?: string[];
+      variableCategories?: string[];
+      incomeCategories?: string[];
+      aliquotaIRES?: number;
+      aliquotaIRAP?: number;
+    }
   ) => {
     if (!fileHandle) return;
     try {
@@ -909,27 +925,30 @@ const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         transactions: updatedTxs || transactions,
         projects,
-        fixedCategories,
-        variableCategories,
-        incomeCategories,
+        fixedCategories: overrides?.fixedCategories || fixedCategories,
+        variableCategories: overrides?.variableCategories || variableCategories,
+        incomeCategories: overrides?.incomeCategories || incomeCategories,
         supplierPresets,
         initialData,
-        saldoInizialeCF,
-        operators: responsiblesList,
-        ceManualData,
-        spSnapshots,
-        budgetData,
-        oreCantiereStorico: oreStorico,
-        oreOperaiStorico,
-        tipologieCantiere,
+        saldoInizialeCF: overrides?.saldoInizialeCF || saldoInizialeCF,
+        operators: overrides?.operators || responsiblesList,
+        ceManualData: overrides?.ceManualData || ceManualData,
+        spSnapshots: overrides?.spSnapshots || spSnapshots,
+        budgetData: overrides?.budgetData || budgetData,
+        oreCantiereStorico: overrides?.oreStorico || oreStorico,
+        oreOperaiStorico: overrides?.oreOperaiStorico || oreOperaiStorico,
+        tipologieCantiere: overrides?.tipologieCantiere || tipologieCantiere,
         cantieriPrev: updatedCantieriPrev || cantieriPrev,
-        rimanenze,
+        rimanenze: overrides?.rimanenze || rimanenze,
         regolePuntaNet,
         mappingContiPuntaNet,
         bozzaImportPuntaNet,
         importSessions: updatedSessions || importSessions,
         storicoExcelImportato: updatedStoricoImportato !== undefined ? updatedStoricoImportato : storicoImportato,
-        aliquoteFiscali: { ires: aliquotaIRES, irap: aliquotaIRAP },
+        aliquoteFiscali: {
+          ires: overrides?.aliquotaIRES !== undefined ? overrides.aliquotaIRES : aliquotaIRES,
+          irap: overrides?.aliquotaIRAP !== undefined ? overrides.aliquotaIRAP : aliquotaIRAP
+        },
       };
 
       await writeFile(fileHandle, data);
@@ -1932,10 +1951,124 @@ const App: React.FC = () => {
   };
 
   const handleRimanenzeChange = (anno: number, data: RimanenzeAnno) => {
-    setRimanenze(prev => ({
-      ...prev,
-      [anno.toString()]: data,
-    }));
+    setRimanenze(prev => {
+      const nextVal = {
+        ...prev,
+        [anno.toString()]: data,
+      };
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { rimanenze: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleCEManualDataChange = (anno: number, data: Partial<CEData>) => {
+    setCeManualData(prev => {
+      const nextVal = {
+        ...prev,
+        [anno.toString()]: { ...(prev[anno.toString()] || {}), ...data }
+      };
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { ceManualData: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleSpSnapshotsChange = (snapshotsOrFunc: React.SetStateAction<SPSnapshot[]>) => {
+    setSpSnapshots(prev => {
+      const nextVal = typeof snapshotsOrFunc === 'function' ? (snapshotsOrFunc as Function)(prev) : snapshotsOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { spSnapshots: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleBudgetChange = (anno: number, data: BudgetData) => {
+    setBudgetData(prev => {
+      const nextVal = {
+        ...prev,
+        [anno.toString()]: data
+      };
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { budgetData: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleOreStoricoChange = (valOrFunc: React.SetStateAction<Record<string, number>>) => {
+    setOreStorico(prev => {
+      const nextVal = typeof valOrFunc === 'function' ? (valOrFunc as Function)(prev) : valOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { oreStorico: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleOreOperaiStoricoChange = (valOrFunc: React.SetStateAction<Record<string, any>>) => {
+    setOreOperaiStorico(prev => {
+      const nextVal = typeof valOrFunc === 'function' ? (valOrFunc as Function)(prev) : valOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { oreOperaiStorico: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleTipologieCantiereChange = (nextTipologieOrFunc: React.SetStateAction<TipologiaCantiere[]>) => {
+    setTipologieCantiere(prev => {
+      const nextVal = typeof nextTipologieOrFunc === 'function' ? (nextTipologieOrFunc as Function)(prev) : nextTipologieOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { tipologieCantiere: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleOperatorsChange = (nextOperatorsOrFunc: React.SetStateAction<string[]>) => {
+    setResponsiblesList(prev => {
+      const nextVal = typeof nextOperatorsOrFunc === 'function' ? (nextOperatorsOrFunc as Function)(prev) : nextOperatorsOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { operators: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleSaldoInizialeChange = (nextSaldoOrFunc: React.SetStateAction<SaldoInizialeCashFlow>) => {
+    setSaldoInizialeCF(prev => {
+      const nextVal = typeof nextSaldoOrFunc === 'function' ? (nextSaldoOrFunc as Function)(prev) : nextSaldoOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { saldoInizialeCF: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleFixedCategoriesChange = (nextCatsOrFunc: React.SetStateAction<string[]>) => {
+    setFixedCategories(prev => {
+      const nextVal = typeof nextCatsOrFunc === 'function' ? (nextCatsOrFunc as Function)(prev) : nextCatsOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { fixedCategories: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleVariableCategoriesChange = (nextCatsOrFunc: React.SetStateAction<string[]>) => {
+    setVariableCategories(prev => {
+      const nextVal = typeof nextCatsOrFunc === 'function' ? (nextCatsOrFunc as Function)(prev) : nextCatsOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { variableCategories: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleIncomeCategoriesChange = (nextCatsOrFunc: React.SetStateAction<string[]>) => {
+    setIncomeCategories(prev => {
+      const nextVal = typeof nextCatsOrFunc === 'function' ? (nextCatsOrFunc as Function)(prev) : nextCatsOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { incomeCategories: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleAliquotaIRESChange = (nextValOrFunc: React.SetStateAction<number>) => {
+    setAliquotaIRES(prev => {
+      const nextVal = typeof nextValOrFunc === 'function' ? (nextValOrFunc as Function)(prev) : nextValOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { aliquotaIRES: nextVal });
+      return nextVal;
+    });
+  };
+
+  const handleAliquotaIRAPChange = (nextValOrFunc: React.SetStateAction<number>) => {
+    setAliquotaIRAP(prev => {
+      const nextVal = typeof nextValOrFunc === 'function' ? (nextValOrFunc as Function)(prev) : nextValOrFunc;
+      triggerImmediateSave(undefined, undefined, undefined, undefined, { aliquotaIRAP: nextVal });
+      return nextVal;
+    });
   };
 
   const renderContent = () => {
@@ -2014,7 +2147,7 @@ const App: React.FC = () => {
                   initialData={initialData}
                   onUpdateInitialData={setInitialData}
                   saldoInizialeCF={saldoInizialeCF}
-                  onUpdateSaldoIniziale={setSaldoInizialeCF}
+                  onUpdateSaldoIniziale={handleSaldoInizialeChange}
                   scrollContainerRef={cashFlowScrollRef}
                   currentYear={timelineYear}
                   isAuthorized={isAuthorized}
@@ -2110,10 +2243,10 @@ const App: React.FC = () => {
                     variableCategories={variableCategories}
                     incomeCategories={incomeCategories}
                     tipologieCantiere={tipologieCantiere}
-                    onUpdateFixed={setFixedCategories}
-                    onUpdateVariable={setVariableCategories}
-                    onUpdateIncome={setIncomeCategories}
-                    onUpdateTipologie={setTipologieCantiere}
+                    onUpdateFixed={handleFixedCategoriesChange}
+                    onUpdateVariable={handleVariableCategoriesChange}
+                    onUpdateIncome={handleIncomeCategoriesChange}
+                    onUpdateTipologie={handleTipologieCantiereChange}
                     isAuthorized={isAuthorized}
                     onExportData={buildBackupData}
                     onImportData={loadFromData}
@@ -2141,7 +2274,7 @@ const App: React.FC = () => {
         return (
             <OperatorManager 
                 operators={responsiblesList}
-                onUpdateOperators={setResponsiblesList}
+                onUpdateOperators={handleOperatorsChange}
                 isAuthorized={isAuthorized}
             />
         );
@@ -2190,32 +2323,22 @@ const App: React.FC = () => {
             initialData={initialData}
             saldoInizialeCF={saldoInizialeCF}
             ceManualData={ceManualData}
-            onManualDataChange={(anno, data) => {
-              setCeManualData(prev => ({
-                ...prev,
-                [anno.toString()]: { ...(prev[anno.toString()] || {}), ...data }
-              }));
-            }}
+            onManualDataChange={handleCEManualDataChange}
             spSnapshots={spSnapshots}
-            onUpdateSnapshots={setSpSnapshots}
+            onUpdateSnapshots={handleSpSnapshotsChange}
             budgetData={budgetData}
-            onBudgetChange={(anno, data) => {
-              setBudgetData(prev => ({
-                ...prev,
-                [anno.toString()]: data
-              }));
-            }}
+            onBudgetChange={handleBudgetChange}
             oreStorico={oreStorico}
-            setOreStorico={setOreStorico}
+            setOreStorico={handleOreStoricoChange}
             oreOperaiStorico={oreOperaiStorico}
-            setOreOperaiStorico={setOreOperaiStorico}
+            setOreOperaiStorico={handleOreOperaiStoricoChange}
             rimanenze={rimanenze}
             onRimanenzeChange={handleRimanenzeChange}
             onGoToManuale={handleGoToManuale}
             aliquotaIRES={aliquotaIRES}
             aliquotaIRAP={aliquotaIRAP}
-            onChangeAliquotaIRES={setAliquotaIRES}
-            onChangeAliquotaIRAP={setAliquotaIRAP}
+            onChangeAliquotaIRES={handleAliquotaIRESChange}
+            onChangeAliquotaIRAP={handleAliquotaIRAPChange}
             projects={projects}
             initialTab={
               view === AppView.CE_RICLASSIFICATO ? 'pl' :
