@@ -179,7 +179,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               <div>
                 <h3 className="font-black text-slate-900 text-lg leading-tight">File trovato</h3>
                 <p className="text-sm text-slate-600 mt-1">
-                  È stato rilevato il file <span className="font-bold text-slate-900">gv-cashflow.gvcf</span> dall'ultima sessione.
+                  È stato rilevato il file <span className="font-bold text-slate-900">gv-cashflow.txt</span> dall'ultima sessione.
                 </p>
               </div>
             </div>
@@ -225,7 +225,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                 </div>
                 <div>
                   <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Apri file esistente</h4>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">Seleziona il tuo gv-cashflow.gvcf</p>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">Seleziona il tuo gv-cashflow.txt</p>
                 </div>
               </button>
 
@@ -1126,11 +1126,11 @@ const App: React.FC = () => {
         createWritable: async () => {
           return {
             write: async (content: string) => {
-              const blob = new Blob([content], { type: 'application/json' });
+              const blob = new Blob([content], { type: 'text/plain' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = file.name || 'backup-cashflow.gvcf';
+              a.download = file.name || 'backup-cashflow.txt';
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
@@ -1345,10 +1345,10 @@ const App: React.FC = () => {
     try {
       // @ts-ignore
       const handle = await window.showSaveFilePicker({
-        suggestedName: 'backup-cashflow.gvcf',
+        suggestedName: 'backup-cashflow.txt',
         types: [{
           description: 'GV Cash Flow Backup',
-          accept: { 'application/json': ['.gvcf', '.json'] },
+          accept: { 'text/plain': ['.txt'], 'application/json': ['.json', '.gvcf'] },
         }],
       });
       if (handle) {

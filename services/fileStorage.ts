@@ -181,11 +181,11 @@ class MockFileHandle {
     const fileData = this.fileData;
     return {
       write: async (content: string) => {
-        const blob = new Blob([content], { type: 'application/json' });
+        const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = fileData.name || 'backup-cashflow.gvcf';
+        a.download = fileData.name || 'backup-cashflow.txt';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -207,7 +207,7 @@ export async function openExistingFile(): Promise<{ handle: any, data: BackupDat
       const [handle] = await window.showOpenFilePicker({
         types: [{
           description: 'GV Cash Flow File',
-          accept: { 'application/json': ['.gvcf', '.json'] },
+          accept: { 'text/plain': ['.txt'], 'application/json': ['.json', '.gvcf'] },
         }],
         multiple: false
       });
@@ -222,7 +222,6 @@ export async function openExistingFile(): Promise<{ handle: any, data: BackupDat
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.gvcf,.json';
       input.style.display = 'none';
       document.body.appendChild(input);
       
@@ -258,10 +257,10 @@ export async function createNewFile(initialData: BackupData): Promise<{ handle: 
     try {
       // @ts-ignore
       const handle = await window.showSaveFilePicker({
-        suggestedName: 'gv-cashflow.gvcf',
+        suggestedName: 'gv-cashflow.txt',
         types: [{
           description: 'GV Cash Flow File',
-          accept: { 'application/json': ['.gvcf', '.json'] },
+          accept: { 'text/plain': ['.txt'], 'application/json': ['.json', '.gvcf'] },
         }],
       });
       await writeFile(handle, initialData);
@@ -272,18 +271,18 @@ export async function createNewFile(initialData: BackupData): Promise<{ handle: 
     }
   } else {
     // Fallback: scarica direttamente il nuovo file
-    const blob = new Blob([JSON.stringify(initialData, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(initialData, null, 2)], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'gv-cashflow.gvcf';
+    a.download = 'gv-cashflow.txt';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
     // Ritorna un mock handle
-    const file = new File([blob], 'gv-cashflow.gvcf', { type: 'application/json' });
+    const file = new File([blob], 'gv-cashflow.txt', { type: 'text/plain' });
     const handle = new MockFileHandle(file);
     return { handle, data: initialData };
   }
