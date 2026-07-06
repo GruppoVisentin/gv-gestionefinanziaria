@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, SPSnapshot, AppView, CEData, Project } from '../types';
-import { buildCEData, calcCEMetrics, calcSPMetrics, calculateRepayment, parseUTCDate, getDynamicDepreciation, generateDefault2025Snapshot } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcSPMetrics, calculateRepayment, parseUTCDate, getDynamicDepreciation, generateDefault2025Snapshot, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
 import { exportSPPDF } from '../utils/spPdfExport';
 import * as XLSX from 'xlsx';
 import { parseDettaglioFEP, parseDettaglioFEA } from '../utils/puntaNetImporter';
@@ -38,6 +38,8 @@ interface SPViewProps {
   saldoInizialeCF: SaldoInizialeCashFlow;
   rimanenze: RimanenzeData;
   projects?: Project[];
+  aliquotaIRES?: number;
+  aliquotaIRAP?: number;
 }
 
 const formatEuro = (val: number) => 
@@ -164,7 +166,19 @@ const ManualInput = ({ label, value, onChange, icon: Icon, isManual, tooltipText
   );
 };
 
-const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, onUpdateSnapshots, ceManualData, onGoToManuale, saldoInizialeCF, rimanenze, projects = [] }) => {
+const SPView: React.FC<SPViewProps> = ({ 
+  transactions, 
+  initialData, 
+  snapshots, 
+  onUpdateSnapshots, 
+  ceManualData, 
+  onGoToManuale, 
+  saldoInizialeCF, 
+  rimanenze, 
+  projects = [],
+  aliquotaIRES = 24,
+  aliquotaIRAP = 3.9
+}) => {
   const [currentSnap, setCurrentSnap] = useState<SPSnapshot>(snapshots[0] || EMPTY_SNAPSHOT);
   const [isEditing, setIsEditing] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -270,17 +284,23 @@ const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, o
     return calcCEMetrics(ceData, transactions, projects, initialData);
   }, [transactions, currentSnap.dataRiferimento, ceManualData, projects, initialData]);
 
-  const autoUtile = useMemo(() => {
-    const baseUtile = ceMetrics.utileNettoTot || 0;
+  const previsioneFiscale = useMemo(() => {
     const rimAnno = rimanenze[String(targetYear)];
-    if (rimAnno) {
-      const deltaWip = (rimAnno.wipFine || 0) - (rimAnno.wipInizio || 0);
-      const deltaMat = (rimAnno.materialiFine || 0) - (rimAnno.materialiInizio || 0);
-      const deltaTer = (rimAnno.terreniFine || 0) - (rimAnno.terreniInizio || 0);
-      return baseUtile + deltaWip + deltaMat + deltaTer;
-    }
-    return baseUtile;
-  }, [ceMetrics, rimanenze, targetYear]);
+    return calcPrevisioneFiscale(
+      transactions,
+      targetYear,
+      ceMetrics,
+      rimAnno,
+      aliquotaIRES / 100,
+      aliquotaIRAP / 100,
+      true,
+      initialData
+    );
+  }, [transactions, targetYear, ceMetrics, rimanenze, aliquotaIRES, aliquotaIRAP, initialData]);
+
+  const autoUtile = useMemo(() => {
+    return previsioneFiscale.utileDopoImposte;
+  }, [previsioneFiscale.utileDopoImposte]);
 
   const autoRimanenze = useMemo(() => {
     const rim = rimanenze[String(targetYear)];
@@ -490,7 +510,8 @@ const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, o
                 mutuiBT: autoMutui.bt,
                 immobiliTerreni: autoFixedAssets.immobiliTerreni,
                 immMateriali: autoFixedAssets.immMateriali,
-                immImmateriali: autoFixedAssets.immImmateriali
+                immImmateriali: autoFixedAssets.immImmateriali,
+                debitiTributari: Math.round(previsioneFiscale.residuoDaVersare)
               }));
             }}
             className="flex items-center gap-1 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-black rounded-xl hover:bg-blue-100 transition-all shadow-md"
@@ -830,13 +851,23 @@ const SPView: React.FC<SPViewProps> = ({ transactions, initialData, snapshots, o
                     isManual={true} 
                     termId="dpo"
                   />
-                  <ManualInput 
-                    label="Debiti Tributari/Previdenziali" 
-                    value={currentSnap.debitiTributari} 
-                    onChange={v => setCurrentSnap(s => ({...s, debitiTributari: v}))} 
-                    isManual={true} 
-                    tooltipText="Debiti a breve termine verso l'Erario (IVA a debito da liquidare, imposte dovute) ed enti previdenziali."
-                  />
+                  <div className="space-y-1">
+                    <ManualInput 
+                      label="Debiti Tributari/Previdenziali" 
+                      value={currentSnap.debitiTributari} 
+                      onChange={v => setCurrentSnap(s => ({...s, debitiTributari: v}))} 
+                      isManual={true} 
+                      tooltipText="Debiti a breve termine verso l'Erario (IVA a debito da liquidare, imposte dovute) ed enti previdenziali."
+                    />
+                    {currentSnap.debitiTributari !== Math.round(previsioneFiscale.residuoDaVersare) && (
+                      <button 
+                        onClick={() => setCurrentSnap(s => ({...s, debitiTributari: Math.round(previsioneFiscale.residuoDaVersare)}))}
+                        className="text-[10px] text-blue-600 font-bold hover:underline block w-full text-right"
+                      >
+                        💡 Carica tasse residue da CE ({formatEuro(Math.round(previsioneFiscale.residuoDaVersare))})
+                      </button>
+                    )}
+                  </div>
                   <ManualInput 
                     label="Acconti Clienti" 
                     value={currentSnap.accontiClienti} 

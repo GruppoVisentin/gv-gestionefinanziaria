@@ -217,6 +217,8 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             saldoInizialeCF={props.saldoInizialeCF}
             rimanenze={props.rimanenze}
             projects={props.projects}
+            aliquotaIRES={props.aliquotaIRES}
+            aliquotaIRAP={props.aliquotaIRAP}
           />
         )}
         {activeTab === 'budget' && (
