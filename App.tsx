@@ -87,7 +87,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
-  Receipt
+  Receipt,
+  Copy
 } from 'lucide-react';
 import { 
   getHandleFromIDB, 
@@ -119,7 +120,7 @@ interface WelcomeScreenProps {
   isFileSystemSupported: boolean;
 }
 
-const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
+const WelcomeScreen: React.FC<WelcomeScreenProps & { handleLoadFromPastedText: (text: string) => void }> = ({
   pendingHandleFromIDB,
   handleConfirmIDBHandle,
   handleOpenExisting,
@@ -127,165 +128,215 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   handleMigrateFromLocalStorage,
   handleDemoMode,
   hasLocalStorageData,
-  isFileSystemSupported
-}) => (
-  <div className="fixed inset-0 z-[100] bg-[#222222] flex items-center justify-center p-4 font-sans overflow-y-auto">
-    <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-      {/* Left: Branding */}
-      <div className="text-white space-y-6">
-        <div className="flex items-center gap-4">
-          <div className="bg-black w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-2xl">
-            <span className="text-4xl font-black">V</span>
+  isFileSystemSupported,
+  handleLoadFromPastedText
+}) => {
+  const [showPasteBox, setShowPasteBox] = useState(false);
+  const [pastedText, setPastedText] = useState('');
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-[#222222] flex items-center justify-center p-4 font-sans overflow-y-auto">
+      <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+        {/* Left: Branding */}
+        <div className="text-white space-y-6">
+          <div className="flex items-center gap-4">
+            <div className="bg-black w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-2xl">
+              <span className="text-4xl font-black">V</span>
+            </div>
+            <div>
+              <h1 className="text-3xl font-black tracking-tighter uppercase leading-none">Gruppo Visentin</h1>
+              <p className="text-slate-400 font-bold text-sm tracking-widest uppercase mt-1">GV Ecosystem</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-black tracking-tighter uppercase leading-none">Gruppo Visentin</h1>
-            <p className="text-slate-400 font-bold text-sm tracking-widest uppercase mt-1">GV Ecosystem</p>
+          
+          <div className="space-y-4">
+            <h2 className="text-5xl font-black leading-[0.9] tracking-tight">
+              Gestione <br />
+              <span className="text-white/40 italic">Finanziaria</span> <br />
+              Evoluta.
+            </h2>
+            <p className="text-slate-400 text-lg leading-relaxed max-w-md font-medium">
+              Benvenuto nel sistema di controllo GV. Scegli come iniziare per accedere ai tuoi dati finanziari in tempo reale.
+            </p>
           </div>
-        </div>
-        
-        <div className="space-y-4">
-          <h2 className="text-5xl font-black leading-[0.9] tracking-tight">
-            Gestione <br />
-            <span className="text-white/40 italic">Finanziaria</span> <br />
-            Evoluta.
-          </h2>
-          <p className="text-slate-400 text-lg leading-relaxed max-w-md font-medium">
-            Benvenuto nel sistema di controllo GV. Scegli come iniziare per accedere ai tuoi dati finanziari in tempo reale.
-          </p>
+
+          <div className="flex items-center gap-6 pt-4">
+            <div className="flex -space-x-3">
+              {[1,2,3].map(i => (
+                <div key={i} className="w-10 h-10 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center overflow-hidden">
+                  <img src={`https://picsum.photos/seed/user${i}/100/100`} alt="user" className="w-full h-full object-cover opacity-60" referrerPolicy="no-referrer" />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">
+              Utilizzato dal team <br /> Gruppo Visentin
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-6 pt-4">
-          <div className="flex -space-x-3">
-            {[1,2,3].map(i => (
-              <div key={i} className="w-10 h-10 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center overflow-hidden">
-                <img src={`https://picsum.photos/seed/user${i}/100/100`} alt="user" className="w-full h-full object-cover opacity-60" referrerPolicy="no-referrer" />
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">
-            Utilizzato dal team <br /> Gruppo Visentin
-          </p>
-        </div>
-      </div>
-
-      {/* Right: Actions */}
-      <div className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl space-y-8">
-        {pendingHandleFromIDB ? (
-          <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 shrink-0 shadow-lg">
-                <FileCode size={24} />
-              </div>
-              <div>
-                <h3 className="font-black text-slate-900 text-lg leading-tight">File trovato</h3>
-                <p className="text-sm text-slate-600 mt-1">
-                  È stato rilevato il file <span className="font-bold text-slate-900">gv-cashflow.txt</span> dall'ultima sessione.
+        {/* Right: Actions */}
+        <div className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl space-y-8">
+          {showPasteBox ? (
+            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
+              <div className="space-y-2">
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">Incolla Contenuto File</h3>
+                <p className="text-slate-500 text-xs font-bold leading-normal">
+                  Apri il file <span className="font-bold text-slate-700">gv-cashflow.txt</span> sul tuo Google Drive da cellulare, copia tutto il testo interno e incollalo qui sotto:
                 </p>
               </div>
-            </div>
-            
-            <button 
-              onClick={handleConfirmIDBHandle}
-              className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg hover:bg-slate-800 transition-all active:scale-[0.98] shadow-xl flex items-center justify-center gap-3"
-            >
-              <FolderOpen size={24} />
-              Apri file rilevato
-            </button>
 
-            <div className="relative py-4">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
-              <div className="relative flex justify-center text-xs uppercase font-black text-slate-400 tracking-widest bg-white px-4">Oppure</div>
-            </div>
+              <textarea
+                value={pastedText}
+                onChange={e => setPastedText(e.target.value)}
+                placeholder="Incolla il testo del database qui..."
+                className="w-full h-48 p-4 border-2 border-slate-200 rounded-2xl text-xs font-mono focus:border-slate-950 focus:ring-1 focus:ring-slate-950 outline-none resize-none"
+              />
 
-            <div className="grid grid-cols-2 gap-4">
-              <button onClick={handleOpenExisting} className="p-4 rounded-2xl border-2 border-slate-100 hover:border-slate-400 hover:bg-slate-50 transition-all group">
-                <Plus size={20} className="text-slate-400 group-hover:text-slate-900 mb-2" />
-                <span className="block text-xs font-black text-slate-900 uppercase">Sfoglia</span>
-              </button>
-              <button onClick={handleCreateNew} className="p-4 rounded-2xl border-2 border-slate-100 hover:border-slate-900 hover:bg-slate-50 transition-all group">
-                <FileCode size={20} className="text-slate-400 group-hover:text-slate-900 mb-2" />
-                <span className="block text-xs font-black text-slate-900 uppercase">Nuovo</span>
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            <div className="space-y-2">
-              <h3 className="text-2xl font-black text-slate-900 tracking-tight">Inizia ora</h3>
-              <p className="text-slate-500 text-sm font-medium">Seleziona un'opzione per caricare i dati.</p>
-            </div>
-
-            <div className="space-y-4">
-              <button 
-                onClick={handleOpenExisting}
-                className="w-full group flex items-center gap-4 p-6 rounded-3xl border-2 border-slate-100 hover:border-slate-900 hover:bg-slate-50 transition-all text-left"
-              >
-                <div className="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors shadow-sm">
-                  <FolderOpen size={28} />
-                </div>
-                <div>
-                  <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Apri file esistente</h4>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">Seleziona il tuo gv-cashflow.txt</p>
-                </div>
-              </button>
-
-              <button 
-                onClick={handleCreateNew}
-                className="w-full group flex items-center gap-4 p-6 rounded-3xl border-2 border-slate-100 hover:border-slate-900 hover:bg-slate-50 transition-all text-left"
-              >
-                <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
-                  <Plus size={28} />
-                </div>
-                <div>
-                  <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Crea nuovo file</h4>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">Inizia una nuova gestione da zero</p>
-                </div>
-              </button>
-
-              <button 
-                onClick={handleDemoMode}
-                className="w-full group flex items-center gap-4 p-6 rounded-3xl border-2 border-slate-100 bg-slate-50/30 hover:border-slate-900 hover:bg-slate-50 transition-all text-left"
-              >
-                <div className="w-14 h-14 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
-                  <Sparkles size={28} />
-                </div>
-                <div>
-                  <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Modalità Demo (solo anteprima)</h4>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">Esplora l'app senza salvare file (ideale per AI Studio)</p>
-                </div>
-              </button>
-
-              {hasLocalStorageData && (
-                <button 
-                  onClick={handleMigrateFromLocalStorage}
-                  className="w-full group flex items-center gap-4 p-6 rounded-3xl border-2 border-slate-100 bg-slate-50/30 hover:border-slate-900 hover:bg-slate-50 transition-all text-left"
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setShowPasteBox(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-4 rounded-xl text-xs font-black uppercase tracking-wider transition-colors"
                 >
-                  <div className="w-14 h-14 rounded-2xl bg-rose-100 flex items-center justify-center text-rose-600 group-hover:bg-rose-600 group-hover:text-white transition-colors shadow-sm">
-                    <RefreshCw size={28} />
+                  Annulla
+                </button>
+                <button
+                  onClick={() => handleLoadFromPastedText(pastedText)}
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-xl text-xs font-black uppercase tracking-wider transition-colors shadow-lg active:scale-98"
+                >
+                  Carica Dati
+                </button>
+              </div>
+            </div>
+          ) : pendingHandleFromIDB ? (
+            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
+              <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 shrink-0 shadow-lg">
+                  <FileCode size={24} />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-lg leading-tight">File trovato</h3>
+                  <p className="text-sm text-slate-600 mt-1">
+                    È stato rilevato il file <span className="font-bold text-slate-900">gv-cashflow.txt</span> dall'ultima sessione.
+                  </p>
+                </div>
+              </div>
+              
+              <button 
+                onClick={handleConfirmIDBHandle}
+                className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg hover:bg-slate-800 transition-all active:scale-[0.98] shadow-xl flex items-center justify-center gap-3"
+              >
+                <FolderOpen size={24} />
+                Apri file rilevato
+              </button>
+
+              <div className="relative py-4">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
+                <div className="relative flex justify-center text-xs uppercase font-black text-slate-400 tracking-widest bg-white px-4">Oppure</div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <button onClick={handleOpenExisting} className="p-4 rounded-2xl border-2 border-slate-100 hover:border-slate-400 hover:bg-slate-50 transition-all group">
+                  <Plus size={20} className="text-slate-400 group-hover:text-slate-900 mb-2" />
+                  <span className="block text-xs font-black text-slate-900 uppercase">Sfoglia</span>
+                </button>
+                <button onClick={handleCreateNew} className="p-4 rounded-2xl border-2 border-slate-100 hover:border-slate-900 hover:bg-slate-50 transition-all group">
+                  <FileCode size={20} className="text-slate-400 group-hover:text-slate-900 mb-2" />
+                  <span className="block text-xs font-black text-slate-900 uppercase">Nuovo</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight">Inizia ora</h3>
+                <p className="text-slate-500 text-sm font-medium">Seleziona un'opzione per caricare i dati.</p>
+              </div>
+
+              <div className="space-y-4">
+                <button 
+                  onClick={handleOpenExisting}
+                  className="w-full group flex items-center gap-4 p-6 rounded-3xl border-2 border-slate-100 hover:border-slate-900 hover:bg-slate-50 transition-all text-left"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors shadow-sm">
+                    <FolderOpen size={28} />
                   </div>
                   <div>
-                    <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Migra dati locali</h4>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">Recupera i dati salvati nel browser</p>
+                    <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Apri file esistente</h4>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">Seleziona il tuo gv-cashflow.txt</p>
                   </div>
                 </button>
+
+                <button 
+                  onClick={handleCreateNew}
+                  className="w-full group flex items-center gap-4 p-6 rounded-3xl border-2 border-slate-100 hover:border-slate-900 hover:bg-slate-50 transition-all text-left"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors shadow-sm">
+                    <Plus size={28} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Crea nuovo file</h4>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">Inizia una nuova gestione da zero</p>
+                  </div>
+                </button>
+
+                <button 
+                  onClick={handleDemoMode}
+                  className="w-full group flex items-center gap-4 p-6 rounded-3xl border-2 border-slate-100 bg-slate-50/30 hover:border-slate-900 hover:bg-slate-50 transition-all text-left"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors shadow-sm">
+                    <Sparkles size={28} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Modalità Demo (solo anteprima)</h4>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">Esplora l'app senza salvare file</p>
+                  </div>
+                </button>
+
+                <button 
+                  onClick={() => setShowPasteBox(true)}
+                  className="w-full group flex items-center gap-4 p-6 rounded-3xl border-2 border-slate-100 bg-slate-50/30 hover:border-slate-900 hover:bg-slate-50 transition-all text-left"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
+                    <Copy size={28} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Incolla dati (Alternativa Mobile)</h4>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">Copia il testo da Google Drive e incollalo qui</p>
+                  </div>
+                </button>
+
+                {hasLocalStorageData && (
+                  <button 
+                    onClick={handleMigrateFromLocalStorage}
+                    className="w-full group flex items-center gap-4 p-6 rounded-3xl border-2 border-slate-100 bg-slate-50/30 hover:border-slate-900 hover:bg-slate-50 transition-all text-left"
+                  >
+                    <div className="w-14 h-14 rounded-2xl bg-rose-100 flex items-center justify-center text-rose-600 group-hover:bg-rose-600 group-hover:text-white transition-colors shadow-sm">
+                      <RefreshCw size={28} />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-900 uppercase text-sm tracking-wider">Migra dati locali</h4>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">Recupera i dati salvati nel browser</p>
+                    </div>
+                  </button>
+                )}
+              </div>
+
+              {!isFileSystemSupported && (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex gap-3">
+                  <AlertCircle size={18} className="text-slate-500 shrink-0" />
+                  <p className="text-[10px] text-slate-700 font-bold leading-tight uppercase">
+                    Attenzione: Il tuo browser non supporta il salvataggio diretto su file. 
+                    Usa l'opzione "Incolla dati" per caricare, e "Copia Dati (Mobile)" per salvare.
+                  </p>
+                </div>
               )}
             </div>
-
-            {!isFileSystemSupported && (
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex gap-3">
-                <AlertCircle size={18} className="text-slate-500 shrink-0" />
-                <p className="text-[10px] text-slate-700 font-bold leading-tight uppercase">
-                  Attenzione: Il tuo browser non supporta il salvataggio diretto su file. 
-                  L'app funzionerà in modalità provvisoria (backup manuale richiesto).
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};;
 
 function mergeRegole(listA: any[], listB: any[]): any[] {
   const map = new Map<string, any>();
@@ -2071,6 +2122,47 @@ const App: React.FC = () => {
     });
   };
 
+  const handleLoadFromPastedText = useCallback((text: string) => {
+    try {
+      if (!text || text.trim() === '') {
+        throw new Error("Il testo incollato è vuoto.");
+      }
+      const data = JSON.parse(text) as BackupData;
+      if (!data.transactions || !data.projects) {
+        throw new Error("Dati non validi: mancano transazioni o progetti.");
+      }
+      
+      const mockHandle = {
+        name: 'gv-cashflow.txt',
+        kind: 'file',
+        getFile: async () => new File([text], 'gv-cashflow.txt', { type: 'text/plain' }),
+        createWritable: async () => {
+          return {
+            write: async (content: string) => {
+              const blob = new Blob([content], { type: 'text/plain' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'gv-cashflow.txt';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            },
+            close: async () => {}
+          };
+        }
+      };
+      
+      loadFromData(data);
+      setFileHandle(mockHandle as any);
+      setAppState('ready');
+      alert("Dati caricati con successo!");
+    } catch (e: any) {
+      alert("Errore nel parsing del testo incollato: " + e.message);
+    }
+  }, [loadFromData]);
+
   const renderContent = () => {
     switch (view) {
       case AppView.HOME:
@@ -2413,6 +2505,7 @@ const App: React.FC = () => {
         handleDemoMode={handleDemoMode}
         hasLocalStorageData={hasLocalStorageData}
         isFileSystemSupported={isFileSystemSupported}
+        handleLoadFromPastedText={handleLoadFromPastedText}
       />
     );
   }
@@ -2479,6 +2572,21 @@ const App: React.FC = () => {
           
           {/* Controlli Destra (Secure Widget) */}
           <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+             {appState === 'ready' && (
+               <button
+                 onClick={() => {
+                   const data = buildBackupData();
+                   navigator.clipboard.writeText(JSON.stringify(data, null, 2))
+                     .then(() => alert("Dati copiati! Ora apri il file gv-cashflow.txt su Google Drive, incolla tutto il testo e salva."))
+                     .catch(err => alert("Errore copia appunti: " + err.message));
+                 }}
+                 className="bg-white/5 border border-white/10 hover:bg-white/10 text-white px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 active:scale-95"
+                 title="Copia tutto il database per incollarlo su Drive dal telefono"
+               >
+                 <Copy size={12} />
+                 <span>Copia Dati (Mobile)</span>
+               </button>
+             )}
              <SecureResponsibleWidget 
                 responsibles={responsiblesList}
                 onAuthChange={handleAuthChange}
