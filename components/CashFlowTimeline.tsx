@@ -8,7 +8,7 @@ import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { exportMonthlyReportPDF } from '../utils/monthlyPdfExport';
 import { exportCashFlowProjectionPDF } from '../utils/cashFlowPdfExport';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate, calculateRepayment } from '../utils/gasCoreEngine';
 
 interface CashFlowTimelineProps {
   transactions: Transaction[];
@@ -145,29 +145,12 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     
     const yr = targetYear ?? currentYear;
     const targetDate = new Date(Date.UTC(yr, targetMonthIndex, 15));
-    const intStart = details.interestStartDate ? parseUTCDate(details.interestStartDate) : undefined;
-    const princStart = details.principalStartDate ? parseUTCDate(details.principalStartDate) : intStart;
-    
-    if (!intStart) return { principal: 0, interest: 0, total: 0 };
+    const rep = calculateRepayment(principal, details, targetDate);
 
-    const targetMonthGlobal = yr * 12 + targetMonthIndex;
-    const intStartMonthGlobal = intStart.getUTCFullYear() * 12 + intStart.getUTCMonth();
-    
-    if (targetMonthGlobal < intStartMonthGlobal) return { principal: 0, interest: 0, total: 0 };
-    
-    const princStartSafe = (princStart && !isNaN(princStart.getTime())) ? princStart : intStart;
-    const amortizationStartMonthGlobal = princStartSafe.getUTCFullYear() * 12 + princStartSafe.getUTCMonth();
-
-    const end = details.endDate 
-      ? parseUTCDate(details.endDate) 
-      : new Date(Date.UTC(princStartSafe.getUTCFullYear() + 20, princStartSafe.getUTCMonth(), 15));
-
-    const endMonthGlobal = end.getUTCFullYear() * 12 + end.getUTCMonth();
-    if (targetMonthGlobal > endMonthGlobal) return { principal: 0, interest: 0, total: 0 };
-
-    // Determina il tasso applicabile per questa specifica data (considerando rinegoziazioni)
+    // Determina il tasso applicabile per questa specifica data (considerando rinegoziazioni) per mantenere la compatibilità
     let currentRate = details.interestRate;
     let currentType = details.rateType;
+    const targetMonthGlobal = yr * 12 + targetMonthIndex;
     
     if (details.rinegoziazioni && details.rinegoziazioni.length > 0) {
       const rinegValide = [...details.rinegoziazioni]
@@ -184,43 +167,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
       }
     }
 
-    const monthlyRate = (currentRate / 100) / 12;
-
-    if (targetMonthGlobal >= intStartMonthGlobal && targetMonthGlobal < amortizationStartMonthGlobal) {
-      const onlyInterest = principal * monthlyRate;
-      return {
-        principal: 0,
-        interest: onlyInterest,
-        total: onlyInterest,
-        rateUsed: currentRate,
-        typeUsed: currentType
-      };
-    }
-
-    const n = (end.getUTCFullYear() - princStartSafe.getUTCFullYear()) * 12 + (end.getUTCMonth() - princStartSafe.getUTCMonth());
-    if (n <= 0) return { principal: 0, interest: 0, total: 0 };
-
-    const monthsPassed = targetMonthGlobal - amortizationStartMonthGlobal;
-    if (monthsPassed < 0 || monthsPassed >= n) return { principal: 0, interest: 0, total: 0 };
-
-    const paymentsMade = monthsPassed;
-
-    // Rata fissa mensile (piano francese) ricalcolata sul tasso corrente
-    const rataFissa = monthlyRate > 0
-      ? principal * (monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
-      : principal / n;
-
-    const residualCapital = monthlyRate > 0
-      ? principal * (Math.pow(1 + monthlyRate, n) - Math.pow(1 + monthlyRate, paymentsMade)) / (Math.pow(1 + monthlyRate, n) - 1)
-      : Math.max(0, principal - (principal / n * paymentsMade));
-
-    const interestPayment = Math.max(0, residualCapital * monthlyRate);
-    const principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
-
     return {
-      principal: principalPayment,
-      interest: interestPayment,
-      total: principalPayment + interestPayment,
+      principal: rep.principal,
+      interest: rep.interest,
+      total: rep.total,
       rateUsed: currentRate,
       typeUsed: currentType
     };
@@ -967,12 +917,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
       const meseCorrente = new Date().getMonth();
       const isAnnoCorrente = currentYear === new Date().getFullYear();
-
       transactions.forEach(t => {
         const d = parseUTCDate(t.date);
         if (d.getUTCFullYear() !== currentYear) return;
-        
-        const amount = t.amount + (t.vatRate ? (t.amount * t.vatRate / 100) : 0);
+        const amount = getGrossAmount(t);
         const isActual = !t.isForecast && (isAnnoCorrente ? d.getUTCMonth() <= meseCorrente : true);
 
         if (isActual) {

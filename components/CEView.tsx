@@ -194,8 +194,8 @@ const CEView: React.FC<CEViewProps> = ({
 
   const effettoRimanenze = useMemo(() => {
     if (!rimanenzeAnno) return null;
-    return calcEffettoRimanenze(rimanenzeAnno, metrics);
-  }, [rimanenzeAnno, metrics]);
+    return calcEffettoRimanenze(rimanenzeAnno, rawMetrics);
+  }, [rimanenzeAnno, rawMetrics]);
 
   const { projBreakEven, projBreakEvenCassa } = useMemo(() => {
     const projCostiFissiTot = metrics.proiezioneCostiFissi + metrics.proiezioneCostiStudio + metrics.proiezioneAmmortamenti;
@@ -1904,10 +1904,10 @@ const CEView: React.FC<CEViewProps> = ({
 
         {/* RISULTATI RETTIFICATI — visibili solo se rimanenze inserite */}
         {effettoRimanenze && (() => {
-          const cassaRicavi = tipoRettifica === 'consuntivo' ? metrics.fatturato : metrics.proiezioneFatturato;
-          const cassaCostiVar = tipoRettifica === 'consuntivo' ? metrics.totCostiVar.reduce((a,b)=>a+b,0) : metrics.proiezioneCostiVariabili;
+          const cassaRicavi = tipoRettifica === 'consuntivo' ? rawMetrics.fatturato : rawMetrics.proiezioneFatturato;
+          const cassaCostiVar = tipoRettifica === 'consuntivo' ? rawMetrics.totCostiVar.reduce((a,b)=>a+b,0) : rawMetrics.proiezioneCostiVariabili;
           const cassaUtile = tipoRettifica === 'consuntivo' 
-            ? metrics.utileNettoTot 
+            ? rawMetrics.utileNettoTot 
             : (rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario - previsioneFiscale.totaleImposteStimate);
 
           const rettificatoRicavi = cassaRicavi + effettoRimanenze.deltaWip;

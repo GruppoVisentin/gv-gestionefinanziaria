@@ -161,18 +161,31 @@ export const calculateRepayment = (
   const monthsPassed = targetMonthGlobal - amortizationStartMonthGlobal;
   if (monthsPassed < 0 || monthsPassed >= n) return { total: 0, principal: 0, interest: 0 };
 
-  const paymentsMade = monthsPassed;
+  let currentResidual = principal;
+  let interestPayment = 0;
+  let principalPayment = 0;
 
-  const rataFissa = monthlyRate > 0
-    ? principal * (monthlyRate * Math.pow(1 + monthlyRate, n)) / (Math.pow(1 + monthlyRate, n) - 1)
-    : principal / n;
+  for (let m = 0; m <= monthsPassed; m++) {
+    const mGlobal = amortizationStartMonthGlobal + m;
+    const rateAtM = getRateForDate(mGlobal);
+    const mRateAtM = (rateAtM / 100) / 12;
+    const remainingPayments = n - m;
+    
+    if (remainingPayments <= 0) break;
 
-  const residualCapital = monthlyRate > 0
-    ? principal * (Math.pow(1 + monthlyRate, n) - Math.pow(1 + monthlyRate, paymentsMade)) / (Math.pow(1 + monthlyRate, n) - 1)
-    : Math.max(0, principal - (principal / n * paymentsMade));
-
-  const interestPayment = Math.max(0, residualCapital * monthlyRate);
-  const principalPayment = Math.min(residualCapital, rataFissa - interestPayment);
+    const rataFissaM = mRateAtM > 0
+      ? currentResidual * (mRateAtM * Math.pow(1 + mRateAtM, remainingPayments)) / (Math.pow(1 + mRateAtM, remainingPayments) - 1)
+      : currentResidual / remainingPayments;
+    
+    const interestM = Math.max(0, currentResidual * mRateAtM);
+    const principalM = Math.min(currentResidual, rataFissaM - interestM);
+    
+    if (m === monthsPassed) {
+      interestPayment = interestM;
+      principalPayment = principalM;
+    }
+    currentResidual = Math.max(0, currentResidual - principalM);
+  }
 
   return {
     total: Math.round((principalPayment + interestPayment) * 100) / 100,
@@ -329,7 +342,8 @@ export const getDynamicLoansPrincipals = (
 
 export const getDynamicDepreciation = (
   transactions: Transaction[],
-  anno: number
+  anno: number,
+  reducesFirstYear50: boolean = false
 ): number[] => {
   const depreciation = Array(12).fill(0);
   
@@ -349,7 +363,8 @@ export const getDynamicDepreciation = (
       // Auto-ammortamento standard a 5 anni (60 mesi) con pro-rata temporis
       const yearsDiff = anno - tYear;
       if (yearsDiff >= 0 && yearsDiff <= 5) {
-        const annualDepreciation = Math.abs(t.amount) * 0.20;
+        const rate = (yearsDiff === 0 && reducesFirstYear50) ? 0.10 : 0.20;
+        const annualDepreciation = Math.abs(t.amount) * rate;
         const startMonth = tDate.getUTCMonth();
         
         if (yearsDiff === 0) {
@@ -361,13 +376,13 @@ export const getDynamicDepreciation = (
           }
         } else if (yearsDiff === 5) {
           // Sesto anno: quota di completamento per i primi startMonth mesi
-          const monthlyAmount = annualDepreciation / 12;
+          const monthlyAmount = Math.abs(t.amount) * 0.20 / 12; // quota intera originaria di completamento
           for (let m = 0; m < startMonth; m++) {
             depreciation[m] += monthlyAmount;
           }
         } else {
           // Anni intermedi: 12 mesi completi
-          const monthlyAmount = annualDepreciation / 12;
+          const monthlyAmount = Math.abs(t.amount) * 0.20 / 12;
           for (let m = 0; m < 12; m++) {
             depreciation[m] += monthlyAmount;
           }
@@ -696,9 +711,6 @@ export interface EffettoRimanenze {
   deltaTerreni: number;           // terreniFine - terreniInizio (positivo = aumento = meno costo)
   variazioneRimanenzeNetta: number; // deltaWip + deltaMateriali + deltaTerreni
   fatturatoCompetenzaRettificato: number; // fatturato cassa + deltaWip
-  costiVariabiliRettificati: number;      // costi variabili - deltaMateriali - deltaTerreni
-  utileRettificato: number;               // utile netto + variazioneRimanenzeNetta
-  baseImponibileIRES: number;             // approssimazione base IRES
 }
 
 export const calcEffettoRimanenze = (
@@ -715,26 +727,12 @@ export const calcEffettoRimanenze = (
   // (hai prodotto valore non ancora fatturato)
   const fatturatoCompetenzaRettificato = ceMetrics.fatturato + deltaWip;
 
-  // Il deltaMateriali e deltaTerreni riducono i costi variabili
-  // (hai comprato materiali/terreni che sono ancora in magazzino/propriet, non ancora consumati/edificati)
-  const costiVariabiliRettificati = ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) - deltaMateriali - deltaTerreni;
-
-  // Utile rettificato = utile per cassa + effetto rimanenze
-  const utileRettificato = ceMetrics.utileNettoTot + variazioneRimanenzeNetta;
-
-  // Base imponibile IRES approssimata
-  // (EBIT di competenza — le rimanenze impattano sia ricavi che costi)
-  const baseImponibileIRES = ceMetrics.ebitTot + variazioneRimanenzeNetta;
-
   return {
     deltaWip,
     deltaMateriali,
     deltaTerreni,
     variazioneRimanenzeNetta,
     fatturatoCompetenzaRettificato,
-    costiVariabiliRettificati,
-    utileRettificato,
-    baseImponibileIRES,
   };
 };
 
@@ -794,10 +792,16 @@ export const calcPrevisioneFiscale = (
     : 0;
 
   // Base imponibile IRES
-  // = EBT di competenza + straordinario + variazione rimanenze
+  // Calcolo differenza ammortamento per riduzione 50% primo anno fiscale (B7)
+  const standardDepr = getDynamicDepreciation(transactions, anno, false).reduce((a, b) => a + b, 0);
+  const fiscalDepr = getDynamicDepreciation(transactions, anno, true).reduce((a, b) => a + b, 0);
+  const deprDifference = standardDepr - fiscalDepr;
+
+  // Base imponibile IRES
+  // = EBT di competenza + straordinario + variazione rimanenze + quota non deducibile per ammortamento primo anno
   const ebtCompetenza = includeForecast ? ceMetrics.proiezioneEbt : ceMetrics.ebtTot;
   const straordinarioCompetenza = includeForecast ? ceMetrics.proiezioneStraordinario : ceMetrics.straordinario;
-  const baseImponibileIRES = Math.max(0, ebtCompetenza + straordinarioCompetenza + variazioneRimanenze);
+  const baseImponibileIRES = Math.max(0, ebtCompetenza + straordinarioCompetenza + variazioneRimanenze + deprDifference);
 
   // Base imponibile IRAP
   const deltaWip = rimanenze
@@ -832,10 +836,10 @@ export const calcPrevisioneFiscale = (
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
   // costiFissiTot include ammortamenti. Ai fini IRAP per le S.R.L.,
-  // l'ammortamento civilistico (imm. materiali/immateriali) è pienamente deducibile.
-  const costiOperativiTotali = includeForecast
+  // l'ammortamento civilistico (imm. materiali/immateriali) è deducibile nei limiti fiscali.
+  const costiOperativiTotali = (includeForecast
     ? (ceMetrics.proiezioneCostiVariabili + ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio + ceMetrics.proiezioneAmmortamenti)
-    : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + ceMetrics.costiFissiTot);
+    : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + ceMetrics.costiFissiTot)) - deprDifference;
 
   const costiDeducibiliIRAP = Math.max(0, costiOperativiTotali - costoPersonaleDipendente - compensoAmministratoriIRAP);
   const baseImponibileIRAP = Math.max(0, valoreProduzione - costiDeducibiliIRAP);
@@ -967,7 +971,7 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
     pfnSuEbitda:        ebitda !== 0 ? pfn / ebitda : 0,
     currentRatio:       totPassivoBT > 0 ? totAttivoCirc / totPassivoBT : 0,
     soliditaPatr:       totAttivo > 0 ? totPN / totAttivo : 0,
-    coperturInteressi:  ceMetrics.oneriFin > 0 ? ebitda / ceMetrics.oneriFin : 0,
+    coperturInteressi:  ceMetrics.oneriFin > 0 ? ebitda / ceMetrics.oneriFin : Infinity,
     dso:                fatturatoPeriodo > 0
                           ? (sp.creditiClienti / fatturatoPeriodo) * (365 * mesiTrascorsiSnap / 12) : 0,
     dpo:                acquistiFornitoriPeriodo > 0
@@ -1206,7 +1210,7 @@ export const calcPosizIoneIVA = (
           // Debito di posizioneNettaPrimaDiPagamento
           // Pagamento nel mese m+1
           if (m + 1 < 12) {
-            if (mensileCalcolato[m + 1].isForecastMese) {
+            if (mensileCalcolato[m + 1].isForecastMese || mensileCalcolato[m + 1].versamentoIVA === 0) {
               mensileCalcolato[m + 1].versamentoIVA = posizioneNettaPrimaDiPagamento;
             }
           }
@@ -1223,7 +1227,7 @@ export const calcPosizIoneIVA = (
       const saldoQ1 = mensileCalcolato[0].saldoIVA + mensileCalcolato[1].saldoIVA + mensileCalcolato[2].saldoIVA;
       const posQ1 = saldoQ1 - creditoQ;
       if (posQ1 > 0) {
-        if (mensileCalcolato[4].isForecastMese) {
+        if (mensileCalcolato[4].isForecastMese || mensileCalcolato[4].versamentoIVA === 0) {
           mensileCalcolato[4].versamentoIVA = posQ1;
         }
         creditoQ = 0;
@@ -1235,7 +1239,7 @@ export const calcPosizIoneIVA = (
       const saldoQ2 = mensileCalcolato[3].saldoIVA + mensileCalcolato[4].saldoIVA + mensileCalcolato[5].saldoIVA;
       const posQ2 = saldoQ2 - creditoQ;
       if (posQ2 > 0) {
-        if (mensileCalcolato[7].isForecastMese) {
+        if (mensileCalcolato[7].isForecastMese || mensileCalcolato[7].versamentoIVA === 0) {
           mensileCalcolato[7].versamentoIVA = posQ2;
         }
         creditoQ = 0;
@@ -1247,7 +1251,7 @@ export const calcPosizIoneIVA = (
       const saldoQ3 = mensileCalcolato[6].saldoIVA + mensileCalcolato[7].saldoIVA + mensileCalcolato[8].saldoIVA;
       const posQ3 = saldoQ3 - creditoQ;
       if (posQ3 > 0) {
-        if (mensileCalcolato[10].isForecastMese) {
+        if (mensileCalcolato[10].isForecastMese || mensileCalcolato[10].versamentoIVA === 0) {
           mensileCalcolato[10].versamentoIVA = posQ3;
         }
         creditoQ = 0;
@@ -1287,8 +1291,8 @@ export const calcPosizIoneIVA = (
       }
     });
   } else {
-    // Q4 versamento avviene a Febbraio (mese 1) o Gennaio (mese 0) del prossimo anno
-    const q4VersamentoNextYear = getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0);
+    // Q4 versamento avviene a Marzo (mese 2), Febbraio (mese 1) o Gennaio (mese 0) del prossimo anno
+    const q4VersamentoNextYear = getVersamentoMeseNextYear(2) + getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0);
 
     mensileCalcolato.forEach((m, idx) => {
       if (idx === 2) {
@@ -1326,7 +1330,7 @@ export const calcPosizIoneIVA = (
     const q1Payment = mensileCalcolato[4].versamentoIVA;
     const q2Payment = mensileCalcolato[7].versamentoIVA;
     const q3Payment = mensileCalcolato[10].versamentoIVA;
-    const q4Payment = getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0) || mensileCalcolato[11].versamentoIVA;
+    const q4Payment = (getVersamentoMeseNextYear(2) + getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0)) || mensileCalcolato[11].versamentoIVA;
     totaleVersato = q1Payment + q2Payment + q3Payment + q4Payment;
   }
 
@@ -1447,7 +1451,7 @@ export const generateDefault2025Snapshot = (
     creditiTributari: 77841, // Sum of IRES, IRAP, and IVA credits
     liquidita: 832211, // Cash Flow matching starting liquidity
     capitaleSociale: 10400, // Official share capital
-    riserve: 895770, // Recalculated to balance perfectly
+    riserve: 895770, // Recalculated to balance perfectly (balancing adjustment included)
     utileEsercizio: 173478, // Official 2025 Net Income
     mutuiLT: 194087, // Long term bank loan
     leasingLT: 0,
@@ -1456,7 +1460,7 @@ export const generateDefault2025Snapshot = (
     debitiFornitori: 340346, // Accounts payable
     debitiTributari: 31149, // Taxes & Social Security liabilities
     accontiClienti: 1365000, // Customer advances (acconti)
-    altriDebitiBT: 268075, // Other short term liabilities (adjusted to match balance)
+    altriDebitiBT: 268075, // Other short term liabilities (adjusted to match balance - balancing plug)
     mutuiBT: 0
   };
 };

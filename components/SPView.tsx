@@ -942,13 +942,21 @@ const SPView: React.FC<SPViewProps> = ({
                   <InfoTooltipWrapper>
                     <InfoTooltip 
                       termId="pfn_ebitda" 
-                      calculatedValues={`PFN / EBITDA:\n- PFN: ${formatEuro(metrics.pfn)}\n- EBITDA Anno: ${formatEuro(ceMetrics.ebitdaTot)}\n- Rapporto: ${metrics.pfnSuEbitda.toFixed(2)}x`}
+                      calculatedValues={`PFN / EBITDA:\n- PFN: ${formatEuro(metrics.pfn)}\n- EBITDA Anno: ${formatEuro(ceMetrics.ebitdaTot)}\n- Rapporto: ${ceMetrics.ebitdaTot <= 0 ? 'N/A' : `${metrics.pfnSuEbitda.toFixed(2)}x`}`}
                     />
                   </InfoTooltipWrapper>
                 </div>
-                <p className="text-2xl font-black text-slate-900">{metrics.pfnSuEbitda.toFixed(2)}x</p>
-                <p className={`text-[10px] font-bold mt-1 ${metrics.pfnSuEbitda < 3 ? 'text-emerald-600' : metrics.pfnSuEbitda < 4 ? 'text-amber-600' : 'text-rose-600'}`}>
-                  {metrics.pfnSuEbitda < 3 ? 'Ottimo' : metrics.pfnSuEbitda < 4 ? 'Attenzione' : 'Critico'}
+                <p className="text-2xl font-black text-slate-900">
+                  {ceMetrics.ebitdaTot <= 0 ? 'EBITDA ≤ 0' : `${metrics.pfnSuEbitda.toFixed(2)}x`}
+                </p>
+                <p className={`text-[10px] font-bold mt-1 ${
+                  ceMetrics.ebitdaTot <= 0
+                    ? (metrics.pfn <= 0 ? 'text-emerald-600' : 'text-rose-600')
+                    : (metrics.pfnSuEbitda < 3 ? 'text-emerald-600' : metrics.pfnSuEbitda < 4 ? 'text-amber-600' : 'text-rose-600')
+                }`}>
+                  {ceMetrics.ebitdaTot <= 0
+                    ? (metrics.pfn <= 0 ? 'Ottimo (No Debito)' : 'Critico')
+                    : (metrics.pfnSuEbitda < 3 ? 'Ottimo' : metrics.pfnSuEbitda < 4 ? 'Attenzione' : 'Critico')}
                 </p>
               </div>
 

@@ -1,21 +1,9 @@
 import { Transaction, InitialBalanceBreakdown } from '../types';
-import { getDynamicLoansInterests } from './gasCoreEngine';
+import { getDynamicLoansInterests, parseUTCDate } from './gasCoreEngine';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 const getCeType = (tx: Transaction): string => {
   return tx.ceType || (tx.category ? CATEGORY_TO_CE_TYPE[tx.category] : '') || '';
-};
-
-export const parseUTCDate = (dateStr: string): Date => {
-  if (!dateStr) return new Date(NaN); // guard: evita crash su tx.date undefined/null
-  const parts = dateStr.split('-');
-  if (parts.length === 3) {
-    const y = parseInt(parts[0], 10);
-    const m = parseInt(parts[1], 10) - 1; // 0-indexed
-    const d = parseInt(parts[2], 10);
-    return new Date(Date.UTC(y, m, d));
-  }
-  return new Date(dateStr);
 };
 
 export interface OverheadRates {
