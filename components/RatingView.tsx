@@ -267,7 +267,7 @@ const RatingView: React.FC<RatingViewProps> = ({
     ];
   }, [spMetrics, ceMetrics, rimanenze, ratingYear, previsioneFiscale.utileDopoImposte]);
 
-  const totalScore = indicators.reduce((a, b) => a + (b.health === 'green' ? 1 : b.health === 'orange' ? 0.5 : 0), 0);
+  const totalScore = indicators.reduce((a, b) => a + (b.score || 0), 0);
   const rating = totalScore >= 5.5 ? { label: 'AAA / AA — Eccellente', color: 'slate-900' } :
                  totalScore >= 4 ? { label: 'A / BBB — Solido', color: 'slate-700' } :
                  totalScore >= 2.5 ? { label: 'BB — Attenzione', color: 'slate-500' } :

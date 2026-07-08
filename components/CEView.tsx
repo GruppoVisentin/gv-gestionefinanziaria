@@ -262,7 +262,9 @@ const CEView: React.FC<CEViewProps> = ({
     const getPureForecastSum = (types: string[]): number => {
       const txs = transactions.filter(tx => {
         const type = getDynamicCEType(tx, projects);
+        const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
         return tx.isForecast && 
+          !isLinked &&
           parseUTCDate((modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date).getUTCFullYear() === selectedYear && 
           type && types.includes(type);
       });
@@ -433,25 +435,7 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'Personale tecnico e studio [Previsionale]', valore: prevCStu, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
         ]
       },
-      costo_fixed: {
-        nome: 'Altri Costi Fissi (Sedi/Marketing)',
-        valore: cFis,
-        percentuale: fat > 0 ? cFis / fat : 0,
-        steps: [
-          { label: 'Spese di sede, utenze, marketing, assicurazioni', valore: cFis, isPositivo: false, isRisultato: true, percentualeSu: fat }
-        ],
-        ceTypes: ['costo_fisso'],
-        proiezioneValore: metrics.proiezioneCostiFissi,
-        proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiFissi / metrics.proiezioneFatturato : 0,
-        proiezioneSteps: [
-          { label: 'Spese di sede, utenze, marketing, assicurazioni [Proiezione]', valore: metrics.proiezioneCostiFissi, isPositivo: false, isRisultato: true, percentualeSu: metrics.proiezioneFatturato }
-        ],
-        soloPrevisionaleValore: prevCFis,
-        soloPrevisionalePercentuale: prevFat > 0 ? prevCFis / prevFat : 0,
-        soloPrevisionaleSteps: [
-          { label: 'Spese di sede, utenze, marketing [Previsionale]', valore: prevCFis, isPositivo: false, isRisultato: true, percentualeSu: prevFat }
-        ]
-      },
+
       costo_fisso: {
         nome: 'Altri Costi Fissi (Sedi/Marketing)',
         valore: cFis,

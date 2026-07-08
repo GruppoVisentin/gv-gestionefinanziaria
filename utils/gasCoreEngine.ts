@@ -18,6 +18,19 @@ export const parseUTCDate = (dateStr: any): Date => {
   return new Date(dateStr);
 };
 
+/**
+ * Restituisce la data locale odierna o quella passata nel formato 'YYYY-MM-DD'.
+ * Previene il bug in cui new Date().toISOString().split('T')[0] slitta
+ * di un giorno indietro se generata in orari notturni in fusi orari positivi (es. Italia).
+ */
+export const getLocalYMD = (d?: Date): string => {
+  const date = d || new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // ─── AGGREGAZIONE MENSILE ────────────────────────────────────────
 
 // Helper to determine ceType dynamically if it's an INCOME and linked to a project

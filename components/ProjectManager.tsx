@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { DATE_FORMATTER } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
+import { getLocalYMD } from '../utils/gasCoreEngine';
 
 // ─── TIPOLOGIE PREIMPOSTATE ──────────────────────────────────────
 
@@ -37,7 +38,7 @@ const emptyForm = () => ({
   location: '',
   jobType: '',
   jobTypeCustom: '',
-  startDate: new Date().toISOString().split('T')[0],
+  startDate: getLocalYMD(),
   intestatari: [] as IntestatarioFattura[],
   metodoPagamento: '' as 'sal' | 'acconto' | '',
 });

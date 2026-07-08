@@ -46,7 +46,7 @@ import TermModal, { useTermModal } from './components/TermModal';
 import ImportPuntaNetModal from './components/ImportPuntaNetModal';
 import ImportStoricoModal from './components/ImportStoricoModal';
 import { DiagnosticModal } from './components/DiagnosticModal';
-import { generateDefault2025Snapshot, parseUTCDate } from './utils/gasCoreEngine';
+import { generateDefault2025Snapshot, parseUTCDate, getLocalYMD } from './utils/gasCoreEngine';
 import { 
   FIXED_COST_CATEGORIES, 
   VARIABLE_COST_CATEGORIES, 
@@ -1112,7 +1112,7 @@ const App: React.FC = () => {
   const handleDownloadBackup = useCallback(async (forceFallback: boolean = false) => {
     try {
       const data = buildBackupData();
-      const fileName = `gv_backup_${new Date().toISOString().split('T')[0]}.json`;
+      const fileName = `gv_backup_${getLocalYMD()}.json`;
       const json = JSON.stringify(data, null, 2);
 
       let useFallback = forceFallback || !('showSaveFilePicker' in window);

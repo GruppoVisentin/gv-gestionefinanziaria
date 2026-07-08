@@ -1039,17 +1039,17 @@ const SPView: React.FC<SPViewProps> = ({
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-400">Immobilizzato</span>
-                      <span className="font-black">{formatPercent(metrics.totAttivoImm / (metrics.totAttivoImm + metrics.totAttivoCirc) || 0)}</span>
+                      <span className="font-black">{formatPercent((metrics.totAttivoImm + metrics.totAttivoCirc) > 0 ? metrics.totAttivoImm / (metrics.totAttivoImm + metrics.totAttivoCirc) : 0)}</span>
                     </div>
                     <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                      <div className="bg-sky-500 h-full" style={{ width: `${(metrics.totAttivoImm / (metrics.totAttivoImm + metrics.totAttivoCirc) || 0) * 100}%` }} />
+                      <div className="bg-sky-500 h-full" style={{ width: `${(metrics.totAttivoImm + metrics.totAttivoCirc) > 0 ? (metrics.totAttivoImm / (metrics.totAttivoImm + metrics.totAttivoCirc) * 100) : 0}%` }} />
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-400">Circolante</span>
-                      <span className="font-black">{formatPercent(metrics.totAttivoCirc / (metrics.totAttivoImm + metrics.totAttivoCirc) || 0)}</span>
+                      <span className="font-black">{formatPercent((metrics.totAttivoImm + metrics.totAttivoCirc) > 0 ? metrics.totAttivoCirc / (metrics.totAttivoImm + metrics.totAttivoCirc) : 0)}</span>
                     </div>
                     <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                      <div className="bg-emerald-500 h-full" style={{ width: `${(metrics.totAttivoCirc / (metrics.totAttivoImm + metrics.totAttivoCirc) || 0) * 100}%` }} />
+                      <div className="bg-emerald-500 h-full" style={{ width: `${(metrics.totAttivoImm + metrics.totAttivoCirc) > 0 ? (metrics.totAttivoCirc / (metrics.totAttivoImm + metrics.totAttivoCirc) * 100) : 0}%` }} />
                     </div>
                   </div>
                 </div>
@@ -1058,8 +1058,8 @@ const SPView: React.FC<SPViewProps> = ({
                   <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm text-slate-300">Indice di Copertura</span>
-                      <span className={`text-lg font-black ${metrics.totPN / metrics.totAttivoImm > 1 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {(metrics.totPN / metrics.totAttivoImm || 0).toFixed(2)}
+                      <span className={`text-lg font-black ${(metrics.totAttivoImm > 0 ? metrics.totPN / metrics.totAttivoImm : 0) > 1 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {(metrics.totAttivoImm > 0 ? metrics.totPN / metrics.totAttivoImm : 0).toFixed(2)}
                       </span>
                     </div>
                     <p className="text-[10px] text-slate-500 leading-relaxed">

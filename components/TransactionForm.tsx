@@ -3,6 +3,7 @@ import { Transaction, TransactionType, Project, LoanDetails } from '../types';
 import { CURRENCY_FORMATTER } from '../constants';
 import { suggestCategory, fetchEuriborRates } from '../services/geminiService';
 import { suggerisciAliquotaIVADaCategoria } from '../utils/puntaNetImporter';
+import { getLocalYMD } from '../utils/gasCoreEngine';
 import { Wand2, Loader2, Save, X, Briefcase, Percent, Layers, CalendarRange, FileText, User, Landmark, Calendar, Info, Search, RefreshCw } from 'lucide-react';
 import { RinegoziazioneMutuo } from '../types';
 
@@ -43,7 +44,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   });
 
   const [category, setCategory] = useState(initialData?.category || fixedCategories[0]);
-  const [date, setDate] = useState(initialData?.date || new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(initialData?.date || getLocalYMD());
   const [project, setProject] = useState(initialData?.project || '');
   const [isForecast, setIsForecast] = useState(initialData?.isForecast || false);
   const [applyToAllMonths, setApplyToAllMonths] = useState(false); 

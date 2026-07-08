@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { Transaction, TransactionType, Project } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
+import { parseUTCDate, getLocalYMD } from './gasCoreEngine';
 
 const safeParseFloat = (val: any): number => {
   if (typeof val === 'number') {
@@ -436,7 +437,7 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
             throw new Error(`Data non valida: ${str}`);
           }
         } else {
-          data = new Date(str);
+          data = parseUTCDate(str);
         }
       }
       if (isNaN(data.getTime())) continue;
@@ -767,7 +768,7 @@ export const isDuplicato = (
 ): { duplicato: boolean; livello: 1 | 2 | 3 | null; transazioneEsistente?: Transaction } => {
   if (esistenti.length === 0) return { duplicato: false, livello: null };
 
-  const dataStr = riga.data.toISOString().split('T')[0];
+  const dataStr = getLocalYMD(riga.data);
   const importoCent = Math.round(riga.importo * 100);
 
   // Livello 1: Numero fattura
@@ -1307,7 +1308,7 @@ export const rigaToTransaction = (
   const netAmount = riga.importo / (1 + rate / 100);
   return {
     id: uuidv4(),
-    date: riga.data.toISOString().split('T')[0],
+    date: getLocalYMD(riga.data),
     description: riga.descrizione,
     amount: Math.round(netAmount * 100) / 100,
     type: riga.tipo === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,

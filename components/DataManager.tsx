@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { BackupData, ImportSession } from '../types';
 import { Download, Upload, Database, CheckCircle, AlertCircle, FileJson, HardDrive, Info, FolderOpen, Shield, History, Trash2, RotateCcw, FileSpreadsheet, Plus } from 'lucide-react';
+import { getLocalYMD } from '../utils/gasCoreEngine';
 
 interface DataManagerProps {
   onExport: () => BackupData;
@@ -43,7 +44,7 @@ const DataManager: React.FC<DataManagerProps> = ({
   const handleExport = async () => {
     try {
       const data = onExport();
-      const fileName = `gv_backup_${new Date().toISOString().split('T')[0]}.json`;
+      const fileName = `gv_backup_${getLocalYMD()}.json`;
       const json = JSON.stringify(data, null, 2);
       
       // Utilizza File System Access API per aprire la finestra "Salva con nome"

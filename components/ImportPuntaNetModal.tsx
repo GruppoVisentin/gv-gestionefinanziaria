@@ -27,12 +27,14 @@ import {
   estraiNumeroFattura,
   validaFileBanca,
   validaFileFEP,
-  validaFileFEA
+  validaFileFEA,
+  estraiEntity
 } from '../utils/puntaNetImporter';
 import { Transaction, BankAccount, ImportSession, Project } from '../types';
-import { parseUTCDate } from '../utils/gasCoreEngine';
+import { parseUTCDate, getLocalYMD } from '../utils/gasCoreEngine';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, CATEGORY_TO_CE_TYPE } from '../constants';
 import * as XLSX from 'xlsx';
+import { v4 as uuidv4 } from 'uuid';
 
 const formatEuro = (v: number) =>
   new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(v);
@@ -537,8 +539,8 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         const t = r.riga.data.getTime();
         return isNaN(t) ? Date.now() : t;
       });
-      const minDate = dates.length > 0 ? new Date(Math.min(...dates)).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-      const maxDate = dates.length > 0 ? new Date(Math.max(...dates)).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      const minDate = dates.length > 0 ? getLocalYMD(new Date(Math.min(...dates))) : getLocalYMD();
+      const maxDate = dates.length > 0 ? getLocalYMD(new Date(Math.max(...dates))) : getLocalYMD();
 
       const session: ImportSession = {
         id: sessionId,

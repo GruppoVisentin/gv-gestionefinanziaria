@@ -399,20 +399,23 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
 
   const compensoSociPrev = useMemo(() => {
     return (transactions || [])
-      .filter(tx => 
-        getCeType(tx) === 'costo_studio' && 
+      .filter(tx => {
+        const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
+        return getCeType(tx) === 'costo_studio' && 
         tx.isForecast &&
+        !isLinked &&
         parseUTCDate(tx.date).getUTCFullYear() === anno &&
         (tx.category?.toLowerCase().includes('compenso amministratori') || 
          tx.category?.toLowerCase().includes('soci'))
-      )
+      })
       .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
   }, [transactions, anno]);
 
   const metricsPrev = useMemo(() => {
     const txPrev = (transactions || []).filter(tx => {
+      const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
       const d = parseUTCDate(tx.date);
-      return d.getUTCFullYear() === anno && getCeType(tx) && tx.isForecast;
+      return d.getUTCFullYear() === anno && getCeType(tx) && tx.isForecast && !isLinked;
     });
 
     const sumByType = (types: string[]) =>
