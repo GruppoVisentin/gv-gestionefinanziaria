@@ -355,8 +355,7 @@ export const getDynamicLoansPrincipals = (
 
 export const getDynamicDepreciation = (
   transactions: Transaction[],
-  anno: number,
-  reducesFirstYear50: boolean = false
+  anno: number
 ): number[] => {
   const depreciation = Array(12).fill(0);
   
@@ -376,8 +375,7 @@ export const getDynamicDepreciation = (
       // Auto-ammortamento standard a 5 anni (60 mesi) con pro-rata temporis
       const yearsDiff = anno - tYear;
       if (yearsDiff >= 0 && yearsDiff <= 5) {
-        const rate = (yearsDiff === 0 && reducesFirstYear50) ? 0.10 : 0.20;
-        const annualDepreciation = Math.abs(t.amount) * rate;
+        const annualDepreciation = Math.abs(t.amount) * 0.20;
         const startMonth = tDate.getUTCMonth();
         
         if (yearsDiff === 0) {
@@ -804,17 +802,24 @@ export const calcPrevisioneFiscale = (
       deltaTerreni
     : 0;
 
-  // Base imponibile IRES
-  // Calcolo differenza ammortamento per riduzione 50% primo anno fiscale (B7)
-  const standardDepr = getDynamicDepreciation(transactions, anno, false).reduce((a, b) => a + b, 0);
-  const fiscalDepr = getDynamicDepreciation(transactions, anno, true).reduce((a, b) => a + b, 0);
-  const deprDifference = standardDepr - fiscalDepr;
+  // N1: quota esente dei dividendi da partecipazioni (95% esente ex art. 89 TUIR)
+  const CATEGORIA_DIVIDENDI = '[FINANZA] Ritorno da Investimenti / Dividendi';
+  const dividendiIncassati = transactions
+    .filter(tx => {
+      const d = parseUTCDate(tx.date);
+      if (d.getUTCFullYear() !== anno) return false;
+      if (!includeForecast && tx.isForecast) return false;
+      return tx.category === CATEGORIA_DIVIDENDI;
+    })
+    .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+
+  const dividendiEsenti = dividendiIncassati * 0.95;
 
   // Base imponibile IRES
-  // = EBT di competenza + straordinario + variazione rimanenze + quota non deducibile per ammortamento primo anno
+  // = EBT di competenza + straordinario + variazione rimanenze - dividendi esenti
   const ebtCompetenza = includeForecast ? ceMetrics.proiezioneEbt : ceMetrics.ebtTot;
   const straordinarioCompetenza = includeForecast ? ceMetrics.proiezioneStraordinario : ceMetrics.straordinario;
-  const baseImponibileIRES = Math.max(0, ebtCompetenza + straordinarioCompetenza + variazioneRimanenze + deprDifference);
+  const baseImponibileIRES = Math.max(0, ebtCompetenza + straordinarioCompetenza + variazioneRimanenze - dividendiEsenti);
 
   // Base imponibile IRAP
   const deltaWip = rimanenze
@@ -850,9 +855,9 @@ export const calcPrevisioneFiscale = (
 
   // costiFissiTot include ammortamenti. Ai fini IRAP per le S.R.L.,
   // l'ammortamento civilistico (imm. materiali/immateriali) è deducibile nei limiti fiscali.
-  const costiOperativiTotali = (includeForecast
+  const costiOperativiTotali = includeForecast
     ? (ceMetrics.proiezioneCostiVariabili + ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio + ceMetrics.proiezioneAmmortamenti)
-    : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + ceMetrics.costiFissiTot)) - deprDifference;
+    : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + ceMetrics.costiFissiTot);
 
   const costiDeducibiliIRAP = Math.max(0, costiOperativiTotali - costoPersonaleDipendente - compensoAmministratoriIRAP);
   const baseImponibileIRAP = Math.max(0, valoreProduzione - costiDeducibiliIRAP);
