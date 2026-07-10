@@ -1887,7 +1887,7 @@ const CEView: React.FC<CEViewProps> = ({
         </div>
 
         {/* RISULTATI RETTIFICATI — visibili solo se rimanenze inserite */}
-        {effettoRimanenze && (() => {
+        {effettoRimanenze && modalita === 'cassa' && (() => {
           const cassaRicavi = tipoRettifica === 'consuntivo' ? rawMetrics.fatturato : rawMetrics.proiezioneFatturato;
           const cassaCostiVar = tipoRettifica === 'consuntivo' ? rawMetrics.totCostiVar.reduce((a,b)=>a+b,0) : rawMetrics.proiezioneCostiVariabili;
           const cassaUtile = tipoRettifica === 'consuntivo' 
