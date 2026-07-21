@@ -197,7 +197,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
 
   // SOLO CASH FLOW — MAI NEL CE
   "[FINANZA] Finanziamenti Ricevuti":                  'solo_cashflow',
-  "[CANTIERE] Anticipi da Clienti su Commessa":        'ricavo_core',
+  "[CANTIERE] Anticipi da Clienti su Commessa":        'solo_cashflow', // acconto: debito, mai nel CE
   "Altro / Non Classificato":                          'solo_cashflow',
 
   // COSTI VARIABILI

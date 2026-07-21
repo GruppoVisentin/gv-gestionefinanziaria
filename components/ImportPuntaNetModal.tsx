@@ -345,7 +345,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           if (tipoEntrata) {
             const mapping: Record<string, { categoria: string; ceType: string }> = {
               sal:      { categoria: '[CANTIERE] SAL — Stato Avanzamento Lavori', ceType: 'ricavo_core' },
-              acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa',   ceType: 'ricavo_core' },
+              acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa',   ceType: 'solo_cashflow' },
               saldo:    { categoria: '[CANTIERE] Saldo Finale Commessa',           ceType: 'ricavo_core' },
               immobile: { categoria: '[IMMOBILIARE] Vendita Immobili e Terreni',   ceType: 'ricavo_immobiliare' },
               altro:    { categoria: '[CANTIERE] Manutenzioni e Piccoli Lavori',   ceType: 'ricavo_altro' },
@@ -430,7 +430,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           tipoEntrata = matchedProj.metodoPagamento;
           const mapping: Record<string, { categoria: string; ceType: string }> = {
             sal:      { categoria: '[CANTIERE] SAL — Stato Avanzamento Lavori', ceType: 'ricavo_core' },
-            acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa',   ceType: 'ricavo_core' },
+            acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa',   ceType: 'solo_cashflow' },
           };
           const mapped = mapping[tipoEntrata];
           if (mapped) {
@@ -511,7 +511,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   const selezionaTipoEntrata = (idx: number, tipo: 'sal' | 'acconto' | 'saldo' | 'immobile' | 'altro') => {
     const mapping: Record<string, { categoria: string; ceType: string }> = {
       sal:      { categoria: '[CANTIERE] SAL — Stato Avanzamento Lavori', ceType: 'ricavo_core' },
-      acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa',   ceType: 'ricavo_core' },
+      acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa',   ceType: 'solo_cashflow' },
       immobile: { categoria: '[IMMOBILIARE] Vendita Immobili e Terreni',   ceType: 'ricavo_immobiliare' },
       saldo:    { categoria: '[CANTIERE] Saldo Finale Commessa',           ceType: 'ricavo_core' },
       altro:    { categoria: '[CANTIERE] Manutenzioni e Piccoli Lavori',   ceType: 'ricavo_altro' },

@@ -47,6 +47,14 @@ export const getDynamicCEType = (tx: Transaction, projects?: Project[]): string 
   if (tx.type === 'INCOME' && tx.project && projects) {
     const proj = projects.find(p => p.name === tx.project);
     if (proj) {
+      // Filone B: commessa ad ACCONTO -> incassi = acconti da clienti (debito), NON ricavo.
+      // Il valore del cantiere concorre al reddito via rimanenze (lavori in corso).
+      if (proj.metodoPagamento === 'acconto' && tx.type === 'INCOME') {
+        const isRevenueLike = type === 'ricavo_core' || type === 'ricavo_immobiliare' ||
+          (tx.category?.startsWith('[CANTIERE]') ?? false) ||
+          tx.category === '[IMMOBILIARE] Vendita Immobili e Terreni';
+        if (isRevenueLike) return 'solo_cashflow';
+      }
       const isImmobiliare = proj.jobType === 'Immobiliare';
       const isOperationalRevenue = type === 'ricavo_core' || type === 'ricavo_immobiliare' || 
         tx.category === '[CANTIERE] SAL — Stato Avanzamento Lavori' ||
