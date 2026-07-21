@@ -152,7 +152,9 @@ export const INCOME_CATEGORIES: string[] = [
 
   // ─── PROVENTI FINANZIARI ──────────────────────────────────────
   // Non sono ricavi operativi — entreranno nel CE come proventi finanziari.
-  "[FINANZA] Ritorno da Investimenti / Dividendi",     // era: Ritorno da Investimenti
+  "[FINANZA] Ritorno da Investimenti / Dividendi",     // interessi/proventi generici (100% imponibili)
+  "[FINANZA] Dividendi da Partecipazioni",             // dividendi veri (PEX 95%)
+  "[FINANZA] Rientro Capitale Investito",              // rientro capitale: solo cash flow, mai nel CE
 
   // ─── SOLO CASH FLOW ───────────────────────────────────────────
   // Non sono ricavi — sono movimenti finanziari che impattano il conto
@@ -189,7 +191,9 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
   "[STRAORDINARI] Vendita Attrezzature e Cespiti":     'straordinario',
 
   // PROVENTI FINANZIARI
-  "[FINANZA] Ritorno da Investimenti / Dividendi":     'provento_finanziario',
+  "[FINANZA] Ritorno da Investimenti / Dividendi":     'provento_finanziario', // generico: interessi/proventi 100% imponibili (NO PEX)
+  "[FINANZA] Dividendi da Partecipazioni":             'provento_finanziario', // veri dividendi ex art. 89 TUIR — UNICO trigger PEX 95%
+  "[FINANZA] Rientro Capitale Investito":              'solo_cashflow',        // restituzione capitale: NON reddito, mai nel CE
 
   // SOLO CASH FLOW — MAI NEL CE
   "[FINANZA] Finanziamenti Ricevuti":                  'solo_cashflow',

@@ -69,8 +69,8 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
           if (t.type !== type) return false;
           
           if (type === TransactionType.INCOME) {
-              if (filterType === 'OPS') return t.category !== '[FINANZA] Finanziamenti Ricevuti' && t.category !== '[FINANZA] Ritorno da Investimenti / Dividendi';
-              if (filterType === 'FIN') return t.category === '[FINANZA] Finanziamenti Ricevuti' || t.category === '[FINANZA] Ritorno da Investimenti / Dividendi';
+              if (filterType === 'OPS') return !t.category?.startsWith('[FINANZA]');
+              if (filterType === 'FIN') return !!t.category?.startsWith('[FINANZA]');
           } 
           if (type === TransactionType.EXPENSE) {
               if (t.ceType === 'ammortamento') return false; // N5 / Cash Flow alignment: esclude ammortamenti (costi non monetari)

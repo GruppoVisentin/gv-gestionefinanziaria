@@ -168,8 +168,8 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
   // 2. Split into Operational, Financing, and Investments
   const financingTransactions = incomeTransactions.filter(t => t.category === '[FINANZA] Finanziamenti Ricevuti');
-  const investmentTransactions = incomeTransactions.filter(t => t.category === '[FINANZA] Ritorno da Investimenti / Dividendi');
-  const operationalTransactions = incomeTransactions.filter(t => t.category !== '[FINANZA] Finanziamenti Ricevuti' && t.category !== '[FINANZA] Ritorno da Investimenti / Dividendi');
+  const investmentTransactions = incomeTransactions.filter(t => t.category?.startsWith('[FINANZA]') && t.category !== '[FINANZA] Finanziamenti Ricevuti');
+  const operationalTransactions = incomeTransactions.filter(t => !t.category?.startsWith('[FINANZA]'));
 
   // 3. Identify unique "Commesse" (Projects) from Operational Transactions only
   const transactionProjects = operationalTransactions.map(t => t.project?.trim() || 'Generale');

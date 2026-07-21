@@ -803,7 +803,7 @@ export const calcPrevisioneFiscale = (
     : 0;
 
   // N1: quota esente dei dividendi da partecipazioni (95% esente ex art. 89 TUIR)
-  const CATEGORIA_DIVIDENDI = '[FINANZA] Ritorno da Investimenti / Dividendi';
+  const CATEGORIA_DIVIDENDI = '[FINANZA] Dividendi da Partecipazioni';
   const dividendiIncassati = transactions
     .filter(tx => {
       const d = parseUTCDate(tx.date);
