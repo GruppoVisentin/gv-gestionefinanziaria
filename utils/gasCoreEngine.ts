@@ -827,7 +827,21 @@ export const calcPrevisioneFiscale = (
   // = EBT di competenza + straordinario + variazione rimanenze - dividendi esenti
   const ebtCompetenza = includeForecast ? ceMetrics.proiezioneEbt : ceMetrics.ebtTot;
   const straordinarioCompetenza = includeForecast ? ceMetrics.proiezioneStraordinario : ceMetrics.straordinario;
-  const baseImponibileIRES = Math.max(0, ebtCompetenza + straordinarioCompetenza + variazioneRimanenze - dividendiEsenti);
+  // BUG-003: i costi straordinari INDEDUCIBILI non devono ridurre la base IRES.
+  // Sono gia' inclusi (negativi) in straordinarioCompetenza -> vanno ri-aggiunti (variazione in aumento).
+  // Sanzioni/penali: 100% indeducibili. Donazioni/liberalita': art. 100 TUIR — aggiunte per prudenza;
+  // se deducibili entro i limiti, RIMUOVERE la seconda categoria dall'array (confermare col commercialista).
+  const CATEGORIE_STRAORD_INDEDUCIBILI = ['[STRAORDINARI] Sanzioni e Penali', '[STRAORDINARI] Volontariato e Donazioni'];
+  const straordinarioIndeducibile = transactions
+    .filter(tx => {
+      const d = parseUTCDate(tx.date);
+      if (d.getUTCFullYear() !== anno) return false;
+      if (!includeForecast && tx.isForecast) return false;
+      return tx.type === 'EXPENSE' && CATEGORIE_STRAORD_INDEDUCIBILI.includes(tx.category || '');
+    })
+    .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+
+  const baseImponibileIRES = Math.max(0, ebtCompetenza + straordinarioCompetenza + variazioneRimanenze - dividendiEsenti + straordinarioIndeducibile);
 
   // Base imponibile IRAP
   const deltaWip = rimanenze
