@@ -514,6 +514,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
         const type = getDynamicCEType(tx, projects);
         return tx.isForecast && 
         parseUTCDate(tx.date).getUTCFullYear() === ce.anno && 
+        parseUTCDate(tx.date).getUTCMonth() > oggi.getMonth() && // solo mesi FUTURI: i passati sono già negli actual
         type && types.includes(type) &&
         !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
       })
