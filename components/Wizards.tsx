@@ -49,7 +49,7 @@ interface YearStartWizardProps {
   onClose: () => void;
 }
 
-export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions, onSave, onClose }) => {
+export const YearStartWizard: React.FC<YearStartWizardProps> = ({ transactions = [], onSave, onClose }) => {
   const [step, setStep] = useState(1);
   const [targetYear, setTargetYear] = useState(new Date().getFullYear());
   const [sourceYear, setSourceYear] = useState(new Date().getFullYear() - 1);

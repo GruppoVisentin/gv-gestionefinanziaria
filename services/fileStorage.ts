@@ -150,7 +150,11 @@ export async function requestPermission(handle: FileSystemFileHandle): Promise<b
 export async function readFile(handle: FileSystemFileHandle): Promise<BackupData> {
   const file = await handle.getFile();
   const contents = await file.text();
-  return JSON.parse(contents) as BackupData;
+  try {
+    return JSON.parse(contents) as BackupData;
+  } catch (err) {
+    throw new Error("Il file selezionato è corrotto o non è un file JSON/GVCF valido.");
+  }
 }
 
 /**

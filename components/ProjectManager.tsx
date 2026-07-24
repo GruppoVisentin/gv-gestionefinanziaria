@@ -46,7 +46,7 @@ const emptyForm = () => ({
 // ─── COMPONENTE ──────────────────────────────────────────────────
 
 const ProjectManager: React.FC<ProjectManagerProps> = ({
-  projects, onSave, onUpdate, onDelete, isAuthorized = false
+  projects = [], onSave, onUpdate, onDelete, isAuthorized = false
 }) => {
   const [mode, setMode] = useState<'list' | 'new' | 'edit'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);

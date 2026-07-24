@@ -211,9 +211,9 @@ export const calcolaPreventivoCantiere = (
   // Il margine si calcola sul prezzo finale, non sul costo
   // Prezzo = CostoTotale / (1 - margine%)
   // Se margine >= 1 (100%+) il denominatore sarebbe 0 o negativo — fallback a costoTotale
-  const prezzoMinimo = margineTargetPercent < 1
-    ? costoTotale / (1 - margineTargetPercent)
-    : costoTotale;
+  // Cap margin at 99.9% to avoid division by zero
+  const safeMargin = Math.min(margineTargetPercent, 0.999);
+  const prezzoMinimo = costoTotale / (1 - safeMargin);
 
   const margineEuro         = prezzoMinimo - costoTotale;
   const coefficienteRicarico = costoDiretto > 0
@@ -293,10 +293,9 @@ export const calcolaPreventivoImmobiliare = (
   const costoTotaleOperazione =
     costoTerreno + costoCostruzione + quotaOverheadSuCostruzione + costiCorrelati;
 
-  // Prezzo minimo per raggiungere il margine target
-  const prezzoVenditaMinimo = margineTargetPercent < 1
-    ? costoTotaleOperazione / (1 - margineTargetPercent)
-    : costoTotaleOperazione;
+  // Prezzo minimo per raggiungere il margine target (cap al 99.9% per evitare divisione per zero)
+  const safeMargin = Math.min(margineTargetPercent, 0.999);
+  const prezzoVenditaMinimo = costoTotaleOperazione / (1 - safeMargin);
 
   const margineEuro  = prezzoVenditaMinimo - costoTotaleOperazione;
   const margineNetto = prezzoVenditaMinimo - costoTerreno - costiCorrelati

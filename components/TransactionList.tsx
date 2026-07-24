@@ -9,7 +9,7 @@ interface TransactionListProps {
   isAuthorized?: boolean;
 }
 
-const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelete, isAuthorized = false }) => {
+const TransactionList: React.FC<TransactionListProps> = ({ transactions = [], onDelete, isAuthorized = false }) => {
   // Sort by date desc
   const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 

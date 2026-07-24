@@ -136,7 +136,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || !description) return;
+    const numAmount = parseFloat(amount);
+    if (!amount || isNaN(numAmount) || numAmount < 0 || !description) {
+        alert("L'importo deve essere un numero positivo e la descrizione è obbligatoria.");
+        return;
+    }
 
     let finalDescription = description;
     

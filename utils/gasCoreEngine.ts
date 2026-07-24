@@ -449,8 +449,8 @@ export const buildCEData = (
 
 export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], projects?: Project[], initialData?: InitialBalanceBreakdown) => {
   const sum12 = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
-  const add12 = (a: number[], b: number[]) => a.map((v, i) => v + b[i]);
-  const sub12 = (a: number[], b: number[]) => a.map((v, i) => v - b[i]);
+  const add12 = (a: number[], b: number[]) => a.map((v, i) => Number((v + b[i]).toFixed(2)));
+  const sub12 = (a: number[], b: number[]) => a.map((v, i) => Number((v - b[i]).toFixed(2)));
 
   const totRicavi       = add12(add12(ce.ricaviCore, ce.ricaviAltro), ce.ricaviImmobiliare);
   const totCostiVar     = ce.costiVariabili;
@@ -527,8 +527,8 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     // 2. Auto-simulated Project Costs & Revenues
     if (projects) {
       projects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
-        const start = new Date(p.estimatedStartDate!);
-        const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
+        const start = parseUTCDate(p.estimatedStartDate!);
+        const startMonthGlobal = start.getUTCFullYear() * 12 + start.getUTCMonth();
         
         for (let m = oggi.getMonth() + 1; m < 12; m++) {
           const targetMonthGlobal = ce.anno * 12 + m;
@@ -1012,7 +1012,7 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
     pfnSuEbitda:        ebitda !== 0 ? pfn / ebitda : 0,
     currentRatio:       totPassivoBT > 0 ? totAttivoCirc / totPassivoBT : 0,
     soliditaPatr:       totAttivo > 0 ? totPN / totAttivo : 0,
-    coperturInteressi:  ceMetrics.oneriFin > 0 ? ebitda / ceMetrics.oneriFin : Infinity,
+    coperturInteressi:  ceMetrics.oneriFin > 0 ? ebitda / ceMetrics.oneriFin : 0,
     dso:                fatturatoPeriodo > 0
                           ? (sp.creditiClienti / fatturatoPeriodo) * (365 * mesiTrascorsiSnap / 12) : 0,
     dpo:                acquistiFornitoriPeriodo > 0

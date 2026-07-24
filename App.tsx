@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   Transaction, 
   AppView, 
@@ -732,6 +732,9 @@ const App: React.FC = () => {
   const [aliquotaIRES, setAliquotaIRES] = useState<number>(24);
   const [aliquotaIRAP, setAliquotaIRAP] = useState<number>(3.9);
 
+  // Memoized Array
+  const allExpenseCategories = useMemo(() => [...fixedCategories, ...variableCategories], [fixedCategories, variableCategories]);
+
   // Help & Navigation States
   const [guidaInitialTab, setGuidaInitialTab] = useState<'manuale' | 'glossario'>('manuale');
   const [guidaInitialSection, setGuidaInitialSection] = useState<string | undefined>(undefined);
@@ -753,22 +756,28 @@ const App: React.FC = () => {
   const expenseScrollRef = useRef<HTMLDivElement>(null);
   const cashFlowScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasUnsavedChangesRef = useRef(false);
 
   // --- SCROLL SYNCHRONIZATION ---
   useEffect(() => {
     if (view !== AppView.TIMELINE) return;
 
+    let incomeEl: HTMLDivElement | null = null;
+    let expenseEl: HTMLDivElement | null = null;
+    let cashFlowEl: HTMLDivElement | null = null;
+    let handleScroll: ((e: Event) => void) | null = null;
+
     // Small delay to ensure refs are populated after view change
     const timer = setTimeout(() => {
-      const income = incomeScrollRef.current;
-      const expense = expenseScrollRef.current;
-      const cashFlow = cashFlowScrollRef.current;
+      incomeEl = incomeScrollRef.current;
+      expenseEl = expenseScrollRef.current;
+      cashFlowEl = cashFlowScrollRef.current;
 
-      if (!income || !expense || !cashFlow) return;
+      if (!incomeEl || !expenseEl || !cashFlowEl) return;
 
-      const handleScroll = (e: Event) => {
+      handleScroll = (e: Event) => {
         const source = e.target as HTMLDivElement;
-        const targets = [income, expense, cashFlow].filter(t => t && t !== source);
+        const targets = [incomeEl, expenseEl, cashFlowEl].filter(t => t && t !== source);
         
         targets.forEach(target => {
           if (target && target.scrollLeft !== source.scrollLeft) {
@@ -777,18 +786,19 @@ const App: React.FC = () => {
         });
       };
 
-      income.addEventListener('scroll', handleScroll, { passive: true });
-      expense.addEventListener('scroll', handleScroll, { passive: true });
-      cashFlow.addEventListener('scroll', handleScroll, { passive: true });
-
-      return () => {
-        income.removeEventListener('scroll', handleScroll);
-        expense.removeEventListener('scroll', handleScroll);
-        cashFlow.removeEventListener('scroll', handleScroll);
-      };
+      incomeEl.addEventListener('scroll', handleScroll, { passive: true });
+      expenseEl.addEventListener('scroll', handleScroll, { passive: true });
+      cashFlowEl.addEventListener('scroll', handleScroll, { passive: true });
     }, 100);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (handleScroll) {
+        if (incomeEl) incomeEl.removeEventListener('scroll', handleScroll);
+        if (expenseEl) expenseEl.removeEventListener('scroll', handleScroll);
+        if (cashFlowEl) cashFlowEl.removeEventListener('scroll', handleScroll);
+      }
+    };
   }, [view]);
 
   // --- DATA STRUCTURES & PERSISTENCE ---
@@ -939,6 +949,7 @@ const App: React.FC = () => {
       
       setLastSaved(new Date());
       setSaveStatus('saved');
+      hasUnsavedChangesRef.current = false;
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (e) {
       console.error('Save failed', e);
@@ -1073,6 +1084,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!fileHandle || appState !== 'ready') return;
     
+    hasUnsavedChangesRef.current = true;
     const timer = setTimeout(() => {
       saveToFile(fileHandle, backupFileHandle);
     }, 1500);
@@ -1096,17 +1108,15 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!fileHandle) return;
-      // Tenta salvataggio best-effort (asincrono, potrebbe non completare)
-      saveToFile(fileHandle, backupFileHandle);
-      // Se ci sono modifiche non ancora salvate, avvisa l'utente
-      if (saveStatus !== 'saved') {
+      // Avvisa l'utente se ci sono modifiche in corso di salvataggio o non ancora salvate
+      if (saveStatus === 'saving' || hasUnsavedChangesRef.current) {
         e.preventDefault();
-        e.returnValue = 'Ci sono modifiche non salvate. Uscire comunque?';
+        e.returnValue = 'Ci sono modifiche non salvate o salvataggio in corso. Uscire comunque?';
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [fileHandle, backupFileHandle, saveStatus, saveToFile]);
+  }, [fileHandle, saveStatus]);
 
   // --- HANDLERS ---
   const handleDownloadBackup = useCallback(async (forceFallback: boolean = false) => {
@@ -1206,45 +1216,49 @@ const App: React.FC = () => {
       fileInputRef.current?.click();
       return;
     }
-    const result = await openExistingFile();
-    if (result) {
-      loadFromData(result.data);
-      setFileHandle(result.handle);
-      await saveHandleToIDB(result.handle);
-      
-      // Chiedi autorizzazione per il file di Backup di Sicurezza se presente
-      if (pendingBackupHandleFromIDB) {
-        const hasBackupPerm = await requestPermission(pendingBackupHandleFromIDB);
-        if (hasBackupPerm) {
-          setBackupFileHandle(pendingBackupHandleFromIDB);
-        } else {
-          console.warn("Permesso negato per il file di backup. Scollegato.");
-          await clearBackupHandleFromIDB();
-        }
-        setPendingBackupHandleFromIDB(null);
-      }
-      
-      // Chiedi autorizzazione per il file delle Regole se presente
-      if (pendingRulesHandleFromIDB) {
-        const hasRulesPerm = await requestPermission(pendingRulesHandleFromIDB);
-        if (hasRulesPerm) {
-          setRulesFileHandle(pendingRulesHandleFromIDB);
-          try {
-            const fileRegole = await readRulesFile(pendingRulesHandleFromIDB);
-            if (fileRegole && fileRegole.length > 0) {
-              setRegolePuntaNet(prev => mergeRegole(prev, fileRegole));
-            }
-          } catch (e) {
-            console.error("Errore lettura regole", e);
+    try {
+      const result = await openExistingFile();
+      if (result) {
+        loadFromData(result.data);
+        setFileHandle(result.handle);
+        await saveHandleToIDB(result.handle);
+        
+        // Chiedi autorizzazione per il file di Backup di Sicurezza se presente
+        if (pendingBackupHandleFromIDB) {
+          const hasBackupPerm = await requestPermission(pendingBackupHandleFromIDB);
+          if (hasBackupPerm) {
+            setBackupFileHandle(pendingBackupHandleFromIDB);
+          } else {
+            console.warn("Permesso negato per il file di backup. Scollegato.");
+            await clearBackupHandleFromIDB();
           }
-        } else {
-          console.warn("Permesso negato per il file delle regole. Scollegato.");
-          await clearRulesHandleFromIDB();
+          setPendingBackupHandleFromIDB(null);
         }
-        setPendingRulesHandleFromIDB(null);
+        
+        // Chiedi autorizzazione per il file delle Regole se presente
+        if (pendingRulesHandleFromIDB) {
+          const hasRulesPerm = await requestPermission(pendingRulesHandleFromIDB);
+          if (hasRulesPerm) {
+            setRulesFileHandle(pendingRulesHandleFromIDB);
+            try {
+              const fileRegole = await readRulesFile(pendingRulesHandleFromIDB);
+              if (fileRegole && fileRegole.length > 0) {
+                setRegolePuntaNet(prev => mergeRegole(prev, fileRegole));
+              }
+            } catch (e) {
+              console.error("Errore lettura regole", e);
+            }
+          } else {
+            console.warn("Permesso negato per il file delle regole. Scollegato.");
+            await clearRulesHandleFromIDB();
+          }
+          setPendingRulesHandleFromIDB(null);
+        }
+        
+        setAppState('ready');
       }
-      
-      setAppState('ready');
+    } catch (err: any) {
+      alert("Errore nell'apertura del file: " + err.message);
     }
   }, [loadFromData, pendingBackupHandleFromIDB, pendingRulesHandleFromIDB, isFileSystemSupported]);
 
@@ -1294,44 +1308,49 @@ const App: React.FC = () => {
     if (!pendingHandleFromIDB) return;
     const hasPermission = await requestPermission(pendingHandleFromIDB);
     if (hasPermission) {
-      const data = await readFile(pendingHandleFromIDB);
-      if (data) {
-        loadFromData(data);
-        setFileHandle(pendingHandleFromIDB);
-        
-        // Permesso sequenziale per il file di Backup di Sicurezza
-        if (pendingBackupHandleFromIDB) {
-          const hasBackupPerm = await requestPermission(pendingBackupHandleFromIDB);
-          if (hasBackupPerm) {
-            setBackupFileHandle(pendingBackupHandleFromIDB);
-          } else {
-            console.warn("Permesso negato per il file di backup. Scollegato.");
-            await clearBackupHandleFromIDB();
-          }
-          setPendingBackupHandleFromIDB(null);
-        }
-        
-        // Permesso sequenziale per il file delle Regole
-        if (pendingRulesHandleFromIDB) {
-          const hasRulesPerm = await requestPermission(pendingRulesHandleFromIDB);
-          if (hasRulesPerm) {
-            setRulesFileHandle(pendingRulesHandleFromIDB);
-            try {
-              const fileRegole = await readRulesFile(pendingRulesHandleFromIDB);
-              if (fileRegole && fileRegole.length > 0) {
-                setRegolePuntaNet(prev => mergeRegole(prev, fileRegole));
-              }
-            } catch (err) {
-              console.error("Errore caricamento regole da file", err);
+      try {
+        const data = await readFile(pendingHandleFromIDB);
+        if (data) {
+          loadFromData(data);
+          setFileHandle(pendingHandleFromIDB);
+          
+          // Permesso sequenziale per il file di Backup di Sicurezza
+          if (pendingBackupHandleFromIDB) {
+            const hasBackupPerm = await requestPermission(pendingBackupHandleFromIDB);
+            if (hasBackupPerm) {
+              setBackupFileHandle(pendingBackupHandleFromIDB);
+            } else {
+              console.warn("Permesso negato per il file di backup. Scollegato.");
+              await clearBackupHandleFromIDB();
             }
-          } else {
-            console.warn("Permesso negato per il file delle regole. Scollegato.");
-            await clearRulesHandleFromIDB();
+            setPendingBackupHandleFromIDB(null);
           }
-          setPendingRulesHandleFromIDB(null);
+          
+          // Permesso sequenziale per il file delle Regole
+          if (pendingRulesHandleFromIDB) {
+            const hasRulesPerm = await requestPermission(pendingRulesHandleFromIDB);
+            if (hasRulesPerm) {
+              setRulesFileHandle(pendingRulesHandleFromIDB);
+              try {
+                const fileRegole = await readRulesFile(pendingRulesHandleFromIDB);
+                if (fileRegole && fileRegole.length > 0) {
+                  setRegolePuntaNet(prev => mergeRegole(prev, fileRegole));
+                }
+              } catch (err) {
+                console.error("Errore caricamento regole da file", err);
+              }
+            } else {
+              console.warn("Permesso negato per il file delle regole. Scollegato.");
+              await clearRulesHandleFromIDB();
+            }
+            setPendingRulesHandleFromIDB(null);
+          }
+          
+          setAppState('ready');
         }
-        
-        setAppState('ready');
+      } catch (err: any) {
+        alert("Errore nel caricamento del file salvato: " + err.message);
+        setPendingHandleFromIDB(null);
       }
     } else {
       // If permission denied, go back to welcome without pending
@@ -1343,8 +1362,13 @@ const App: React.FC = () => {
     // Read all current states (which might have been loaded from localStorage if we didn't clear them yet)
     // Actually, we cleared the initializers, so we need to read from localStorage manually here
     const getLocal = (key: string) => {
-      const val = localStorage.getItem(key);
-      return val ? JSON.parse(val) : null;
+      try {
+        const val = localStorage.getItem(key);
+        return val ? JSON.parse(val) : null;
+      } catch (e) {
+        console.error(`Error parsing ${key} from localStorage`, e);
+        return null;
+      }
     };
 
     const localData: BackupData = {
@@ -2175,7 +2199,7 @@ const App: React.FC = () => {
             <InsightPanel transactions={transactions} />
             <Dashboard 
                 transactions={transactions} 
-                expenseCategories={[...fixedCategories, ...variableCategories]}
+                expenseCategories={allExpenseCategories}
                 onGoToManuale={handleGoToManuale}
                 initialAccounts={initialData.accounts}
                 initialData={initialData}
@@ -2452,7 +2476,7 @@ const App: React.FC = () => {
       default:
         return <Dashboard 
                   transactions={transactions} 
-                  expenseCategories={[...fixedCategories, ...variableCategories]}
+                  expenseCategories={allExpenseCategories}
                   onGoToManuale={handleGoToManuale}
                   initialAccounts={initialData.accounts}
                   initialData={initialData}
