@@ -2483,6 +2483,7 @@ const App: React.FC = () => {
                   projects={projects}
                   spSnapshots={spSnapshots}
                   ceManualData={ceManualData}
+                  rimanenze={rimanenze}
                 />;
     }
   };

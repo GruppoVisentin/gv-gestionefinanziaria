@@ -281,7 +281,7 @@ const SPView: React.FC<SPViewProps> = ({
   const ceMetrics = useMemo(() => {
     const year = parseUTCDate(currentSnap.dataRiferimento).getUTCFullYear();
     const ceData = buildCEData(transactions, year, ceManualData[year.toString()], 'competenza', projects, initialData);
-    return calcCEMetrics(ceData, transactions, projects, initialData);
+    return calcCEMetrics(ceData, transactions, projects, initialData, rimanenze ? rimanenze[year] : undefined);
   }, [transactions, currentSnap.dataRiferimento, ceManualData, projects, initialData]);
 
   const previsioneFiscale = useMemo(() => {

@@ -73,7 +73,7 @@ const RatingView: React.FC<RatingViewProps> = ({
     [transactions, ratingYear, ceManualData, projects, initialData]
   );
 
-  const ceMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
+  const ceMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData, rimanenze ? rimanenze[ratingYear] : undefined), [ceData, transactions, projects, initialData, rimanenze, ratingYear]);
 
   const spMetrics = useMemo(() => 
     activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions) : null,

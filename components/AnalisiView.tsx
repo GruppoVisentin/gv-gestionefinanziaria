@@ -395,7 +395,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     return buildCEData(transactions, anno, manual, 'competenza', projects, initialData);
   }, [transactions, anno, ceManualData, projects, initialData]);
 
-  const rawMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
+  const rawMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData, rimanenze ? rimanenze[anno] : undefined), [ceData, transactions, projects, initialData, rimanenze, anno]);
 
   const compensoSociPrev = useMemo(() => {
     return (transactions || [])

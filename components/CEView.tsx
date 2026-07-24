@@ -108,7 +108,7 @@ const CEView: React.FC<CEViewProps> = ({
     [transactions, selectedYear, manualData, modalita, projects, initialData]
   );
 
-  const rawMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData), [ceData, transactions, projects, initialData]);
+  const rawMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData, rimanenze ? rimanenze[selectedYear] : undefined), [ceData, transactions, projects, initialData, rimanenze, selectedYear]);
 
   const rimanenzeAnno = rimanenze?.[selectedYear.toString()];
 

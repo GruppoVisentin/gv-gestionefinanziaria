@@ -227,7 +227,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     // Calculate previous year's taxes to determine currentYear payments
     const manualOverridesPrev = ceManualData?.[(currentYear - 1).toString()];
     const ceDataPrev = buildCEData(transactions, currentYear - 1, manualOverridesPrev, 'competenza', projects, initialData);
-    const ceMetricsPrev = calcCEMetrics(ceDataPrev, transactions, projects, initialData);
+    const ceMetricsPrev = calcCEMetrics(ceDataPrev, transactions, projects, initialData, rimanenze ? rimanenze[currentYear - 1] : undefined);
     
     // Retrieve previous year's inventory (WIP) values if defined
     const prevYearStr = (currentYear - 1).toString();

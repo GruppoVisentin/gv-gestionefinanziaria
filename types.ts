@@ -159,6 +159,8 @@ export interface SPSnapshot {
   rimanenze: number;
   creditiClienti: number;
   creditiTributari: number;
+  creditiFinanziari: number; // Crediti finanziari e finanziamenti concessi
+  investimentiBT: number;    // Titoli e investimenti a breve termine
   liquidita: number;
   // PATRIMONIO NETTO
   capitaleSociale: number;

@@ -13,7 +13,7 @@ import {
   Info,
   CalendarClock
 } from 'lucide-react';
-import { Transaction, TransactionType, AppView, SPSnapshot, CEData, InitialBalanceBreakdown, Project } from '../types';
+import { Transaction, TransactionType, AppView, SPSnapshot, CEData, InitialBalanceBreakdown, Project, RimanenzeData } from '../types';
 import SummaryCard from './SummaryCard';
 import { 
   PieChart, 
@@ -51,6 +51,7 @@ interface DashboardProps {
   projects?: Project[];
   spSnapshots?: SPSnapshot[];
   ceManualData?: Record<string, Partial<CEData>>;
+  rimanenze?: RimanenzeData;
 }
 
 const COLORS = [
@@ -78,7 +79,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   initialData = { accounts: [], previousFinancing: 0 },
   projects = [],
   spSnapshots = [],
-  ceManualData = {}
+  ceManualData = {},
+  rimanenze = {}
 }) => {
   const [showHelp, setShowHelp] = useState(false);
   
@@ -155,7 +157,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     
     const manualData = ceManualData || {};
     const ceData = buildCEData(txList, ratingYear, manualData[ratingYear.toString()], 'competenza', projects, initialData);
-    const ceMetrics = calcCEMetrics(ceData, txList, projects, initialData);
+    const ceMetrics = calcCEMetrics(ceData, txList, projects, initialData, rimanenze[ceData.anno]);
     const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, txList) : null;
     
     if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0, breakdown: [], radarData: [], spMetrics: null };
@@ -296,10 +298,11 @@ const Dashboard: React.FC<DashboardProps> = ({
       { subject: 'DPO (Pagamento)', A: dpoScore * 100, fullMark: 100 }
     ];
                   
-    // BUG-003 FIX: DSCR reale = EBITDA / (Interessi Passivi + Quota Capitale Rate)
-    // non solo EBITDA / oneriFin (che sarebbe solo Interest Coverage)
+    // BUG-003 FIX: DSCR reale = CFADS / (Interessi Passivi + Quota Capitale Rate)
+    // CFADS = EBITDA - Imposte Pagate
+    const cfads = ceMetrics.ebitdaTot - (ceMetrics as any).imposteTot;
     const dscrDenominatore = (ceMetrics.oneriFin + ceMetrics.costiCapitaleRate) || 1;
-    return { score, label, color, dscr: ceMetrics.ebitdaTot / dscrDenominatore, breakdown, radarData, spMetrics };
+    return { score, label, color, dscr: cfads / dscrDenominatore, breakdown, radarData, spMetrics };
   }, [transactions, spSnapshots, ceManualData, ratingSelectedYear, projects, initialData]);
 
   // Andamento Conto Corrente (Liquidità Cumulata)
@@ -739,7 +742,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     const yearToUse = activeSP && activeSP.dataRiferimento ? parseUTCDate(activeSP.dataRiferimento).getUTCFullYear() : patrimonioYear;
     const manualData = ceManualData || {};
     const ceData = buildCEData(txList, yearToUse, manualData[yearToUse.toString()], 'competenza', projects, initialData);
-    const ceMetrics = calcCEMetrics(ceData, txList, projects, initialData);
+    const ceMetrics = calcCEMetrics(ceData, txList, projects, initialData, rimanenze[ceData.anno]);
     return activeSP ? calcSPMetrics(activeSP, ceMetrics, txList) : null;
   }, [transactions, spSnapshots, ceManualData, patrimonioYear, projects, initialData]);
 

@@ -447,18 +447,29 @@ export const buildCEData = (
 
 // ─── CALCOLI CE DERIVATI ─────────────────────────────────────────
 
-export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], projects?: Project[], initialData?: InitialBalanceBreakdown) => {
+export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], projects?: Project[], initialData?: InitialBalanceBreakdown, rimanenze?: RimanenzeAnno) => {
   const sum12 = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
   const add12 = (a: number[], b: number[]) => a.map((v, i) => Number((v + b[i]).toFixed(2)));
   const sub12 = (a: number[], b: number[]) => a.map((v, i) => Number((v - b[i]).toFixed(2)));
 
+  const arrVarRimanenze = Array(12).fill(0);
+  if (rimanenze) {
+    arrVarRimanenze[11] = (rimanenze.wipFine - rimanenze.wipInizio) +
+                          ((rimanenze.terreniFine || 0) - (rimanenze.terreniInizio || 0)) +
+                          (rimanenze.materialiFine - rimanenze.materialiInizio);
+  }
+
   const totRicavi       = add12(add12(ce.ricaviCore, ce.ricaviAltro), ce.ricaviImmobiliare);
+  const valoreProduzione = add12(totRicavi, arrVarRimanenze);
   const totCostiVar     = ce.costiVariabili;
-  const primoMargine    = sub12(totRicavi, totCostiVar);
+  const primoMargine    = sub12(valoreProduzione, totCostiVar);
   
   const totCostiFissiSenzaAmm = add12(ce.costiFissi, ce.costiStudio);
   const ebitda          = sub12(primoMargine, totCostiFissiSenzaAmm); // EBITDA vero
-  const ebit            = sub12(ebitda, ce.ammortamenti); // EBIT
+  
+  // Predisposizione per svalutazioni e accantonamenti (attualmente 0)
+  const arrSvalutazioni = Array(12).fill(0);
+  const ebit            = sub12(sub12(ebitda, ce.ammortamenti), arrSvalutazioni); // EBIT
   const ebt             = add12(sub12(ebit, ce.oneriFin), ce.proventiFin);
   const utileNetto      = sub12(add12(ebt, ce.straordinario), ce.imposte);
 
@@ -695,6 +706,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     oneriFin: sum12(ce.oneriFin),
     proventiFin: sum12(ce.proventiFin),
     straordinario: sum12(ce.straordinario),
+    imposteTot: sum12(ce.imposte),
 
     // Proiezioni a fine anno
     proiezioneFatturato,
@@ -977,7 +989,7 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
   const totPassivoLT  = getVal(sp.mutuiLT) + getVal(sp.leasingLT) + getVal(sp.tfr);
   const totPassivoBT  = getVal(sp.fidiRT) + getVal(sp.debitiFornitori) + getVal(sp.debitiTributari) + getVal(sp.accontiClienti) + getVal(sp.altriDebitiBT) + getVal(sp.mutuiBT);
   const totPassivo    = totPN + totPassivoLT + totPassivoBT;
-  const pfn           = getVal(sp.mutuiLT) + getVal(sp.leasingLT) + getVal(sp.fidiRT) + getVal(sp.mutuiBT) - getVal(sp.liquidita);
+  const pfn           = getVal(sp.mutuiLT) + getVal(sp.leasingLT) + getVal(sp.fidiRT) + getVal(sp.mutuiBT) - getVal(sp.liquidita) - getVal(sp.creditiFinanziari) - getVal(sp.investimentiBT);
   const ebitda        = ceMetrics.ebitdaTot;
 
   const dataSnapObj = parseUTCDate(sp.dataRiferimento);
@@ -1298,6 +1310,30 @@ export const calcPosizIoneIVA = (
         creditoQ = 0;
       } else {
         creditoQ = Math.abs(posQ3);
+      }
+    }
+
+    // ACCONTO IVA A DICEMBRE (88% del saldo IVA dell'ultimo periodo dell'anno precedente)
+    const txPrevYear = transactions.filter(tx => {
+      const d = parseUTCDate(tx.date);
+      return d.getUTCFullYear() === anno - 1 && !tx.isForecast;
+    });
+    let saldoIVAPrevPeriod = 0;
+    if (frequenzaLiquidazione === 'mensile') {
+      const txDec = txPrevYear.filter(tx => parseUTCDate(tx.date).getUTCMonth() === 11);
+      const ivaInc = txDec.filter(tx => tx.type === 'INCOME' && (tx.vatRate ?? 0) > 0 && tx.ceType !== 'solo_cashflow').reduce((s, tx) => s + tx.amount * ((tx.vatRate ?? 0) / 100), 0);
+      const ivaPag = txDec.filter(tx => tx.type === 'EXPENSE' && (tx.vatRate ?? 0) > 0 && tx.ceType !== 'solo_cashflow').reduce((s, tx) => s + tx.amount * ((tx.vatRate ?? 0) / 100), 0);
+      saldoIVAPrevPeriod = ivaInc - ivaPag;
+    } else {
+      const txQ4 = txPrevYear.filter(tx => parseUTCDate(tx.date).getUTCMonth() >= 9);
+      const ivaInc = txQ4.filter(tx => tx.type === 'INCOME' && (tx.vatRate ?? 0) > 0 && tx.ceType !== 'solo_cashflow').reduce((s, tx) => s + tx.amount * ((tx.vatRate ?? 0) / 100), 0);
+      const ivaPag = txQ4.filter(tx => tx.type === 'EXPENSE' && (tx.vatRate ?? 0) > 0 && tx.ceType !== 'solo_cashflow').reduce((s, tx) => s + tx.amount * ((tx.vatRate ?? 0) / 100), 0);
+      saldoIVAPrevPeriod = ivaInc - ivaPag;
+    }
+    if (saldoIVAPrevPeriod > 0) {
+      const accontoIVA = saldoIVAPrevPeriod * 0.88;
+      if (mensileCalcolato[11].isForecastMese || mensileCalcolato[11].versamentoIVA === 0) {
+        mensileCalcolato[11].versamentoIVA += accontoIVA;
       }
     }
   }
