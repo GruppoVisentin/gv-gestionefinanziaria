@@ -1,0 +1,19 @@
+{
+  "name": "gv-radar-aste",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Radar Aste Immobiliari + Monitoraggio Operazioni Concorrenti — Gruppo Visentin",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "scrape": "node scrapers/run.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
