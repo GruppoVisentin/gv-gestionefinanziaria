@@ -88,9 +88,12 @@ export const aggregateByMonthAndType = (
     .forEach(tx => {
       const type = getDynamicCEType(tx, projects);
       if (!type) return;
-      const isRicavo = type.startsWith('ricavo') ||
-        type === 'provento_finanziario' ||
-        (type === 'straordinario' && tx.type === 'INCOME');
+      // Il segno segue la DIREZIONE REALE del movimento (INCOME = +, EXPENSE = −), non solo il bucket ceType.
+      // Così una nota di credito passiva (rimborso da fornitore: INCOME su un ceType di costo, es. NEP) RIDUCE
+      // i costi invece di gonfiarli, e uno storno/nota di credito attiva (EXPENSE su un ceType ricavo) riduce i
+      // ricavi. I casi normali (INCOME→ricavo, EXPENSE→costo) restano identici, e il precedente caso speciale
+      // "straordinario && INCOME" è già incluso in questa regola generale.
+      const segno = tx.type === 'INCOME' ? 1 : -1;
 
       // Per competenza: sia ricavi che costi usano invoiceDate se disponibile
       let dataRiferimento = tx.date;
@@ -104,7 +107,7 @@ export const aggregateByMonthAndType = (
 
       const month = dataObj.getUTCMonth();
       if (result[type]) {
-        result[type][month] += isRicavo ? Math.abs(tx.amount) : -Math.abs(tx.amount);
+        result[type][month] += segno * Math.abs(tx.amount);
       }
     });
 
@@ -245,9 +248,11 @@ export const getDynamicLoansInterests = (
         const nameKey = t.description.toLowerCase().trim().replace(/\s+/g, ' ');
         // Controlla se c'è già un prestito nell'initialData con lo stesso nome o id
         // Se esiste, sovrascrivilo (la transazione è più recente/accurata)
-        // Prima rimuovi dal loansMap la versione initialData per evitare duplicazione
+        // Rimuovi dal loansMap SOLO la versione initialData con lo stesso nome; NON rimuovere un altro
+        // mutuo già inserito da transazione con id diverso (sono finanziamenti realmente distinti,
+        // es. due tranche omonime) altrimenti se ne perde il conteggio.
         for (const [existingId, existingLoan] of loansMap.entries()) {
-          if (existingLoan.name.toLowerCase().trim().replace(/\s+/g, ' ') === nameKey && existingId !== id) {
+          if (existingLoan.name.toLowerCase().trim().replace(/\s+/g, ' ') === nameKey && existingId !== id && !txLoanIds.has(existingId)) {
             loansMap.delete(existingId);
             break;
           }
@@ -297,8 +302,10 @@ export const getDynamicLoansPrincipals = (
   const loansMap = new Map<string, { id: string; name: string; amount: number; details: any }>();
 
   // 1. Loans from initial state (historical)
+  const initialLoanIds = new Set<string>();
   if (initialData && initialData.loans) {
     initialData.loans.forEach(l => {
+      initialLoanIds.add(l.id);
       loansMap.set(l.id, {
         id: l.id,
         name: l.name,
@@ -316,9 +323,11 @@ export const getDynamicLoansPrincipals = (
       if (!(isForecast && hasLinked)) {
         const id = t.loanSourceId || t.id;
         const nameKey = t.description.toLowerCase().trim().replace(/\s+/g, ' ');
-        // Rimuovi dal loansMap la versione initialData con stesso nome per evitare duplicazione
+        // Rimuovi dal loansMap SOLO la versione initialData con lo stesso nome (evita duplicazione con la
+        // transazione). NON rimuovere un altro mutuo già inserito da transazione con id diverso: sono
+        // finanziamenti distinti e vanno entrambi conteggiati.
         for (const [existingId, existingLoan] of loansMap.entries()) {
-          if (existingLoan.name.toLowerCase().trim().replace(/\s+/g, ' ') === nameKey && existingId !== id) {
+          if (existingLoan.name.toLowerCase().trim().replace(/\s+/g, ' ') === nameKey && existingId !== id && initialLoanIds.has(existingId)) {
             loansMap.delete(existingId);
             break;
           }

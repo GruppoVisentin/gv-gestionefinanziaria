@@ -329,7 +329,9 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         if (parseUTCDate(t.date).getUTCFullYear() !== anno) return;
         if (t.type === TransactionType.INCOME) {
           saldo += getGrossAmount(t);
-        } else {
+        } else if (t.ceType !== 'ammortamento') {
+          // Gli ammortamenti sono costi non monetari: non movimentano cassa e vanno esclusi dal
+          // saldo di cassa accumulato (coerente con calculateMonthlyFlow).
           saldo -= getGrossAmount(t);
         }
       });

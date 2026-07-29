@@ -286,7 +286,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
                   <span>Scostamento 🟢</span>
                   <InfoTooltip 
                     termId="scostamento_budget" 
-                    calculatedValues={`Scostamento Budget:\n- Scostamento Ricavi: ${totalActualRevenues - totalBudgetRevenues >= 0 ? '+' : ''}${formatEuro(totalActualRevenues - totalBudgetRevenues)}\n- Scostamento Costi: ${totalActualCosts - totalBudgetCosts <= 0 ? '-' : '+'}${formatEuro(totalActualCosts - totalBudgetCosts)}\n- Differenza Netta: ${formatEuro((totalActualRevenues - totalActualCosts) - (totalBudgetRevenues - totalBudgetCosts))}`}
+                    calculatedValues={`Scostamento Budget:\n- Scostamento Ricavi: ${totalActualRevenues - totalBudgetRevenues >= 0 ? '+' : ''}${formatEuro(totalActualRevenues - totalBudgetRevenues)}\n- Scostamento Costi: ${totalActualCosts - totalBudgetCosts >= 0 ? '+' : ''}${formatEuro(totalActualCosts - totalBudgetCosts)}\n- Differenza Netta: ${formatEuro((totalActualRevenues - totalActualCosts) - (totalBudgetRevenues - totalBudgetCosts))}`}
                   />
                 </InfoTooltipWrapper>
               </th>

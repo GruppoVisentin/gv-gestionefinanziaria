@@ -1025,6 +1025,9 @@ const App: React.FC = () => {
       }
       setLastSaved(new Date());
       setSaveStatus('saved');
+      // I dati sono stati persistiti: azzera il flag così l'autosave periodico non riscrive inutilmente
+      // (coerente con saveToFile). Prima restava true e provocava un save ridondante al tick successivo.
+      hasUnsavedChangesRef.current = false;
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (e) {
       console.error('Immediate save failed', e);

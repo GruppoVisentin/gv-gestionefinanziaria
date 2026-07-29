@@ -115,6 +115,10 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
       setEditValue('');
       return;
     }
+    if (currentList.includes(newName)) {
+      alert('Questa categoria esiste già.');
+      return;
+    }
     const newList = [...currentList];
     newList[editingIndex] = newName;
     updateList(newList);
