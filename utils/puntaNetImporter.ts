@@ -392,7 +392,12 @@ export const parseBancaExcel = (workbook: XLSX.WorkBook): PuntaNetRiga[] => {
 
   const headers = (rows[0] ?? []).map(h => String(h ?? '').trim().toUpperCase());
   const indexData = findHeaderIndex(headers, ['DATA'], 0);
-  const indexDesc = findHeaderIndex(headers, ['DESCRIZIONE', 'CAUSALE'], 2);
+  // Priorità alla colonna DESCRIZIONE (testo completo del movimento); solo se assente si ripiega su
+  // CAUSALE. Alcuni tracciati Punta Net hanno ENTRAMBE le colonne con "Causale" (codice PAG/INC/000)
+  // PRIMA di "Descrizione": cercandole insieme si aggancerebbe la Causale e si perderebbe il testo vero
+  // (numero fattura, cantiere...). Il fallback 2 resta per la Prima nota, che non ha intestazioni testuali.
+  let indexDesc = findHeaderIndex(headers, ['DESCRIZIONE'], -1);
+  if (indexDesc === -1) indexDesc = findHeaderIndex(headers, ['CAUSALE'], 2);
   const indexEntrate = findHeaderIndex(headers, ['ENTRAT', 'AVERE', 'IMPORTI ENTRATE'], 6, true);
   const indexUscite = findHeaderIndex(headers, ['USCIT', 'DARE', 'IMPORTI USCITE'], 7, true);
   const indexFlag = findHeaderIndex(headers, ['CONTO', 'B/I', 'B O I', 'FLAG', 'BANCA'], 8);
@@ -816,10 +821,13 @@ export const isDuplicato = (
     }
   }
 
-  // Livello 2: Tripla chiave
-  const descPrefix = riga.descrizione.toUpperCase().slice(0, 15);
+  // Livello 2: Tripla chiave (data + importo + descrizione INTERA normalizzata).
+  // Prima si usavano solo i primi 15 caratteri: movimenti realmente distinti con lo stesso prefisso
+  // (es. più righe "SPESE PER BONIFICO - RIF.TO ..." nello stesso giorno e stesso importo) collassavano
+  // in falsi duplicati e venivano scartati. La descrizione intera normalizzata li tiene distinti.
+  const descKey = riga.descrizione.toUpperCase().replace(/\s+/g, ' ').trim();
   if (indexes?.dateAmountDescMap) {
-    const key = `${dataStr}|${importoCent}|${descPrefix}`;
+    const key = `${dataStr}|${importoCent}|${descKey}`;
     const list = indexes.dateAmountDescMap.get(key) || [];
     if (list.length > 0) {
       return { duplicato: true, livello: 2, transazioneEsistente: list[0] };
@@ -829,7 +837,7 @@ export const isDuplicato = (
       const gross = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
       return tx.date === dataStr &&
         Math.round(gross * 100) === importoCent &&
-        tx.description.toUpperCase().slice(0, 15) === descPrefix;
+        tx.description.toUpperCase().replace(/\s+/g, ' ').trim() === descKey;
     });
     if (trovata) return { duplicato: true, livello: 2, transazioneEsistente: trovata };
   }

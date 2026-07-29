@@ -164,23 +164,28 @@ const parseExcelStorico = async (file: File, anniSelezionati: Set<number>): Prom
       const label = String(row[0]).trim();
       if (!label) continue;
 
-      // Rileva fine sezione entrate
-      if (label.toUpperCase().includes('TOTALE INCASSATO')) {
+      const labelUpper = label.toUpperCase().trim();
+
+      // Rileva inizio sezione uscite. Doppio trigger per robustezza: il marker "TOTALE INCASSATO"
+      // OPPURE l'intestazione esatta "FORNITORI" (che apre sempre la sezione costi). Così, se un foglio
+      // non ha la dicitura "TOTALE INCASSATO" (o è scritta diversamente / in cella unita), le uscite
+      // non vengono più perse. Match esatto su "FORNITORI" per non scattare su un nome cliente che lo contiene.
+      if (labelUpper.includes('TOTALE INCASSATO') || labelUpper === 'FORNITORI') {
         inEntrate = false;
         inUscite = true;
         continue;
       }
 
       // Fine uscite
-      if (label.toUpperCase().includes('TOTALE PAGATO') ||
-          label.toUpperCase().includes('SALDO MESE') ||
-          label.toUpperCase().includes('FLUSSO NETTO')) {
+      if (labelUpper.includes('TOTALE PAGATO') ||
+          labelUpper.includes('SALDO MESE') ||
+          labelUpper.includes('FLUSSO NETTO')) {
         inUscite = false;
         continue;
       }
 
       // Salta righe di intestazione
-      if (['CLIENTI ', 'MESE', 'FORNITORI'].includes(label)) continue;
+      if (['CLIENTI ', 'MESE'].includes(label)) continue;
       if (ESCLUDI_USCITE.has(label.toUpperCase())) continue;
 
       // ── ENTRATE ──────────────────────────────────────────────
@@ -242,6 +247,7 @@ const parseExcelStorico = async (file: File, anniSelezionati: Set<number>): Prom
 
 interface ImportStoricoModalProps {
   storicoGiaImportato: boolean;
+  transazioniEsistenti?: Transaction[];
   onImport: (transactions: Transaction[], session: ImportSession) => void;
   onClose: () => void;
 }
@@ -249,7 +255,7 @@ interface ImportStoricoModalProps {
 // ─── COMPONENTE ──────────────────────────────────────────────────
 
 const ImportStoricoModal: React.FC<ImportStoricoModalProps> = ({
-  storicoGiaImportato, onImport, onClose
+  storicoGiaImportato, transazioniEsistenti, onImport, onClose
 }) => {
   type Step = 'upload' | 'anteprima' | 'completato';
 
@@ -262,6 +268,7 @@ const ImportStoricoModal: React.FC<ImportStoricoModalProps> = ({
   const [righe, setRighe]             = useState<RigaAnteprima[]>([]);
   const [annoAperto, setAnnoAperto]   = useState<number | null>(null);
   const [importateCount, setImportate] = useState(0);
+  const [duplicatiSaltati, setDuplicatiSaltati] = useState(0);
   const [mostraSoloProblemi, setMostraProblemi] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const fileObj = useRef<File | null>(null);
@@ -307,7 +314,33 @@ const ImportStoricoModal: React.FC<ImportStoricoModalProps> = ({
 
   // ── Terzo step: importazione ──────────────────────────────────
   const handleImporta = () => {
-    const daImportare = righe.filter(r => r.includi);
+    const daImportareRaw = righe.filter(r => r.includi);
+
+    // Dedup contro lo storico già presente: evita che un re-import dello stesso Excel raddoppi i dati.
+    // Chiave = anno|mese|tipo|soggetto normalizzato|importo(centesimi). Il confronto è SOLO con le
+    // transazioni già importate da storico (sourceRef "Storico Excel ..."), per non scartare per errore
+    // inserimenti manuali o movimenti di altri import che dovessero coincidere.
+    const normDesc = (s: string) => (s || '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const keyOf = (anno: number, mese: number, tipo: string, desc: string, importo: number) =>
+      `${anno}|${mese}|${tipo}|${normDesc(desc)}|${Math.round(importo * 100)}`;
+
+    const chiaviEsistenti = new Set<string>();
+    (transazioniEsistenti || [])
+      .filter(t => (t.sourceRef || '').startsWith('Storico Excel'))
+      .forEach(t => {
+        const parts = (t.date || '').split('-');
+        const anno = parseInt(parts[0], 10);
+        const mese = parseInt(parts[1], 10) - 1;
+        if (isNaN(anno) || isNaN(mese)) return;
+        chiaviEsistenti.add(keyOf(anno, mese, String(t.type), t.description, t.amount));
+      });
+
+    const daImportare = daImportareRaw.filter(r =>
+      !chiaviEsistenti.has(keyOf(r.anno, r.mese, r.tipo, r.soggetto, r.importo))
+    );
+    const saltati = daImportareRaw.length - daImportare.length;
+    setDuplicatiSaltati(saltati);
+
     const sessionId = uuidv4();
 
     const transactions: Transaction[] = daImportare.map(r => ({
@@ -617,6 +650,12 @@ const ImportStoricoModal: React.FC<ImportStoricoModalProps> = ({
                 <span className="font-black text-indigo-600">{importateCount}</span> transazioni storiche
                 aggiunte al cash flow. Le trovi nelle timeline degli anni {Array.from(anniSelezionati).sort().join(', ')}.
               </p>
+              {duplicatiSaltati > 0 && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2 max-w-sm">
+                  <span className="font-black">{duplicatiSaltati}</span> voci già presenti dallo storico sono state
+                  saltate per evitare duplicati (stesso anno, mese, soggetto e importo).
+                </p>
+              )}
               <div className="bg-blue-50 border border-blue-100 rounded-2xl px-6 py-4 max-w-sm">
                 <p className="text-xs text-blue-700 leading-relaxed">
                   Se qualcosa non torna vai in <strong>Config. → Storico Import</strong> e trovi

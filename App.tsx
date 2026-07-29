@@ -2830,6 +2830,7 @@ const App: React.FC = () => {
         {showImportStorico && (
           <ImportStoricoModal
             storicoGiaImportato={storicoImportato}
+            transazioniEsistenti={transactions}
             onImport={(txs, session) => {
               const newTxs = [...transactions, ...txs];
               const newSessions = [session, ...importSessions];

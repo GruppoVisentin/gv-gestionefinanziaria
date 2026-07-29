@@ -196,10 +196,12 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         const dateStr = tx.date;
         const grossAmount = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
         const amountCent = Math.round(grossAmount * 100);
-        const descPrefix = tx.description.toUpperCase().slice(0, 15);
-        
+        // Descrizione INTERA normalizzata (stessa trasformazione usata nel lookup in isDuplicato):
+        // i primi 15 caratteri facevano collassare movimenti distinti con prefisso uguale.
+        const descKey = tx.description.toUpperCase().replace(/\s+/g, ' ').trim();
+
         // Indice Livello 2
-        const keyL2 = `${dateStr}|${amountCent}|${descPrefix}`;
+        const keyL2 = `${dateStr}|${amountCent}|${descKey}`;
         const listL2 = dateAmountDescMap.get(keyL2) || [];
         listL2.push(tx);
         dateAmountDescMap.set(keyL2, listL2);
