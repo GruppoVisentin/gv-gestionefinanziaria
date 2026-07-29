@@ -108,7 +108,10 @@ const CEView: React.FC<CEViewProps> = ({
     [transactions, selectedYear, manualData, modalita, projects, initialData]
   );
 
-  const rawMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData, rimanenze ? rimanenze[selectedYear] : undefined), [ceData, transactions, projects, initialData, rimanenze, selectedYear]);
+  // La variazione rimanenze (competenza) viene incorporata da calcCEMetrics SOLO in modalità competenza.
+  // In modalità cassa i totali restano "puliti" (senza rimanenze): la ricostruzione competenza avviene
+  // nella tabella "CE Rettificato". Evita il doppio conteggio in vista cassa (totali + tabella rettificata).
+  const rawMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData, (modalita === 'competenza' && rimanenze) ? rimanenze[selectedYear] : undefined), [ceData, transactions, projects, initialData, rimanenze, selectedYear, modalita]);
 
   const rimanenzeAnno = rimanenze?.[selectedYear.toString()];
 

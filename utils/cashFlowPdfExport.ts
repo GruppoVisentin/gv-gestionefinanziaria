@@ -328,7 +328,12 @@ export const exportCashFlowProjectionPDF = ({
       return sum;
     }, 0);
 
-  const dscr = totalLoanRepaymentsYear > 0 ? (ebitda / totalLoanRepaymentsYear).toFixed(2) : 'N.D.';
+  // DSCR coerente con la Dashboard: numeratore = CFADS = EBITDA - imposte versate (F24), non il solo EBITDA.
+  const imposteVersateAnno = transactions
+    .filter(t => !t.isForecast && t.date.startsWith(String(currentYear)) && t.category === '[FISCO] F24 — IRPEF / IRES / IRAP')
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const cfads = ebitda - imposteVersateAnno;
+  const dscr = totalLoanRepaymentsYear > 0 ? (cfads / totalLoanRepaymentsYear).toFixed(2) : 'N.D.';
   const burnRateDays = avgMonthlyExpense > 0 ? Math.round((totalInitialBalance / avgMonthlyExpense) * 30) : 365;
 
   const summaryData = [
@@ -363,7 +368,7 @@ export const exportCashFlowProjectionPDF = ({
     head: [['Indicatore', 'Valore Rilevato', 'Soglia Limite', 'Stato']],
     body: [
       ['Autonomia di Cassa (Burn Rate)', `${burnRateDays} Giorni`, '60 Giorni', burnRateDays > 90 ? '🟢 Eccellente' : '🔴 Tensione'],
-      ['DSCR (Copertura Debiti da EBITDA)', dscr, '> 1.15', parseFloat(dscr) > 1.25 ? '🟢 Sostenibile' : '🔴 Rischioso'],
+      ['DSCR (CFADS / Servizio del Debito)', dscr, '> 1.2', parseFloat(dscr) > 1.2 ? '🟢 Sostenibile' : '🔴 Rischioso'],
       ['Copertura Spese Struttura (Mesi)', (avgMonthlyExpense > 0 ? (totalInitialBalance / avgMonthlyExpense).toFixed(1) : '12') + ' Mesi', '2.0 Mesi', (totalInitialBalance / avgMonthlyExpense) > 3 ? '🟢 Sicuro' : '🔴 Limite']
     ],
     theme: 'grid',

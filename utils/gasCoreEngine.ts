@@ -1013,13 +1013,17 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
+  // DPO: gli "acquisti da fornitori" al denominatore devono includere sia i costi variabili sia i costi
+  // fissi/servizi acquistati da terzi (coerente col numeratore = TOTALE debiti fornitori), ESCLUSO il
+  // personale (stipendi/contributi non sono debiti verso fornitori).
   const acquistiFornitoriPeriodo = transactions
     .filter(tx => {
       const d = parseUTCDate(tx.date);
-      return d.getUTCFullYear() === annoSnap && 
+      return d.getUTCFullYear() === annoSnap &&
              d <= dataSnapObj &&
              !tx.isForecast &&
-             tx.ceType === 'costo_variabile';
+             (tx.ceType === 'costo_variabile' || tx.ceType === 'costo_fisso' || tx.ceType === 'costo_studio') &&
+             !(tx.category?.startsWith('[PERSONALE]'));
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 

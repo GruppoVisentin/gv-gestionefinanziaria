@@ -648,14 +648,14 @@ export const GLOSSARIO: TermineGlossario[] = [
     nome: 'DSCR — Debt Service Coverage Ratio',
     categoria: 'rating',
     origine: 'Dall\'inglese "Rapporto di Copertura del Servizio del Debito" — l\'indice principe della bancabilità',
-    definizione: 'Misura la capacità del flusso di cassa operativo (EBITDA) di coprire il servizio del debito annuo (quota capitale rate mutui + interessi passivi). Un valore superiore a 1,2 indica che la cassa copre agevolmente le rate con un cuscinetto del 20%.',
-    formulaTestuale: 'DSCR = EBITDA ÷ (Interessi Passivi + Quota Capitale Rate)',
+    definizione: 'Misura la capacità del flusso di cassa disponibile per il servizio del debito (CFADS = EBITDA al netto delle imposte) di coprire il servizio del debito annuo (quota capitale rate mutui + interessi passivi). Un valore superiore a 1,2 indica che la cassa copre agevolmente le rate con un cuscinetto del 20%.',
+    formulaTestuale: 'DSCR = CFADS (EBITDA - imposte) ÷ (Interessi Passivi + Quota Capitale Rate)',
     esempioNumerico: {
-      dati: 'EBITDA proiettato €160.000, Interessi passivi mutui €8.500, Rimborsi quota capitale rate €28.000',
+      dati: 'CFADS (EBITDA - imposte) €160.000, Interessi passivi mutui €8.500, Rimborsi quota capitale rate €28.000',
       calcolo: '160.000 ÷ (8.500 + 28.000) = 160.000 ÷ 36.500',
       risultato: 'DSCR = 4,38x (Punteggio radar 100/100, eccellente copertura)',
     },
-    doveAppareNellApp: ['Dashboard — Radar Bancario', 'RatingView — indicatore DSCR'],
+    doveAppareNellApp: ['Dashboard — Radar Bancario', 'Report PDF Cash Flow'],
     sogliaEdilizia: {
       ottimo: '> 1,5x',
       buono: '1,2–1,5x',
@@ -929,7 +929,7 @@ export const GLOSSARIO: TermineGlossario[] = [
     nome: 'Rating Bancario (Basilea 3)',
     categoria: 'rating',
     origine: 'Score di solvibilità creditizia',
-    definizione: 'Valutazione sintetica del merito creditizio aziendale calcolata ponderando i 7 indici fondamentali prescritti da Basilea 3 (PFN/EBITDA, DSCR, current ratio, solidità patrimoniale, utile netto %, DSO e DPO). Fornisce lo score indicativo che le banche usano per concedere affidamenti e tassi di interesse.',
+    definizione: 'Valutazione sintetica del merito creditizio aziendale calcolata ponderando i 7 indici fondamentali (PFN/EBITDA, copertura interessi EBITDA/oneri finanziari, current ratio, solidità patrimoniale, utile netto %, DSO e DPO). Fornisce lo score indicativo che le banche usano per concedere affidamenti e tassi di interesse.',
     doveAppareNellApp: ['Dashboard — Valutazione Banca', 'RatingView'],
   },
   {
