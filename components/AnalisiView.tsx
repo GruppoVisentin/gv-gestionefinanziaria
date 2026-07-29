@@ -497,11 +497,12 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
   }, [rimanenzeAnno]);
 
   const metrics = useMemo(() => {
-    // Valori Consuntivo (YTD)
-    const ebitdaTot = rawMetrics.ebitdaTot + varRim;
-    const ebitTot = rawMetrics.ebitTot + varRim;
-    const ebtTot = rawMetrics.ebtTot + varRim;
-    const utileNettoTot = rawMetrics.utileNettoTot + varRim;
+    // Valori Consuntivo (YTD) — rawMetrics.*Tot includono già la variazione rimanenze (calcCEMetrics
+    // riceve le rimanenze), quindi NON va ri-aggiunta qui (fix doppio conteggio, coerente con CEView/RatingView).
+    const ebitdaTot = rawMetrics.ebitdaTot;
+    const ebitTot = rawMetrics.ebitTot;
+    const ebtTot = rawMetrics.ebtTot;
+    const utileNettoTot = rawMetrics.utileNettoTot;
 
     const fatturatoCompetenza = rawMetrics.fatturato + deltaWip;
 

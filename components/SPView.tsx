@@ -51,7 +51,7 @@ const formatPercent = (val: number) =>
 const EMPTY_SNAPSHOT: SPSnapshot = {
   dataRiferimento: new Date().toISOString().split('T')[0],
   immImmateriali: 0, immMateriali: 0, immobiliTerreni: 0, partecipazioni: 0,
-  rimanenze: 0, creditiClienti: 0, creditiTributari: 0, liquidita: 0,
+  rimanenze: 0, creditiClienti: 0, creditiTributari: 0, creditiFinanziari: 0, investimentiBT: 0, liquidita: 0,
   capitaleSociale: 0, riserve: 0, utileEsercizio: 0,
   mutuiLT: 0, leasingLT: 0, tfr: 0,
   fidiRT: 0, debitiFornitori: 0, debitiTributari: 0, accontiClienti: 0, altriDebitiBT: 0,

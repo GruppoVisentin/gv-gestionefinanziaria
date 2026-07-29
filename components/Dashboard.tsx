@@ -301,8 +301,11 @@ const Dashboard: React.FC<DashboardProps> = ({
     // BUG-003 FIX: DSCR reale = CFADS / (Interessi Passivi + Quota Capitale Rate)
     // CFADS = EBITDA - Imposte Pagate
     const cfads = ceMetrics.ebitdaTot - (ceMetrics as any).imposteTot;
-    const dscrDenominatore = (ceMetrics.oneriFin + ceMetrics.costiCapitaleRate) || 1;
-    return { score, label, color, dscr: cfads / dscrDenominatore, breakdown, radarData, spMetrics };
+    // Se non c'è servizio del debito (interessi + quota capitale = 0), il DSCR non è definito:
+    // -1 come sentinella → la UI lo mostra come "N/A" invece di un valore assurdo (era: fallback " || 1").
+    const dscrDenominatore = ceMetrics.oneriFin + ceMetrics.costiCapitaleRate;
+    const dscr = dscrDenominatore > 0 ? cfads / dscrDenominatore : -1;
+    return { score, label, color, dscr, breakdown, radarData, spMetrics };
   }, [transactions, spSnapshots, ceManualData, ratingSelectedYear, projects, initialData]);
 
   // Andamento Conto Corrente (Liquidità Cumulata)

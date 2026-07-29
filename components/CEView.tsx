@@ -149,10 +149,10 @@ const CEView: React.FC<CEViewProps> = ({
     const utileProj = rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario + varRimEffettivo - previsioneFiscale.totaleImposteStimate;
 
     // YTD Actuals (Consuntivo)
-    const ebitdaTot = rawMetrics.ebitdaTot + varRimEffettivo;
-    const ebitTot = rawMetrics.ebitTot + varRimEffettivo;
-    const ebtTot = rawMetrics.ebtTot + varRimEffettivo;
-    const utileNettoTot = rawMetrics.utileNettoTot + varRimEffettivo;
+    const ebitdaTot = rawMetrics.ebitdaTot;
+    const ebitTot = rawMetrics.ebitTot;
+    const ebtTot = rawMetrics.ebtTot;
+    const utileNettoTot = rawMetrics.utileNettoTot;
 
     // Recalculate percentages relative to adjusted revenue
     const ebitdaPercent = fatturatoCompetenza > 0 ? ebitdaTot / fatturatoCompetenza : 0;

@@ -448,9 +448,19 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           confidenza = auto.confidenza;
         }
         if (!vatRateSuggerito) {
-          // Se la categoria è stata assegnata dall'euristica, proviamo a prendere il VAT standard da quella categoria!
-          vatRateSuggerito = categoria ? suggerisciAliquotaIVADaCategoria(categoria) : auto.vatRateSuggerito;
-          vatRateNota = categoria ? `Aliquota standard per categoria` : auto.vatRateNota;
+          // NON inventare un'aliquota positiva dal nome/categoria: l'IVA va letta dal dato della fattura.
+          // Se non è ricavabile, la riga resta "da precisare" (vatRateSuggerito = null) e ricade nel
+          // flusso di revisione/sospensione: l'aliquota dovrà essere inserita manualmente prima della conferma.
+          // Unica eccezione accettata in automatico: lo 0% STRUTTURALE (fuori campo / esente — stipendi,
+          // contributi, tasse, caparre, ecc.), che non è un'aliquota "indovinata" ma certa per natura del flusso.
+          const guess = categoria ? suggerisciAliquotaIVADaCategoria(categoria) : auto.vatRateSuggerito;
+          if (guess === 0) {
+            vatRateSuggerito = 0;
+            vatRateNota = auto.vatRateNota ?? 'Fuori campo / esente';
+          } else {
+            vatRateSuggerito = null;
+            vatRateNota = 'IVA non presente nei dati — da precisare';
+          }
         }
 
         return {
@@ -524,8 +534,11 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
 
   const importa = () => {
     try {
-      const daImportare = righe.filter(r => r.confermata && r.categoria && r.ceType && !r.isDuplicato);
-      const daSospendere = righe.filter(r => (!r.confermata || !r.categoria || !r.ceType) && !r.isDuplicato);
+      // Una riga è importabile solo se ha anche l'IVA determinata (letta dal dato o inserita a mano).
+      // Le righe con IVA "da precisare" (vatRate null) restano sospese nella bozza per la precisazione manuale.
+      const ivaDeterminata = (r: typeof righe[number]) => (r.vatRateConfermato ?? r.vatRateSuggerito) !== null;
+      const daImportare = righe.filter(r => r.confermata && r.categoria && r.ceType && ivaDeterminata(r) && !r.isDuplicato);
+      const daSospendere = righe.filter(r => (!r.confermata || !r.categoria || !r.ceType || !ivaDeterminata(r)) && !r.isDuplicato);
       const duplicati = righe.filter(r => r.isDuplicato);
 
       if (daImportare.length === 0) {
@@ -1124,7 +1137,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
               >
                 Annulla Import
               </button>
-              <button onClick={() => setRighe(righe.map(r => ({ ...r, confermata: r.categoria !== null && !r.isDuplicato })))} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-900">Conferma tutte</button>
+              <button onClick={() => setRighe(righe.map(r => ({ ...r, confermata: r.categoria !== null && (r.vatRateConfermato ?? r.vatRateSuggerito) !== null && !r.isDuplicato })))} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-900">Conferma tutte</button>
               <button
                 onClick={importa}
                 disabled={confermate === 0}

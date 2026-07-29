@@ -897,7 +897,9 @@ const App: React.FC = () => {
       const txs = data.transactions || [];
       const initData = data.initialData || { accounts: [], previousFinancing: 0, loans: [], accontiClienti: 0, altriDebitiBT: 0, mutuiBT: 0 };
       const migratedSnaps = data.spSnapshots.map(s => {
-        if (s.dataRiferimento === '2025-12-31' && (s.capitaleSociale === 100000 || s.capitaleSociale === 0 || s.tfr === 0 || s.partecipazioni !== 698659 || s.liquidita !== 832211)) {
+        // Migrazione una tantum: rigenera SOLO gli snapshot creati con il vecchio seed (con i due "plug"),
+        // riconoscibili dalla firma dei vecchi valori. Gli snapshot già migrati o modificati a mano NON vengono toccati.
+        if (s.dataRiferimento === '2025-12-31' && s.partecipazioni === 698659 && s.liquidita === 832211) {
           return generateDefault2025Snapshot(txs, initData);
         }
         return s;

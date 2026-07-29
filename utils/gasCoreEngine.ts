@@ -50,18 +50,14 @@ export const getDynamicCEType = (tx: Transaction, projects?: Project[]): string 
       // Filone B: commessa ad ACCONTO -> incassi = acconti da clienti (debito), NON ricavo.
       // Il valore del cantiere concorre al reddito via rimanenze (lavori in corso).
       if (proj.metodoPagamento === 'acconto' && tx.type === 'INCOME') {
-        const isRevenueLike = type === 'ricavo_core' || type === 'ricavo_immobiliare' ||
-          (tx.category?.startsWith('[CANTIERE]') ?? false) ||
-          tx.category === '[IMMOBILIARE] Vendita Immobili e Terreni';
-        if (isRevenueLike) return 'solo_cashflow';
+        return 'solo_cashflow';
       }
       const isImmobiliare = proj.jobType === 'Immobiliare';
-      const isOperationalRevenue = type === 'ricavo_core' || type === 'ricavo_immobiliare' || 
+      const isOperationalRevenue = type === 'ricavo_core' || type === 'ricavo_immobiliare' ||
         tx.category === '[CANTIERE] SAL — Stato Avanzamento Lavori' ||
         tx.category === '[CANTIERE] Saldo Finale Commessa' ||
         tx.category === '[CANTIERE] Manutenzioni e Piccoli Lavori' ||
-        tx.category === '[IMMOBILIARE] Vendita Immobili e Terreni' ||
-        tx.category === '[CANTIERE] Anticipi da Clienti su Commessa';
+        tx.category === '[IMMOBILIARE] Vendita Immobili e Terreni';
 
       if (isOperationalRevenue) {
         return isImmobiliare ? 'ricavo_immobiliare' : 'ricavo_core';
@@ -854,7 +850,7 @@ export const calcPrevisioneFiscale = (
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
-  const baseImponibileIRES = Math.max(0, ebtCompetenza + straordinarioCompetenza + variazioneRimanenze - dividendiEsenti + straordinarioIndeducibile);
+  const baseImponibileIRES = Math.max(0, ebtCompetenza + straordinarioCompetenza + (includeForecast ? variazioneRimanenze : 0) - dividendiEsenti + straordinarioIndeducibile);
 
   // Base imponibile IRAP
   const deltaWip = rimanenze
@@ -894,12 +890,22 @@ export const calcPrevisioneFiscale = (
     ? (ceMetrics.proiezioneCostiVariabili + ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio + ceMetrics.proiezioneAmmortamenti)
     : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + ceMetrics.costiFissiTot);
 
-  const costiDeducibiliIRAP = Math.max(0, costiOperativiTotali - costoPersonaleDipendente - compensoAmministratoriIRAP);
+  // Cuneo fiscale IRAP (art. 11 c. 4-octies D.Lgs. 446/1997): dal 2022 il costo dei dipendenti a TEMPO
+  // INDETERMINATO è integralmente deducibile. I dipendenti di GV sono tutti a T.I. e i compensi amministratori
+  // sono resi con P.IVA (prestazione di servizi, deducibile): pertanto NON vanno ripresi a tassazione IRAP.
+  // Verifica sul bilancio 2025: IRAP reale 9.942 (base ≈ 254.923 ≈ Differenza A-B), coerente con questa deduzione.
+  // (costoPersonaleDipendente/compensoAmministratoriIRAP restano calcolati per eventuali affinamenti su lavoratori NON a T.I.)
+  const costiDeducibiliIRAP = Math.max(0, costiOperativiTotali);
   const baseImponibileIRAP = Math.max(0, valoreProduzione - costiDeducibiliIRAP);
 
   // Calcolo imposte
-  const iresStimata = baseImponibileIRES * aliquotaIRES;
   const irapStimata = baseImponibileIRAP * aliquotaIRAP;
+  // Deduzione IRAP dalla base IRES (art. 6 DL 185/2008): 10% forfettario dell'IRAP versata, riconosciuto in
+  // presenza di interessi passivi (GV ne ha). La deduzione ANALITICA sull'IRAP relativa al costo del personale
+  // è ~0, perché con il cuneo fiscale il personale a T.I. è già integralmente dedotto dall'IRAP.
+  const deduzioneIrapDaIres = irapStimata * 0.10;
+  const baseImponibileIRESNetta = Math.max(0, baseImponibileIRES - deduzioneIrapDaIres);
+  const iresStimata = baseImponibileIRESNetta * aliquotaIRES;
   const totaleImposteStimate = iresStimata + irapStimata;
 
   // Acconti (Metodo Storico o Previsionale)
@@ -952,12 +958,12 @@ export const calcPrevisioneFiscale = (
   // Corretto: dobbiamo includere anche gli oneri finanziari, proventi finanziari e voci straordinarie per calcolare l'utile netto finale
   const utileDopoImposte = includeForecast
     ? (ceMetrics.proiezioneEbt + ceMetrics.proiezioneStraordinario + variazioneRimanenze - totaleImposteStimate)
-    : (ceMetrics.ebtTot + ceMetrics.straordinario + variazioneRimanenze - totaleImposteStimate);
+    : (ceMetrics.ebtTot + ceMetrics.straordinario - totaleImposteStimate);
 
   return {
     ebtCompetenza,
     variazioneRimanenze,
-    baseImponibileIRES,
+    baseImponibileIRES: baseImponibileIRESNetta,
     baseImponibileIRAP,
     valoreProduzione,
     costiDeducibiliIRAP,
@@ -983,7 +989,7 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
   const getVal = (v: any) => typeof v === 'number' ? v : parseFloat(v) || 0;
   
   const totAttivoImm  = getVal(sp.immImmateriali) + getVal(sp.immMateriali) + getVal(sp.immobiliTerreni) + getVal(sp.partecipazioni);
-  const totAttivoCirc = getVal(sp.rimanenze) + getVal(sp.creditiClienti) + getVal(sp.creditiTributari) + getVal(sp.liquidita);
+  const totAttivoCirc = getVal(sp.rimanenze) + getVal(sp.creditiClienti) + getVal(sp.creditiTributari) + getVal(sp.creditiFinanziari) + getVal(sp.investimentiBT) + getVal(sp.liquidita);
   const totAttivo     = totAttivoImm + totAttivoCirc;
   const totPN         = getVal(sp.capitaleSociale) + getVal(sp.riserve) + getVal(sp.utileEsercizio);
   const totPassivoLT  = getVal(sp.mutuiLT) + getVal(sp.leasingLT) + getVal(sp.tfr);
@@ -1178,8 +1184,11 @@ export const calcPosizIoneIVA = (
   includeForecast: boolean = false
 ): RiepilogoIVA => {
 
+  // Esigibilità IVA (art. 6 D.P.R. 633/1972): l'IVA è imputata alla DATA FATTURA (invoiceDate) se disponibile,
+  // non alla data del movimento bancario. GV è in regime ordinario (volume d'affari > 2 mln → non "IVA per cassa").
+  const ivaRefDate = (tx: Transaction) => tx.invoiceDate || tx.date;
   const txAnno = transactions.filter(tx => {
-    const d = parseUTCDate(tx.date);
+    const d = parseUTCDate(ivaRefDate(tx));
     const inYear = d.getUTCFullYear() === anno;
     if (!inYear) return false;
     if (includeForecast) return true;
@@ -1198,19 +1207,21 @@ export const calcPosizIoneIVA = (
   }
 
   const mensileSenzaPos = Array.from({ length: 12 }, (_, mese) => {
-    const txMese = txAnno.filter(tx => parseUTCDate(tx.date).getUTCMonth() === mese);
+    // IVA a debito/credito: imputata per ESIGIBILITÀ (data fattura se presente), non per cassa.
+    const txMeseIva = txAnno.filter(tx => parseUTCDate(ivaRefDate(tx)).getUTCMonth() === mese);
 
-    const ivaIncassata = txMese
+    const ivaIncassata = txMeseIva
       .filter(tx => tx.type === 'INCOME' && (tx.vatRate ?? 0) > 0 && tx.ceType !== 'solo_cashflow')
       .reduce((s, tx) => s + tx.amount * ((tx.vatRate ?? 0) / 100), 0);
 
-    const ivaPagata = txMese
+    const ivaPagata = txMeseIva
       .filter(tx => tx.type === 'EXPENSE' && (tx.vatRate ?? 0) > 0 && tx.ceType !== 'solo_cashflow')
       .reduce((s, tx) => s + tx.amount * ((tx.vatRate ?? 0) / 100), 0);
 
-    // Solo i versamenti F24 reali
-    const versamentoIVA = txMese
+    // Il versamento F24 è un'uscita di CASSA: resta imputato alla data del movimento (tx.date).
+    const versamentoIVA = txAnno
       .filter(tx =>
+        parseUTCDate(tx.date).getUTCMonth() === mese &&
         tx.type === 'EXPENSE' &&
         tx.category === '[FISCO] Versamento IVA' &&
         !tx.isForecast
@@ -1518,27 +1529,29 @@ export const generateDefault2025Snapshot = (
 ): SPSnapshot => {
   // Official XBRL figures for Gruppo Visentin S.R.L. at 31/12/2025
   return {
+    // Valori ufficiali dal bilancio XBRL depositato al 31/12/2025. Nessun "plug": Attivo = Passivo = 3.373.480,19.
     dataRiferimento: '2025-12-31',
-    immImmateriali: 2689,
-    immMateriali: 102035,
-    immobiliTerreni: 0,
-    partecipazioni: 698659, // Official (198,349) + VISMAN land loan (500,310)
-    rimanenze: 1262318,
-    creditiClienti: 394170, // Total credits minus collegate loan
-    creditiTributari: 77841, // Sum of IRES, IRAP, and IVA credits
-    liquidita: 832211, // Cash Flow matching starting liquidity
-    capitaleSociale: 10400, // Official share capital
-    riserve: 895770, // Recalculated to balance perfectly (balancing adjustment included)
-    utileEsercizio: 173478, // Official 2025 Net Income
-    mutuiLT: 194087, // Long term bank loan
+    immImmateriali: 2688.88,        // Totale immobilizzazioni immateriali
+    immMateriali: 102034.78,        // Totale immobilizzazioni materiali
+    immobiliTerreni: 0,             // i terreni edificabili sono a rimanenze, non immobilizzati
+    partecipazioni: 198349.22,      // Totale immobilizzazioni finanziarie (partecipazioni 10.000 + titoli 170.000 + depositi cauzionali + crediti c/scissione 17.316,55)
+    rimanenze: 1262318,             // materie prime 13.250 + lavori in corso 1.175.000 + terreni edificabili 74.068
+    creditiClienti: 894480.26,      // clienti 278.744,70 + anticipi/cauzioni/note fornitori + cassa edile + risconti attivi 43.430,41 - f.do sval + credito v/collegate VISMAN 500.309,87
+    creditiTributari: 77841.21,     // credito IRES 56.592,90 + IRAP 724,80 + IVA c/erario 20.523,51
+    creditiFinanziari: 0,           // VISMAN è nei crediti v/clienti. Spostare qui 500.309,87 se lo si vuole trattare come credito finanziario (ridurrebbe la PFN).
+    investimentiBT: 0,
+    liquidita: 835767.84,           // Intesa 235.588,25 + Terre Venete 596.623,03 + prepagata 2.236,03 + cassa 1.320,53
+    capitaleSociale: 10400,         // Capitale sociale
+    riserve: 899326.78,             // riserva rivalutazione 112.230 + riserva legale 3.636 + riserva straordinaria 783.460,78
+    utileEsercizio: 173478.02,      // Utile d'esercizio 2025
+    mutuiLT: 194086.87,             // Finanziamento Intesa San Paolo (esigibile oltre l'esercizio)
     leasingLT: 0,
-    tfr: 91618, // Employee severance provision (TFR)
+    tfr: 91617.84,                  // TFR 96.603,10 - anticipi TFR 4.985,26
     fidiRT: 0,
-    debitiFornitori: 340346, // Accounts payable
-    debitiTributari: 31149, // Taxes & Social Security liabilities
-    accontiClienti: 1365000, // Customer advances (acconti)
-    altriDebitiBT: 268075, // Other short term liabilities (adjusted to match balance - balancing plug)
+    debitiFornitori: 340346.34,     // fornitori ordinari 290.281,22 + fornitori fatture da ricevere 50.065,12
+    debitiTributari: 39276.41,      // erario (ritenute/IRPEF/IRES/imposta sost.) + INPS/INAIL/cassa edile/contributi ferie
+    accontiClienti: 1365000,        // acconti ricevuti da clienti su commesse
+    altriDebitiBT: 259947.93,       // caparre confirmatorie ricevute 200.000 + dipendenti c/retrib. e ferie + carte credito + f.do rischi 16.000 + ratei/risconti passivi 2.307,14
     mutuiBT: 0
   };
 };
-

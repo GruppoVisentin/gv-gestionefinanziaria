@@ -109,7 +109,7 @@ const RatingView: React.FC<RatingViewProps> = ({
     const varRim = deltaWip + deltaMat + deltaTer;
 
     // EBITDA di Competenza
-    const ebitdaDiCompetenza = ceMetrics.ebitdaTot + varRim;
+    const ebitdaDiCompetenza = ceMetrics.ebitdaTot;
 
     // Utile Netto e Ricavi di Competenza
     const fatturatoCompetenza = ceMetrics.fatturato + deltaWip;
