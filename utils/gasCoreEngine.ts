@@ -541,37 +541,23 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
           const targetMonthGlobal = ce.anno * 12 + m;
           const diff = targetMonthGlobal - startMonthGlobal;
 
-          // Helper to check if user manually forecasted this type in this month
-          const hasManualForecastForCategory = (catMatch: string) => {
-              return transactions.some(tx => 
-                tx.isForecast && 
-                parseUTCDate(tx.date).getUTCFullYear() === ce.anno && 
-                parseUTCDate(tx.date).getUTCMonth() === m &&
-                tx.category === catMatch
-              );
-          };
-          const hasManualForecastForCEType = (ceTypeMatch: string) => {
-              return transactions.some(tx => 
-                tx.isForecast && 
-                parseUTCDate(tx.date).getUTCFullYear() === ce.anno && 
-                parseUTCDate(tx.date).getUTCMonth() === m &&
-                getDynamicCEType(tx, projects) === ceTypeMatch
-              );
-          };
-
+          // REGOLA: tutti i previsionali si SOMMANO. Le stime da "Distribuzione Costi Commesse"
+          // (materiali / manodopera / subappalti / professionisti / ricavo) sono SEMPRE additive con i
+          // forecast manuali e da wizard (transazioni, Parte 1). Nessuna deduplicazione automatica: la
+          // rimozione la decide l'utente cancellando la voce, e il motore ricalcola di conseguenza.
           // Costs
           if (types.includes('costo_variabile')) {
-            if (diff >= 0 && diff < 6 && !hasManualForecastForCategory('[FORNITORI] Fornitori Materiali')) sum -= (p.estimatedMaterials || 0) / 6;
-            if (p.laborType === 'EXTERNAL' && diff >= 0 && diff < 6 && !hasManualForecastForCategory('[PERSONALE] Subappalti Manodopera')) sum -= (p.estimatedLabor || 0) / 6;
-            if (diff >= 6 && diff < 18 && !hasManualForecastForCategory('[FORNITORI] Subappalti su Cantieri')) sum -= (p.estimatedSubcontractors || 0) / 12;
+            if (diff >= 0 && diff < 6) sum -= (p.estimatedMaterials || 0) / 6;
+            if (p.laborType === 'EXTERNAL' && diff >= 0 && diff < 6) sum -= (p.estimatedLabor || 0) / 6;
+            if (diff >= 6 && diff < 18) sum -= (p.estimatedSubcontractors || 0) / 12;
           }
           if (types.includes('costo_studio')) {
-            if (diff >= -2 && diff < 0 && !hasManualForecastForCategory('[CONSULENZE] Professionisti Esterni di Cantiere')) sum -= (p.estimatedProfessionals || 0) / 2;
+            if (diff >= -2 && diff < 0) sum -= (p.estimatedProfessionals || 0) / 2;
           }
-          
+
           // Revenues
           if (types.includes('ricavo_core')) {
-            if (diff >= 0 && diff < 6 && !hasManualForecastForCEType('ricavo_core')) {
+            if (diff >= 0 && diff < 6) {
               sum += (p.estimatedRevenue || 0) / 6;
             }
           }
