@@ -149,12 +149,12 @@ export const calculateRepayment = (
   }
 
   const getRateForDate = (monthGlobal: number) => {
-    let rate = details.interestRate;
+    let rate = Number(details.interestRate) || 0;
     for (const r of rinegoziazioni) {
       const rDate = parseUTCDate(r.dataInizio);
       const rMonthGlobal = rDate.getUTCFullYear() * 12 + rDate.getUTCMonth();
       if (rMonthGlobal <= monthGlobal) {
-        rate = r.nuovoTasso;
+        rate = Number(r.nuovoTasso) || 0;
       }
     }
     return Math.max(0, rate);

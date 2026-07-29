@@ -97,13 +97,16 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     }
   }, [type, expenseType, fixedCategories, variableCategories, incomeCategories, category, initialData]);
 
-  // Suggerimento automatico IVA quando cambia la categoria
+  // Suggerimento automatico IVA quando cambia la categoria.
+  // In MODIFICA (initialData presente) NON sovrascrivere l'IVA salvata: il suggerimento vale solo per le NUOVE transazioni,
+  // altrimenti aprendo una transazione con IVA impostata a mano (diversa dallo standard di categoria) la si altererebbe in silenzio.
   useEffect(() => {
+    if (initialData) return;
     const aliquota = suggerisciAliquotaIVADaCategoria(category);
     if (aliquota !== null) {
       setVatRate(aliquota.toString());
     }
-  }, [category]);
+  }, [category, initialData]);
 
   const cercaEuribor = async () => {
     setLoadingEuribor(true);

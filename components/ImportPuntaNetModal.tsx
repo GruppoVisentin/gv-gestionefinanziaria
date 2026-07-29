@@ -447,8 +447,9 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
           ceType = auto.ceType;
           confidenza = auto.confidenza;
         }
-        if (!vatRateSuggerito) {
+        if (vatRateSuggerito === null || vatRateSuggerito === undefined) {
           // NON inventare un'aliquota positiva dal nome/categoria: l'IVA va letta dal dato della fattura.
+          // (Un 0% legittimo derivato dalla fattura — esente/reverse charge — NON entra qui: è già determinato.)
           // Se non è ricavabile, la riga resta "da precisare" (vatRateSuggerito = null) e ricade nel
           // flusso di revisione/sospensione: l'aliquota dovrà essere inserita manualmente prima della conferma.
           // Unica eccezione accettata in automatico: lo 0% STRUTTURALE (fuori campo / esente — stipendi,

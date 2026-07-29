@@ -621,13 +621,13 @@ export const parseDettaglioFEP = (workbook: XLSX.WorkBook): Map<string, DettFEP>
     }
 
     if (cantiere) {
-      current.cantieriSomme[cantiere] = (current.cantieriSomme[cantiere] ?? 0) + imp;
+      current.cantieriSomme[cantiere] = (current.cantieriSomme[cantiere] ?? 0) + (imp || 0);
     }
     if (tipologia) {
-      current.tipologieSomme[tipologia] = (current.tipologieSomme[tipologia] ?? 0) + imp;
+      current.tipologieSomme[tipologia] = (current.tipologieSomme[tipologia] ?? 0) + (imp || 0);
     }
     if (categoria) {
-      current.categorieSomme[categoria] = (current.categorieSomme[categoria] ?? 0) + imp;
+      current.categorieSomme[categoria] = (current.categorieSomme[categoria] ?? 0) + (imp || 0);
     }
   }
 
