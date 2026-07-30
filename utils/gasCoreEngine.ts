@@ -34,7 +34,26 @@ export const getLocalYMD = (d?: Date): string => {
 // ─── AGGREGAZIONE MENSILE ────────────────────────────────────────
 
 // Helper to determine ceType dynamically if it's an INCOME and linked to a project
-export const getDynamicCEType = (tx: Transaction, projects?: Project[]): string => {
+// Insieme delle commesse COMPLETATE (saldate) in un dato anno, come chiavi `${nomeCommessa}||${anno}`.
+// Criterio OIC 23 della "commessa completata": una commessa ad acconto è completata nell'anno in cui riceve
+// un SALDO (categoria "[CANTIERE] Saldo Finale Commessa" oppure la parola "saldo" nella descrizione).
+// Include i forecast, perché la proiezione di fine anno deve riconoscere anche i saldi previsionali.
+// Nell'anno di completamento TUTTI gli incassi di quella commessa diventano ricavo (rilascio a completamento);
+// negli anni precedenti restano acconti/debito (solo_cashflow) e il valore prodotto va gestito a rimanenze WIP.
+export const computeCommesseCompletate = (transactions: Transaction[]): Set<string> => {
+  const set = new Set<string>();
+  for (const tx of transactions) {
+    if (tx.type !== 'INCOME' || !tx.project) continue;
+    const isSaldo = tx.category === '[CANTIERE] Saldo Finale Commessa' ||
+                    /\bsaldo\b/i.test(tx.description || '');
+    if (!isSaldo) continue;
+    const anno = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
+    set.add(`${tx.project}||${anno}`);
+  }
+  return set;
+};
+
+export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesseCompletate?: Set<string>): string => {
   let type = tx.ceType || '';
   if (tx.category) {
     if (tx.category.startsWith('[STRAORDINARI]')) {
@@ -47,10 +66,19 @@ export const getDynamicCEType = (tx: Transaction, projects?: Project[]): string 
   if (tx.type === 'INCOME' && tx.project && projects) {
     const proj = projects.find(p => p.name === tx.project);
     if (proj) {
-      // Filone B: commessa ad ACCONTO -> incassi = acconti da clienti (debito), NON ricavo.
-      // Il valore del cantiere concorre al reddito via rimanenze (lavori in corso).
+      // Filone B: commessa ad ACCONTO (criterio OIC 23 della commessa completata).
+      // - Finché la commessa è IN CORSO: gli incassi sono acconti da clienti (debito), NON ricavo
+      //   -> solo_cashflow. Il valore prodotto entra a reddito via rimanenze (lavori in corso).
+      // - Nell'anno in cui la commessa viene SALDATA (è in commesseCompletate) è considerata COMPLETATA:
+      //   TUTTI i suoi incassi di quell'anno diventano RICAVO (rilascio a completamento). Vale sia per il
+      //   consuntivo sia per la proiezione (i saldi previsionali sono inclusi nel set).
       if (proj.metodoPagamento === 'acconto' && tx.type === 'INCOME') {
-        return 'solo_cashflow';
+        const anno = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
+        const completata = commesseCompletate?.has(`${proj.name}||${anno}`) ?? false;
+        if (!completata) {
+          return 'solo_cashflow';
+        }
+        return proj.jobType === 'Immobiliare' ? 'ricavo_immobiliare' : 'ricavo_core';
       }
       const isImmobiliare = proj.jobType === 'Immobiliare';
       const isOperationalRevenue = type === 'ricavo_core' || type === 'ricavo_immobiliare' ||
@@ -83,10 +111,13 @@ export const aggregateByMonthAndType = (
   ];
   ceTypes.forEach(t => result[t] = Array(12).fill(0));
 
+  // Commesse ad acconto completate (saldate) per anno: nell'anno del saldo i loro incassi diventano ricavo.
+  const commesseCompletate = computeCommesseCompletate(transactions);
+
   transactions
     .filter(tx => tx.ceType && !tx.isForecast)
     .forEach(tx => {
-      const type = getDynamicCEType(tx, projects);
+      const type = getDynamicCEType(tx, projects, commesseCompletate);
       if (!type) return;
       // Il segno segue la DIREZIONE REALE del movimento (INCOME = +, EXPENSE = −), non solo il bucket ceType.
       // Così una nota di credito passiva (rimborso da fornitore: INCOME su un ceType di costo, es. NEP) RIDUCE
@@ -453,6 +484,8 @@ export const buildCEData = (
 // ─── CALCOLI CE DERIVATI ─────────────────────────────────────────
 
 export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], projects?: Project[], initialData?: InitialBalanceBreakdown, rimanenze?: RimanenzeAnno) => {
+  // Commesse ad acconto completate (saldate) per anno: incassi dell'anno del saldo = ricavo (anche forecast).
+  const commesseCompletate = computeCommesseCompletate(transactions);
   const sum12 = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
   const add12 = (a: number[], b: number[]) => a.map((v, i) => Number((v + b[i]).toFixed(2)));
   const sub12 = (a: number[], b: number[]) => a.map((v, i) => Number((v - b[i]).toFixed(2)));
@@ -527,7 +560,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     // 1. Transaction-based forecasts
     let sum = transactions
       .filter(tx => {
-        const type = getDynamicCEType(tx, projects);
+        const type = getDynamicCEType(tx, projects, commesseCompletate);
         return tx.isForecast && 
         parseUTCDate(tx.date).getUTCFullYear() === ce.anno && 
         parseUTCDate(tx.date).getUTCMonth() > oggi.getMonth() && // solo mesi FUTURI: i passati sono già negli actual
@@ -535,7 +568,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
         !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
       })
       .reduce((s, tx) => {
-        const type = getDynamicCEType(tx, projects);
+        const type = getDynamicCEType(tx, projects, commesseCompletate);
         const isIncome = type.startsWith('ricavo') || type === 'provento_finanziario' || (type === 'straordinario' && tx.type === 'INCOME');
         return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
       }, 0);
@@ -584,7 +617,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   if (isCurrentYear || ce.anno > oggi.getFullYear()) {
     transactions
       .filter(tx => {
-        const type = getDynamicCEType(tx, projects);
+        const type = getDynamicCEType(tx, projects, commesseCompletate);
         return tx.isForecast && 
         parseUTCDate(tx.date).getUTCFullYear() === ce.anno && 
         type === 'onere_finanziario' &&
@@ -654,14 +687,14 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   // mesiTrascorsi dichiarato a linea 601
 
   const ricaviConInvoiceDate = transactions.filter(tx => {
-    const type = getDynamicCEType(tx, projects);
+    const type = getDynamicCEType(tx, projects, commesseCompletate);
     return tx.invoiceDate &&
       parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
       type?.startsWith('ricavo');
   }).length;
 
   const totaleRicavi = transactions.filter(tx => {
-    const type = getDynamicCEType(tx, projects);
+    const type = getDynamicCEType(tx, projects, commesseCompletate);
     return parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
       type?.startsWith('ricavo');
   }).length;

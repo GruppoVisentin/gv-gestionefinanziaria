@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, CEData, CERow, BudgetData, RimanenzeAnno, RimanenzeData, AppView, Project, InitialBalanceBreakdown } from '../types';
-import { buildCEData, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, getDynamicLoansInterests, calculateRepayment, parseUTCDate, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, computeCommesseCompletate, getDynamicLoansInterests, calculateRepayment, parseUTCDate, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
 import { exportCEPDF } from '../utils/cePdfExport';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import CalcoloDrawer, { FormulaStep } from './CalcoloDrawer';
@@ -103,7 +103,11 @@ const CEView: React.FC<CEViewProps> = ({
   const [drawerKpi, setDrawerKpi] = useState<string | null>(null);
   const [tipoRettifica, setTipoRettifica] = useState<'consuntivo' | 'proiezione'>('consuntivo');
 
-  const ceData = useMemo(() => 
+  // Commesse ad acconto completate (saldate) per anno: nell'anno del saldo i loro incassi diventano ricavo.
+  // Stesso set usato dal motore, così le classificazioni proprie di CEView restano coerenti con il CE.
+  const commesseCompletate = useMemo(() => computeCommesseCompletate(transactions), [transactions]);
+
+  const ceData = useMemo(() =>
     buildCEData(transactions, selectedYear, manualData[selectedYear.toString()], modalita, projects, initialData), 
     [transactions, selectedYear, manualData, modalita, projects, initialData]
   );
@@ -264,7 +268,7 @@ const CEView: React.FC<CEViewProps> = ({
 
     const getPureForecastSum = (types: string[]): number => {
       const txs = transactions.filter(tx => {
-        const type = getDynamicCEType(tx, projects);
+        const type = getDynamicCEType(tx, projects, commesseCompletate);
         const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
         return tx.isForecast && 
           !isLinked &&
@@ -272,7 +276,7 @@ const CEView: React.FC<CEViewProps> = ({
           type && types.includes(type);
       });
       const sum = txs.reduce((s, tx) => {
-        const type = getDynamicCEType(tx, projects);
+        const type = getDynamicCEType(tx, projects, commesseCompletate);
         const isIncome = type.startsWith('ricavo') || type === 'provento_finanziario' || (type === 'straordinario' && tx.type === 'INCOME');
         return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
       }, 0);
@@ -776,7 +780,7 @@ const CEView: React.FC<CEViewProps> = ({
             !t.isForecast && 
             parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCFullYear() === selectedYear && 
             parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCMonth() === month &&
-            getDynamicCEType(t, projects) === 'onere_finanziario' &&
+            getDynamicCEType(t, projects, commesseCompletate) === 'onere_finanziario' &&
             (t.loanSourceId === l.id || t.linkedForecastId === l.id || t.description.toLowerCase().trim().includes(l.name.toLowerCase().trim()))
           );
 
@@ -800,7 +804,7 @@ const CEView: React.FC<CEViewProps> = ({
     }
 
     const filteredProiezioneTxs = txAnnoProiezioniBase.filter(tx => {
-      const dType = getDynamicCEType(tx, projects);
+      const dType = getDynamicCEType(tx, projects, commesseCompletate);
       return cfg.ceTypes.includes(dType || '');
     });
 
@@ -850,7 +854,7 @@ const CEView: React.FC<CEViewProps> = ({
             t.isForecast && 
             parseUTCDate(t.date).getUTCFullYear() === selectedYear && 
             parseUTCDate(t.date).getUTCMonth() === month &&
-            getDynamicCEType(t, projects) === 'onere_finanziario' &&
+            getDynamicCEType(t, projects, commesseCompletate) === 'onere_finanziario' &&
             (t.loanSourceId === l.id || t.linkedForecastId === l.id || t.description.toLowerCase().trim().includes(l.name.toLowerCase().trim()))
           );
 
@@ -874,7 +878,7 @@ const CEView: React.FC<CEViewProps> = ({
     }
 
     const filteredSoloPrevisionaleTxs = txAnnoSoloPrevisionaliBase.filter(tx => {
-      const dType = getDynamicCEType(tx, projects);
+      const dType = getDynamicCEType(tx, projects, commesseCompletate);
       return cfg.ceTypes.includes(dType || '');
     });
 
@@ -886,7 +890,7 @@ const CEView: React.FC<CEViewProps> = ({
       kpiPercentuale: cfg.percentuale,
       formulaSteps: cfg.steps,
       transazioniContribuenti: txAnnoContribuenti.filter(tx => {
-        const dType = getDynamicCEType(tx, projects);
+        const dType = getDynamicCEType(tx, projects, commesseCompletate);
         return cfg.ceTypes.includes(dType || '');
       }),
       anno: selectedYear,
