@@ -72,6 +72,9 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   const [newForecastDate, setNewForecastDate] = useState('');
   const [newForecastAmount, setNewForecastAmount] = useState('');
   const [newForecastVat, setNewForecastVat] = useState('22');
+  // Riga "Ritorno da Investimenti": split capitale rientrato (fuori CE) / interessi maturati (provento CE)
+  const [newForecastCapitale, setNewForecastCapitale] = useState('');
+  const [newForecastInteressi, setNewForecastInteressi] = useState('');
   const [newForecastClient, setNewForecastClient] = useState('');
   const [newForecastDesc, setNewForecastDesc] = useState('');
 
@@ -372,8 +375,10 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       setNewForecastDesc('');
       setNewForecastClient('');
       setNewForecastVat('22');
+      setNewForecastCapitale('');
+      setNewForecastInteressi('');
       setEditingId(null);
-      
+
       // Reset loan details
       setLoanInterestRate('');
       setLoanRateType('FIXED');
@@ -402,11 +407,49 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
   const handleSaveNewForecast = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addingForecast || !newForecastAmount) return;
+    if (!addingForecast) return;
 
     const dateString = newForecastDate || `${currentYear}-${String(addingForecast.monthIndex + 1).padStart(2, '0')}-15`;
     const isFinancing = addingForecast.key === 'FINANCING';
     const isInvestment = addingForecast.key === 'INVESTMENT';
+
+    // "Ritorno da Investimenti": in creazione spezza in DUE movimenti — capitale allocato (rientro di
+    // liquidità, categoria "Rientro Capitale Investito" → solo_cashflow, fuori dal CE) e interessi maturati
+    // (categoria "Ritorno da Investimenti / Dividendi" → provento finanziario, nel CE). In modifica resta
+    // il campo importo singolo.
+    if (isInvestment && !editingId) {
+      const cap = parseFloat(newForecastCapitale) || 0;
+      const intMat = parseFloat(newForecastInteressi) || 0;
+      if (cap <= 0 && intMat <= 0) return;
+      let baseDesc = newForecastDesc || 'Dividendi/Interessi';
+      if (newForecastClient.trim()) baseDesc = `${newForecastClient.trim()} - ${baseDesc}`;
+      const isForecastFlag = formType === 'FORECAST';
+      if (cap > 0 && onSaveTransaction) {
+        onSaveTransaction({
+          amount: cap, vatRate: 0, date: dateString, type: TransactionType.INCOME,
+          category: '[FINANZA] Rientro Capitale Investito',
+          description: `${baseDesc} — capitale allocato`,
+          project: '', isForecast: isForecastFlag,
+          ceType: CATEGORY_TO_CE_TYPE['[FINANZA] Rientro Capitale Investito'] || 'solo_cashflow',
+        } as any);
+      }
+      if (intMat > 0 && onSaveTransaction) {
+        onSaveTransaction({
+          amount: intMat, vatRate: 0, date: dateString, type: TransactionType.INCOME,
+          category: '[FINANZA] Ritorno da Investimenti / Dividendi',
+          description: `${baseDesc} — interessi maturati`,
+          project: '', isForecast: isForecastFlag,
+          ceType: CATEGORY_TO_CE_TYPE['[FINANZA] Ritorno da Investimenti / Dividendi'] || 'provento_finanziario',
+        } as any);
+      }
+      setAddingForecast(null);
+      setEditingId(null);
+      setNewForecastCapitale('');
+      setNewForecastInteressi('');
+      return;
+    }
+
+    if (!newForecastAmount) return;
 
     let category = '[CANTIERE] SAL — Stato Avanzamento Lavori';
     let project = addingForecast.key === 'OTHER' ? '' : addingForecast.key;
@@ -797,27 +840,43 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                   placeholder="Descrizione Opzionale"
                                 />
                               </div>
-                              <div className="flex gap-2">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  required
-                                  value={newForecastAmount}
-                                  onChange={(e) => setNewForecastAmount(e.target.value)}
-                                  className="w-2/3 p-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none font-mono"
-                                  placeholder="€ Imponibile"
-                                />
-                                <select
-                                    value={newForecastVat}
-                                    onChange={(e) => setNewForecastVat(e.target.value)}
-                                    className="w-1/3 p-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none bg-white"
-                                >
-                                    <option value="22">22%</option>
-                                    <option value="10">10%</option>
-                                    <option value="4">4%</option>
-                                    <option value="0">0%</option>
-                                </select>
-                              </div>
+                              {addingForecast.key === 'INVESTMENT' && !editingId ? (
+                                <div className="space-y-1.5">
+                                  <div className="flex gap-2">
+                                    <div className="w-1/2">
+                                      <label className="block text-[9px] text-slate-600 font-semibold mb-0.5">Capitale allocato €</label>
+                                      <input type="number" step="0.01" value={newForecastCapitale} onChange={(e) => setNewForecastCapitale(e.target.value)} className="w-full p-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none font-mono" placeholder="0.00" />
+                                    </div>
+                                    <div className="w-1/2">
+                                      <label className="block text-[9px] text-slate-600 font-semibold mb-0.5">Interessi maturati €</label>
+                                      <input type="number" step="0.01" value={newForecastInteressi} onChange={(e) => setNewForecastInteressi(e.target.value)} className="w-full p-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none font-mono" placeholder="0.00" />
+                                    </div>
+                                  </div>
+                                  <p className="text-[9px] text-slate-400 leading-snug">Capitale = rientro di liquidità (fuori dal CE). Solo gli interessi vanno a provento finanziario nel Conto Economico. Salvati come due movimenti.</p>
+                                </div>
+                              ) : (
+                                <div className="flex gap-2">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    required
+                                    value={newForecastAmount}
+                                    onChange={(e) => setNewForecastAmount(e.target.value)}
+                                    className="w-2/3 p-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none font-mono"
+                                    placeholder="€ Imponibile"
+                                  />
+                                  <select
+                                      value={newForecastVat}
+                                      onChange={(e) => setNewForecastVat(e.target.value)}
+                                      className="w-1/3 p-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none bg-white"
+                                  >
+                                      <option value="22">22%</option>
+                                      <option value="10">10%</option>
+                                      <option value="4">4%</option>
+                                      <option value="0">0%</option>
+                                  </select>
+                                </div>
+                              )}
                             </>
                           );
                         })()}
