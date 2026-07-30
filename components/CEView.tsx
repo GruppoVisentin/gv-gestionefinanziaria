@@ -117,6 +117,15 @@ const CEView: React.FC<CEViewProps> = ({
   // nella tabella "CE Rettificato". Evita il doppio conteggio in vista cassa (totali + tabella rettificata).
   const rawMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData, (modalita === 'competenza' && rimanenze) ? rimanenze[selectedYear] : undefined), [ceData, transactions, projects, initialData, rimanenze, selectedYear, modalita]);
 
+  // Metriche su base CASSA (senza rimanenze), stabili a prescindere dalla modalità attiva. Servono alla
+  // tabella "CE Rettificato" perché mostri SEMPRE il ponte Cassa → +Rimanenze → Competenza, sia in vista
+  // cassa sia in vista competenza, senza il doppio conteggio (in competenza i totali hanno già le rimanenze).
+  const rawMetricsCassa = useMemo(() => {
+    if (modalita === 'cassa') return rawMetrics; // già base cassa: nessun ricalcolo
+    const ceCassa = buildCEData(transactions, selectedYear, manualData[selectedYear.toString()], 'cassa', projects, initialData);
+    return calcCEMetrics(ceCassa, transactions, projects, initialData, undefined);
+  }, [modalita, rawMetrics, transactions, selectedYear, manualData, projects, initialData]);
+
   const rimanenzeAnno = rimanenze?.[selectedYear.toString()];
 
   const varRim = useMemo(() => {
@@ -1894,19 +1903,21 @@ const CEView: React.FC<CEViewProps> = ({
         </div>
 
         {/* RISULTATI RETTIFICATI — visibili solo se rimanenze inserite */}
-        {effettoRimanenze && modalita === 'cassa' && (() => {
-          const cassaRicavi = tipoRettifica === 'consuntivo' ? rawMetrics.fatturato : rawMetrics.proiezioneFatturato;
-          const cassaCostiVar = tipoRettifica === 'consuntivo' ? rawMetrics.totCostiVar.reduce((a,b)=>a+b,0) : rawMetrics.proiezioneCostiVariabili;
-          const cassaUtile = tipoRettifica === 'consuntivo' 
-            ? rawMetrics.utileNettoTot 
-            : (rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario - previsioneFiscale.totaleImposteStimate);
+        {effettoRimanenze && (() => {
+          // Sempre su base CASSA (rawMetricsCassa) così il ponte Cassa → Competenza è identico nelle due viste
+          // e non si crea doppio conteggio quando la modalità attiva è "competenza".
+          const cassaRicavi = tipoRettifica === 'consuntivo' ? rawMetricsCassa.fatturato : rawMetricsCassa.proiezioneFatturato;
+          const cassaCostiVar = tipoRettifica === 'consuntivo' ? rawMetricsCassa.totCostiVar.reduce((a,b)=>a+b,0) : rawMetricsCassa.proiezioneCostiVariabili;
+          const cassaUtile = tipoRettifica === 'consuntivo'
+            ? rawMetricsCassa.utileNettoTot
+            : (rawMetricsCassa.proiezioneEbt + rawMetricsCassa.proiezioneStraordinario - previsioneFiscale.totaleImposteStimate);
 
           const rettificatoRicavi = cassaRicavi + effettoRimanenze.deltaWip;
           const rettificatoCostiVar = cassaCostiVar - effettoRimanenze.deltaMateriali - effettoRimanenze.deltaTerreni;
           const rettificatoUtile = cassaUtile + effettoRimanenze.variazioneRimanenzeNetta;
           const baseIRES = Math.max(0, tipoRettifica === 'consuntivo'
-            ? (rawMetrics.ebtTot + rawMetrics.straordinario + effettoRimanenze.variazioneRimanenzeNetta)
-            : (rawMetrics.proiezioneEbt + rawMetrics.proiezioneStraordinario + effettoRimanenze.variazioneRimanenzeNetta));
+            ? (rawMetricsCassa.ebtTot + rawMetricsCassa.straordinario + effettoRimanenze.variazioneRimanenzeNetta)
+            : (rawMetricsCassa.proiezioneEbt + rawMetricsCassa.proiezioneStraordinario + effettoRimanenze.variazioneRimanenzeNetta));
 
           return (
             <>
