@@ -105,7 +105,7 @@ const CEView: React.FC<CEViewProps> = ({
 
   // Commesse ad acconto completate (saldate) per anno: nell'anno del saldo i loro incassi diventano ricavo.
   // Stesso set usato dal motore, così le classificazioni proprie di CEView restano coerenti con il CE.
-  const commesseCompletate = useMemo(() => computeCommesseCompletate(transactions), [transactions]);
+  const commesseCompletate = useMemo(() => computeCommesseCompletate(transactions, projects), [transactions, projects]);
 
   const ceData = useMemo(() =>
     buildCEData(transactions, selectedYear, manualData[selectedYear.toString()], modalita, projects, initialData), 

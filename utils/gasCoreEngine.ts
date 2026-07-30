@@ -34,21 +34,37 @@ export const getLocalYMD = (d?: Date): string => {
 // ─── AGGREGAZIONE MENSILE ────────────────────────────────────────
 
 // Helper to determine ceType dynamically if it's an INCOME and linked to a project
+// Attribuisce un INCASSO a una commessa. Regola generale: per link diretto (tx.project), usato dal 2026 in
+// poi quando ogni incasso è collegato alla sua commessa. Fallback per gli incassi storici NON collegati
+// (es. l'inserimento generale dell'anno di apertura 2025): match TESTUALE del nome commessa nella
+// descrizione, limitato alle commesse ad ACCONTO (per non alterare le altre) e a nomi non banali.
+export const commessaDiIncasso = (tx: Transaction, projects?: Project[]): Project | undefined => {
+  if (!projects || tx.type !== 'INCOME') return undefined;
+  if (tx.project) return projects.find(p => p.name === tx.project);
+  const desc = (tx.description || '').toLowerCase();
+  if (!desc) return undefined;
+  return projects.find(p =>
+    p.metodoPagamento === 'acconto' && p.name && p.name.length > 3 && desc.includes(p.name.toLowerCase())
+  );
+};
+
 // Insieme delle commesse COMPLETATE (saldate) in un dato anno, come chiavi `${nomeCommessa}||${anno}`.
 // Criterio OIC 23 della "commessa completata": una commessa ad acconto è completata nell'anno in cui riceve
 // un SALDO (categoria "[CANTIERE] Saldo Finale Commessa" oppure la parola "saldo" nella descrizione).
 // Include i forecast, perché la proiezione di fine anno deve riconoscere anche i saldi previsionali.
-// Nell'anno di completamento TUTTI gli incassi di quella commessa diventano ricavo (rilascio a completamento);
-// negli anni precedenti restano acconti/debito (solo_cashflow) e il valore prodotto va gestito a rimanenze WIP.
-export const computeCommesseCompletate = (transactions: Transaction[]): Set<string> => {
+// Nell'anno di completamento TUTTI gli incassi della commessa (di quell'anno E degli anni precedenti)
+// diventano ricavo (rilascio cumulativo a completamento); negli anni precedenti restano acconti/debito.
+export const computeCommesseCompletate = (transactions: Transaction[], projects?: Project[]): Set<string> => {
   const set = new Set<string>();
   for (const tx of transactions) {
-    if (tx.type !== 'INCOME' || !tx.project) continue;
+    if (tx.type !== 'INCOME') continue;
     const isSaldo = tx.category === '[CANTIERE] Saldo Finale Commessa' ||
                     /\bsaldo\b/i.test(tx.description || '');
     if (!isSaldo) continue;
+    const nome = commessaDiIncasso(tx, projects)?.name || tx.project;
+    if (!nome) continue;
     const anno = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
-    set.add(`${tx.project}||${anno}`);
+    set.add(`${nome}||${anno}`);
   }
   return set;
 };
@@ -63,8 +79,9 @@ export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesse
     }
   }
 
-  if (tx.type === 'INCOME' && tx.project && projects) {
-    const proj = projects.find(p => p.name === tx.project);
+  if (tx.type === 'INCOME' && projects) {
+    // Attribuzione per link (2026+) o per testo sugli incassi storici non collegati (apertura 2025).
+    const proj = commessaDiIncasso(tx, projects);
     if (proj) {
       // Filone B: commessa ad ACCONTO (criterio OIC 23 della commessa completata).
       // - Finché la commessa è IN CORSO: gli incassi sono acconti da clienti (debito), NON ricavo
@@ -112,7 +129,7 @@ export const aggregateByMonthAndType = (
   ceTypes.forEach(t => result[t] = Array(12).fill(0));
 
   // Commesse ad acconto completate (saldate) per anno: nell'anno del saldo i loro incassi diventano ricavo.
-  const commesseCompletate = computeCommesseCompletate(transactions);
+  const commesseCompletate = computeCommesseCompletate(transactions, projects);
 
   transactions
     .filter(tx => tx.ceType && !tx.isForecast)
@@ -141,6 +158,35 @@ export const aggregateByMonthAndType = (
         result[type][month] += segno * Math.abs(tx.amount);
       }
     });
+
+  // Rilascio CUMULATIVO a completamento: per ogni commessa ad acconto COMPLETATA (saldata) in `anno`,
+  // porta a ricavo in `anno` anche gli incassi degli ANNI PRECEDENTI (attribuiti per link o per testo),
+  // che nei loro anni erano anticipi/debito (solo_cashflow). Gli incassi dell'anno corrente sono già a
+  // ricavo (gestiti sopra da getDynamicCEType). L'importo rilasciato è collocato nel mese del saldo.
+  if (projects) {
+    const meseSaldo = new Map<string, number>();
+    transactions.forEach(tx => {
+      if (tx.type !== 'INCOME') return;
+      const isSaldo = tx.category === '[CANTIERE] Saldo Finale Commessa' || /\bsaldo\b/i.test(tx.description || '');
+      if (!isSaldo) return;
+      const nome = commessaDiIncasso(tx, projects)?.name || tx.project;
+      if (!nome) return;
+      const d = parseUTCDate(tx.invoiceDate || tx.date);
+      if (d.getUTCFullYear() !== anno) return;
+      meseSaldo.set(nome, Math.max(meseSaldo.get(nome) ?? 0, d.getUTCMonth()));
+    });
+    transactions.forEach(tx => {
+      if (tx.type !== 'INCOME') return;
+      const proj = commessaDiIncasso(tx, projects);
+      if (!proj || proj.metodoPagamento !== 'acconto') return;
+      if (!commesseCompletate.has(`${proj.name}||${anno}`)) return;
+      const y = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
+      if (y >= anno) return; // solo anni PRECEDENTI: l'anno corrente è già a ricavo
+      const bucket = proj.jobType === 'Immobiliare' ? 'ricavo_immobiliare' : 'ricavo_core';
+      const m = meseSaldo.get(proj.name) ?? 11;
+      result[bucket][m] += Math.abs(tx.amount);
+    });
+  }
 
   return result;
 };
@@ -485,7 +531,7 @@ export const buildCEData = (
 
 export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], projects?: Project[], initialData?: InitialBalanceBreakdown, rimanenze?: RimanenzeAnno) => {
   // Commesse ad acconto completate (saldate) per anno: incassi dell'anno del saldo = ricavo (anche forecast).
-  const commesseCompletate = computeCommesseCompletate(transactions);
+  const commesseCompletate = computeCommesseCompletate(transactions, projects);
   const sum12 = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
   const add12 = (a: number[], b: number[]) => a.map((v, i) => Number((v + b[i]).toFixed(2)));
   const sub12 = (a: number[], b: number[]) => a.map((v, i) => Number((v - b[i]).toFixed(2)));
