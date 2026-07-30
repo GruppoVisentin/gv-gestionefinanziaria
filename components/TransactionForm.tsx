@@ -51,6 +51,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [invoiceDate, setInvoiceDate] = useState(initialData?.invoiceDate || '');
 
+  // "Ritorno da Investimenti / Dividendi": split tra capitale rientrato (fuori CE) e interessi (provento CE)
+  const [capitaleAllocato, setCapitaleAllocato] = useState('');
+  const [interessiMaturati, setInteressiMaturati] = useState('');
+
   // Loan Specific State
   const [loanInterestRate, setLoanInterestRate] = useState(initialData?.loanDetails?.interestRate?.toString() || '');
   const [loanRateType, setLoanRateType] = useState<'FIXED' | 'VARIABLE'>(initialData?.loanDetails?.rateType || 'FIXED');
@@ -137,8 +141,61 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     setLoadingEuribor(false);
   };
 
+  const isRitornoInvestimenti = type === TransactionType.INCOME && category === '[FINANZA] Ritorno da Investimenti / Dividendi';
+  // Il campo split è disponibile in creazione (non in modifica di un movimento già spezzato).
+  const showSplit = isRitornoInvestimenti && !initialData;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Caso speciale: "Ritorno da Investimenti / Dividendi" → registra DUE movimenti distinti.
+    // Il capitale allocato rientra come liquidità (categoria "Rientro Capitale Investito" → solo_cashflow,
+    // fuori dal CE); solo gli interessi maturati sono provento finanziario e concorrono al reddito.
+    if (showSplit) {
+      const cap = parseFloat(capitaleAllocato) || 0;
+      const intMat = parseFloat(interessiMaturati) || 0;
+      if (!description || (cap <= 0 && intMat <= 0)) {
+        alert('Inserisci la descrizione e almeno uno tra "Capitale allocato" e "Interessi maturati".');
+        return;
+      }
+      let desc = description;
+      if (clientName.trim()) desc = `${clientName.trim()} - ${description}`;
+      if (invoiceRef.trim()) desc = `${desc} (Rif. ${invoiceRef.trim()})`;
+
+      const dates: string[] = [];
+      if (applyToAllMonths && isForecast && !initialData) {
+        const parts = date.split('-');
+        const year = parseInt(parts[0], 10);
+        const day = parseInt(parts[2], 10);
+        for (let i = 0; i < 12; i++) {
+          const safeDay = Math.min(day, new Date(year, i + 1, 0).getDate());
+          dates.push(`${year}-${String(i + 1).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`);
+        }
+      } else {
+        dates.push(date);
+      }
+
+      for (const dt of dates) {
+        if (cap > 0) {
+          onSave({
+            amount: cap, vatRate: 0, type: TransactionType.INCOME,
+            category: '[FINANZA] Rientro Capitale Investito',
+            description: `${desc} — capitale allocato`,
+            project, isForecast, invoiceDate: undefined, date: dt,
+          });
+        }
+        if (intMat > 0) {
+          onSave({
+            amount: intMat, vatRate: 0, type: TransactionType.INCOME,
+            category: '[FINANZA] Ritorno da Investimenti / Dividendi',
+            description: `${desc} — interessi maturati`,
+            project, isForecast, invoiceDate: undefined, date: dt,
+          });
+        }
+      }
+      return;
+    }
+
     const numAmount = parseFloat(amount);
     if (!amount || isNaN(numAmount) || numAmount < 0 || !description) {
         alert("L'importo deve essere un numero positivo e la descrizione è obbligatoria.");
@@ -316,38 +373,70 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
             )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">{category === '[FINANZA] Finanziamenti Ricevuti' && type === TransactionType.INCOME ? 'Capitale Prestato (€)' : 'Imponibile (€)'}</label>
-            <input
-              type="number"
-              step="0.01"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent text-lg font-mono"
-              placeholder="0.00"
-            />
+        {showSplit ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Capitale allocato (€)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={capitaleAllocato}
+                  onChange={(e) => setCapitaleAllocato(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent text-lg font-mono"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Interessi maturati (€)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={interessiMaturati}
+                  onChange={(e) => setInteressiMaturati(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent text-lg font-mono"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 leading-relaxed">
+              Il <strong>capitale allocato</strong> rientra come liquidità e <strong>non è reddito</strong> (fuori dal Conto Economico). Solo gli <strong>interessi maturati</strong> vanno a provento finanziario nel CE. Verranno salvati come due movimenti distinti.
+            </p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Aliquota IVA</label>
-            <div className="relative">
-              <Percent className="absolute left-3 top-2.5 text-slate-400" size={16} />
-              <select
-                value={vatRate}
-                onChange={(e) => setVatRate(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent bg-white appearance-none h-[46px]"
-              >
-                <option value="0">0% (Esente/Minimi)</option>
-                <option value="4">4%</option>
-                <option value="10">10%</option>
-                <option value="22">22%</option>
-              </select>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{category === '[FINANZA] Finanziamenti Ricevuti' && type === TransactionType.INCOME ? 'Capitale Prestato (€)' : 'Imponibile (€)'}</label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent text-lg font-mono"
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Aliquota IVA</label>
+              <div className="relative">
+                <Percent className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                <select
+                  value={vatRate}
+                  onChange={(e) => setVatRate(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent bg-white appearance-none h-[46px]"
+                >
+                  <option value="0">0% (Esente/Minimi)</option>
+                  <option value="4">4%</option>
+                  <option value="10">10%</option>
+                  <option value="22">22%</option>
+                </select>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {amount && (
+        {amount && !showSplit && (
             <div className="flex justify-end text-sm text-slate-500">
                 <span>Totale Ivato: </span>
                 <span className="font-bold text-slate-800 ml-2">{CURRENCY_FORMATTER.format(grossAmount)}</span>
