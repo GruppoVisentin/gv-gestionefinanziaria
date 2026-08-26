@@ -785,7 +785,7 @@ export const isDuplicato = (
         const gross = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
         return tx.type === 'EXPENSE' &&
           tx.description.toUpperCase().includes(fepNumUpper) &&
-          Math.abs(gross - riga.importo) < 0.05;
+          Math.abs(Math.round(gross * 100) - importoCent) <= 1;
       });
       if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
     } else {
@@ -793,7 +793,7 @@ export const isDuplicato = (
         const gross = typeof tx.grossAmount === 'number' ? tx.grossAmount : tx.amount * (1 + (tx.vatRate || 0) / 100);
         return tx.type === 'EXPENSE' &&
           tx.description.toUpperCase().includes(fepNumUpper) &&
-          Math.abs(gross - riga.importo) < 0.05;
+          Math.abs(Math.round(gross * 100) - importoCent) <= 1;
       });
       if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
     }
@@ -806,7 +806,7 @@ export const isDuplicato = (
         return tx.type === 'INCOME' &&
           tx.description.toUpperCase().includes('FEA') &&
           tx.description.toUpperCase().includes(feaNumUpper) &&
-          Math.abs(gross - riga.importo) < 0.05;
+          Math.abs(Math.round(gross * 100) - importoCent) <= 1;
       });
       if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
     } else {
@@ -815,7 +815,7 @@ export const isDuplicato = (
         return tx.type === 'INCOME' &&
           tx.description.toUpperCase().includes('FEA') &&
           tx.description.toUpperCase().includes(feaNumUpper) &&
-          Math.abs(gross - riga.importo) < 0.05;
+          Math.abs(Math.round(gross * 100) - importoCent) <= 1;
       });
       if (trovata) return { duplicato: true, livello: 1, transazioneEsistente: trovata };
     }

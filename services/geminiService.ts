@@ -14,10 +14,16 @@ export const suggestCategory = async (description: string, type: TransactionType
   }
 
   try {
+    const cleanDescription = (description || '')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/["`'\\]/g, '')
+      .slice(0, 300)
+      .trim();
+
     const categories = type === TransactionType.EXPENSE ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
     const prompt = `
       Agisci come un assistente contabile per un'impresa edile italiana (Gruppo Visentin SRL).
-      Analizza la seguente descrizione di transazione: "${description}".
+      Analizza la seguente descrizione di transazione: "${cleanDescription}".
       
       Regole speciali:
       - Se è un incasso da cliente con parola "caparra" → [CANTIERE] Caparra Confirmatoria
