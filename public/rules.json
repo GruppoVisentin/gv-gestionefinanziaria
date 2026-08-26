@@ -1,0 +1,8 @@
+[
+  { "pattern": "AFFITTO SEDE", "categoria": "[STRUTTURA] Affitti Sedi", "ceType": "costo_fisso", "confidenza": "alta" },
+  { "pattern": "CARROZZERIA", "categoria": "[MEZZI] Riparazioni Macchinari Programmate", "ceType": "costo_fisso", "confidenza": "alta" },
+  { "pattern": "OFFICINA", "categoria": "[MEZZI] Riparazioni Macchinari Programmate", "ceType": "costo_fisso", "confidenza": "alta" },
+  { "pattern": "COMUNE DI", "categoria": "[FISCO] Tasse e Tributi Aziendali (IMU, TARI, ecc.)", "ceType": "costo_fisso", "confidenza": "alta" },
+  { "pattern": "INPS", "categoria": "[PERSONALE] Contributi Dipendenti Ufficio", "ceType": "costo_studio", "confidenza": "alta" },
+  { "pattern": "INAIL", "categoria": "[PERSONALE] Contributi Dipendenti Ufficio", "ceType": "costo_studio", "confidenza": "alta" }
+]

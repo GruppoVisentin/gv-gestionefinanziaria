@@ -256,7 +256,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
   "[INVESTIMENTI] Acquisto Terreni per Sviluppo":      'capex',
   "[INVESTIMENTI] Acquisto Immobili per Sviluppo":     'capex',
   "[INVESTIMENTI] Investimento in Nuova Società":      'capex',
-  "[FINANZA] Quota Capitale Rate Finanziamenti":       'capex',
+  "[FINANZA] Quota Capitale Rate Finanziamenti":       'solo_cashflow',
 
   // STRAORDINARI
   "[STRAORDINARI] Sanzioni e Penali":                  'straordinario',

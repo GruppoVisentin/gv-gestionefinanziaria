@@ -392,7 +392,6 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                              .filter(l => !transactions.some(t => (t.loanSourceId === l.id || t.description.toLowerCase().trim() === l.name.toLowerCase().trim()) && parseUTCDate(t.date).getUTCFullYear() === currentYear))
                              .reduce((sum, l) => sum + l.originalAmount, 0) + 
                              (initialData.previousFinancing || 0) +
-                             (initialData.accontiClienti || 0) +
                              (initialData.altriDebitiBT || 0) +
                              (initialData.mutuiBT || 0);
 

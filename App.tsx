@@ -1767,7 +1767,7 @@ const App: React.FC = () => {
             const offsetFine = meseFine > 0 ? meseFine - 1 : meseFine;
             const durataMesi = Math.max(1, offsetFine - offsetInizio + 1);
 
-            const monthlyAmount = faseAmount / durataMesi;
+            const monthlyAmount = Number((faseAmount / durataMesi).toFixed(2));
 
             for (let i = 0; i < durataMesi; i++) {
               const absoluteMonthOffset = offsetInizio + i;
@@ -1866,7 +1866,7 @@ const App: React.FC = () => {
             const offsetFine = meseFine > 0 ? meseFine - 1 : meseFine;
             const durataMesi = Math.max(1, offsetFine - offsetInizio + 1);
 
-            const monthlyAmount = faseAmount / durataMesi;
+            const monthlyAmount = Number((faseAmount / durataMesi).toFixed(2));
 
             for (let i = 0; i < durataMesi; i++) {
               const absoluteMonthOffset = offsetInizio + i;
@@ -1964,7 +1964,7 @@ const App: React.FC = () => {
         const offsetFine = meseFine > 0 ? meseFine - 1 : meseFine;
         const durataMesi = Math.max(1, offsetFine - offsetInizio + 1);
 
-        const monthlyAmount = faseAmount / durataMesi;
+        const monthlyAmount = Number((faseAmount / durataMesi).toFixed(2));
 
         for (let i = 0; i < durataMesi; i++) {
           const absoluteMonthOffset = offsetInizio + i;
@@ -2621,7 +2621,6 @@ const App: React.FC = () => {
                 responsibles={responsiblesList}
                 onAuthChange={handleAuthChange}
                 onSettingsClick={() => setView(AppView.OPERATORS)} // CLICK OPENS OPERATOR MANAGER
-                masterPassword="gvflow808282"
              />
           </div>
         </div>

@@ -284,10 +284,14 @@ export const calculateRepayment = (
     currentResidual = Math.max(0, currentResidual - principalM);
   }
 
+  const roundedInterest = Math.round(interestPayment * 100) / 100;
+  const roundedPrincipal = Math.round(principalPayment * 100) / 100;
+  const roundedTotal = Math.round((roundedPrincipal + roundedInterest) * 100) / 100;
+
   return {
-    total: Math.round((principalPayment + interestPayment) * 100) / 100,
-    principal: Math.round(principalPayment * 100) / 100,
-    interest: Math.round(interestPayment * 100) / 100
+    total: roundedTotal,
+    principal: roundedPrincipal,
+    interest: roundedInterest
   };
 };
 

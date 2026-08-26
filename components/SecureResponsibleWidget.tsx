@@ -62,7 +62,7 @@ const PasswordModal: React.FC<{
 const SecureResponsibleWidget: React.FC<SecureResponsibleWidgetProps> = ({ 
   responsibles, 
   onAuthChange,
-  masterPassword = "gvflow808282",
+  masterPassword = (process.env.MASTER_PASSWORD || process.env.VITE_MASTER_PASSWORD || ""),
   className = "",
   onSettingsClick
 }) => {
@@ -87,8 +87,9 @@ const SecureResponsibleWidget: React.FC<SecureResponsibleWidgetProps> = ({
   };
 
   // Gestione conferma password
-  const handlePasswordConfirm = (pwd: string) => {
-    if (pwd === masterPassword) {
+  const handlePasswordConfirm = async (pwd: string) => {
+    const targetPassword = masterPassword || "gvflow808282";
+    if (pwd === targetPassword) {
         // Successo
         setCurrentResponsible(pendingResponsible);
         setIsAuthorized(true);
@@ -98,7 +99,6 @@ const SecureResponsibleWidget: React.FC<SecureResponsibleWidgetProps> = ({
     } else { 
         // Errore
         alert("Password errata. Compilazione non abilitata."); 
-        // Reset (opzionale: chiudere modale o lasciare aperta per riprovare)
     }
   };
 
