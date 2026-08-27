@@ -11,6 +11,9 @@ export const DATE_FORMATTER = new Intl.DateTimeFormat('it-IT', {
   year: 'numeric'
 });
 
+// --- BENCHMARK FINANZIARI DI RIFERIMENTO ---
+export const DSCR_MIN_THRESHOLD = 1.20; // Soglia bancaria prudenziale per imprese edili
+
 // --- NEW CATEGORIZATION ---
 
 export const FIXED_COST_CATEGORIES: string[] = [

@@ -1570,7 +1570,7 @@ export const calcRollingDSODPO = (
     // Metodo stimato: volume mensile medio → stima crediti aperti = 1.5 mesi
     const fatturatoRolling = incassiClienti.reduce((s, tx) => s + Math.abs(tx.amount), 0);
     const fatturatoMensile = fatturatoRolling / 12;
-    dsoRolling = fatturatoMensile > 0 ? 45 : 0; // stima standard edilizia
+    dsoRolling = fatturatoMensile > 0 ? 60 : 0; // stima standard settore edilizia (60 giorni per incassi SAL)
   }
 
   // ── DPO ─────────────────────────────────────────────────────────
@@ -1597,7 +1597,7 @@ export const calcRollingDSODPO = (
   } else {
     // Metodo stimato: stima standard settore edile
     const acquistiRolling = pagamentiFornitori.reduce((s, tx) => s + Math.abs(tx.amount), 0);
-    dpoRolling = acquistiRolling > 0 ? 60 : 0; // stima standard edilizia
+    dpoRolling = acquistiRolling > 0 ? 90 : 0; // stima standard settore edilizia (90 giorni per fornitori/subappalti)
   }
 
   return {
