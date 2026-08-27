@@ -540,17 +540,22 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   const add12 = (a: number[], b: number[]) => a.map((v, i) => Number((v + b[i]).toFixed(2)));
   const sub12 = (a: number[], b: number[]) => a.map((v, i) => Number((v - b[i]).toFixed(2)));
 
-  const arrVarRimanenze = Array(12).fill(0);
+  // Art. 2425 C.C. / OIC 13:
+  // Voce A.2 (Valore della Produzione): Variazione rimanenze WIP e Terreni Sviluppo
+  // Voce B.11 (Costi della Produzione): Variazione rimanenze Materie Prime e Consumo (rettifica acquisti)
+  const arrVarRimanenzeWipTerreni = Array(12).fill(0);
+  const arrVarRimanenzeMateriali  = Array(12).fill(0);
   if (rimanenze) {
-    arrVarRimanenze[11] = (rimanenze.wipFine - rimanenze.wipInizio) +
-                          ((rimanenze.terreniFine || 0) - (rimanenze.terreniInizio || 0)) +
-                          (rimanenze.materialiFine - rimanenze.materialiInizio);
+    arrVarRimanenzeWipTerreni[11] = (rimanenze.wipFine - rimanenze.wipInizio) +
+                                    ((rimanenze.terreniFine || 0) - (rimanenze.terreniInizio || 0));
+    arrVarRimanenzeMateriali[11]  = (rimanenze.materialiFine - rimanenze.materialiInizio);
   }
 
-  const totRicavi       = add12(add12(ce.ricaviCore, ce.ricaviAltro), ce.ricaviImmobiliare);
-  const valoreProduzione = add12(totRicavi, arrVarRimanenze);
-  const totCostiVar     = ce.costiVariabili;
-  const primoMargine    = sub12(valoreProduzione, totCostiVar);
+  const totRicavi        = add12(add12(ce.ricaviCore, ce.ricaviAltro), ce.ricaviImmobiliare);
+  const valoreProduzione = add12(totRicavi, arrVarRimanenzeWipTerreni);
+  // Un aumento di rimanenze materiali (Voce B.11) riduce i costi variabili operativi
+  const totCostiVar      = sub12(ce.costiVariabili, arrVarRimanenzeMateriali);
+  const primoMargine     = sub12(valoreProduzione, totCostiVar);
   
   const totCostiFissiSenzaAmm = add12(ce.costiFissi, ce.costiStudio);
   const ebitda          = sub12(primoMargine, totCostiFissiSenzaAmm); // EBITDA vero

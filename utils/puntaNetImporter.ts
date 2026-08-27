@@ -943,6 +943,21 @@ export const classificaRiga = (
   const descLower = riga.descrizione.toLowerCase();
   const entLower = riga.entity.toLowerCase();
 
+  // Riconoscimento automatico Reverse Charge Edile (Art. 17 c. 6 D.P.R. 633/1972)
+  if (
+    /reverse charge|inversione contabile|art\.?\s*17\s*c\.?\s*6/i.test(descLower) ||
+    /reverse charge|inversione contabile|art\.?\s*17\s*c\.?\s*6/i.test(entLower)
+  ) {
+    return {
+      categoria: '[CANTIERE] Subappalti e Lavorazioni Terzi',
+      ceType: 'costo_variabile',
+      confidenza: 'alta',
+      matchKey: 'reverse charge edile',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Reverse Charge (art. 17 c. 6 D.P.R. 633/1972) — aliquota 0%'
+    };
+  }
+
   // Riconoscimento automatico spese e commissioni bancarie / bolli / interessi
   if (
     /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(descLower) ||
