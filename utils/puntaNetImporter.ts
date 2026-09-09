@@ -901,8 +901,18 @@ export const mappaTipologiaACategoriaApp = (
   if (t.includes('pubblicità') || t.includes('promozione')) return '[MARKETING] Pubblicità e Marketing';
   if (t.includes('spese bancarie')) return '[FINANZA] Commissioni e Bolli Bancari';
   if (t.includes('pranzi')) return '[CANTIERE] Pranzi e Trasferte Cantiere';
-  if (t.includes('autoricambi') || t.includes('revisione') || t.includes('riparazione')) return '[MEZZI] Riparazioni Macchinari Programmate';
+  if (t.includes('autoricambi') || t.includes('revisione') || t.includes('riparazione') || t.includes('manutenzione mezzi')) return '[MEZZI] Riparazioni Macchinari Programmate';
   if (t.includes('servizi telefonici') || t.includes('telefon')) return '[STRUTTURA] Software e Abbonamenti';
+  // Aggiunte 2026-09-09 — tipologie reali GRUPPO VISENTIN emerse dal test su Documenti Articoli 2026
+  // (coprivano €41.435 su €2.403.000 di fatture passive 2026, 1,7% del valore, prima non mappate)
+  if (t.includes('gasolio') || t.includes('carburant')) return '[CANTIERE] Carburanti';
+  if (t.includes('noleggio')) return '[CANTIERE] Noleggi Attrezzature e Mezzi';
+  if (t.includes('cancelleria') || t.includes('stampati')) return '[STRUTTURA] Cancelleria e Materiali Ufficio';
+  if (t.includes('visite mediche')) return '[COMPLIANCE] Visite Mediche Dipendenti';
+  if (t.includes('corsi per dipendenti') || t.includes('corsi dipendenti')) return '[COMPLIANCE] Corsi Dipendenti';
+  if (t === 'gas') return '[STRUTTURA] Utenze Sedi';
+  if (t.includes('onorari e consulenze tecniche')) return '[CONSULENZE] Professionisti Esterni di Cantiere';
+  if (t.includes('consulenza del lavoro') || t.includes('cedolini paghe')) return '[CONSULENZE] Consulenti Fissi';
   return null;
 };
 
@@ -1031,6 +1041,21 @@ export const classificaRiga = (
       matchKey: 'automazione mutuo/finanziamento',
       vatRateSuggerito: 0,
       vatRateNota: 'Movimento finanziario — fuori campo IVA'
+    };
+  }
+
+  // Automazione Ritenute d'Acconto su Professionisti (versamento/saldo periodico F24)
+  // Testo reale PuntaNet: "SALDO/VERSAMENTO/ADDEBITO RITENUTE D'ACCONTO PROFESSIONISTI..." —
+  // pattern diverso da "ritenuta su bonifico" (quello è per singola fattura), qui è il versamento
+  // cumulativo periodico. Categoria specifica già esistente in VARIABLE_COST_CATEGORIES.
+  if (/ritenut[ae]\s+(?:fiscal[ei]\s+)?(?:d.?acconto\s+)?(?:su\s+)?profession/i.test(descLower) || /ritenut[ae]\s+(?:fiscal[ei]\s+)?(?:d.?acconto\s+)?(?:su\s+)?profession/i.test(entLower)) {
+    return {
+      categoria: '[FISCO] Ritenute d\'Acconto su Professionisti',
+      ceType: 'solo_cashflow',
+      confidenza: 'alta',
+      matchKey: 'automazione ritenute acconto professionisti',
+      vatRateSuggerito: 0,
+      vatRateNota: 'Versamento ritenute d\'acconto — fuori campo IVA'
     };
   }
 
