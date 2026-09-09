@@ -71,6 +71,8 @@ export interface Transaction {
   sourceRef?: string; // Origine della transazione, es: "Punta Net — FEP 60/2026/E · 03/01/2026"
   importSessionId?: string;   // ← NUOVO — ID univoco della sessione di import Punta Net
   grossAmount?: number; // Exact gross amount imported from PuntaNet / bank
+  puntaNetIDDocumento?: number; // ← NUOVO — Documenti.IDDocumento reale, per dedup esatto (pipeline SQL)
+  puntaNetIDRata?: number;      // ← NUOVO — Documenti Scadenze.IDRata reale, per dedup esatto (pipeline SQL)
 }
 
 export interface IntestatarioFattura {
@@ -89,6 +91,7 @@ export interface Project {
   status: 'ACTIVE' | 'COMPLETED';
   intestatari?: IntestatarioFattura[];   // ← NUOVO
   metodoPagamento?: 'sal' | 'acconto';   // ← NUOVO
+  puntaNetCantiereId?: number;           // ← NUOVO: collegamento esatto a Cantieri.IDCantiere in PuntaNet
   estimatedStartDate?: string;
   estimatedLabor?: number;
   laborType?: 'INTERNAL' | 'EXTERNAL';

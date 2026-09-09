@@ -1034,6 +1034,19 @@ export const classificaRiga = (
   // Automazione Mutui, Rate, Interessi e Derivati
   if (/mutuo|finanziamento|contratt.*derivat|differenzial.*tass/i.test(descLower) || /mutuo|finanziamento|contratt.*derivat|differenzial.*tass/i.test(entLower)) {
     const isInteressi = /interess|solo interess|differenzial|commission/i.test(descLower) || /interess|solo interess|differenzial|commission/i.test(entLower);
+    // Un'entrata che matcha "mutuo/finanziamento" è l'erogazione (es. "ACCREDITO MUTUO CHIROGRAFARIO
+    // DI € 800.000"), non una rata in uscita — va in [FINANZA] Finanziamenti Ricevuti, mai in una
+    // categoria di costo, altrimenti sporca i totali di spesa.
+    if (riga.tipo === 'INCOME') {
+      return {
+        categoria: '[FINANZA] Finanziamenti Ricevuti',
+        ceType: 'solo_cashflow',
+        confidenza: 'alta',
+        matchKey: 'automazione erogazione mutuo/finanziamento',
+        vatRateSuggerito: 0,
+        vatRateNota: 'Erogazione finanziamento — fuori campo IVA'
+      };
+    }
     return {
       categoria: isInteressi ? '[FINANZA] Interessi Passivi Finanziamenti' : '[FINANZA] Quota Capitale Rate Finanziamenti',
       ceType: isInteressi ? 'onere_finanziario' : 'solo_cashflow',
