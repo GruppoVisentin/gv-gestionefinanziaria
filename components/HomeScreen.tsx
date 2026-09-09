@@ -7,6 +7,7 @@ import {
   Landmark,
   PieChart,
   HardHat,
+  Wallet,
   BookOpen,
   Settings,
   LayoutDashboard,
@@ -110,6 +111,16 @@ const modules: Module[] = [
     icon: HardHat,
     color: 'bg-orange-100',
     iconColor: 'text-orange-600',
+    active: true,
+  },
+  // ── MODULO 8b — VISTA CANTIERE (ATTIVO — NUOVO) ──────────────
+  {
+    id: AppView.CANTIERE_FINANZIARIO,
+    label: 'Vista Cantiere',
+    sublabel: 'Entrate e uscite per commessa',
+    icon: Wallet,
+    color: 'bg-fuchsia-100',
+    iconColor: 'text-fuchsia-600',
     active: true,
   },
   // ── MODULO 9 — POSIZIONE IVA (ATTIVO) ────────────────────────

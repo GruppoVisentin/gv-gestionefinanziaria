@@ -27,6 +27,7 @@ import IncomeTimeline from './components/IncomeTimeline';
 import ExpenseTimeline from './components/ExpenseTimeline';
 import CashFlowTimeline from './components/CashFlowTimeline';
 import ProjectManager from './components/ProjectManager';
+import VistaCantiereView from './components/VistaCantiereView';
 import AnalyticsView from './components/AnalyticsView';
 import CategoryManager from './components/CategoryManager';
 import ProjectCostDistribution from './components/ProjectCostDistribution';
@@ -2306,6 +2307,13 @@ const App: React.FC = () => {
             onUpdate={handleUpdateProject}
             onDelete={handleDeleteProject}
             isAuthorized={isAuthorized}
+          />
+        );
+      case AppView.CANTIERE_FINANZIARIO:
+        return (
+          <VistaCantiereView
+            projects={projects}
+            transactions={transactions}
           />
         );
       case AppView.SETTINGS:
