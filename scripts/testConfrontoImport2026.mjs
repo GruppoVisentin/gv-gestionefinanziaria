@@ -1,21 +1,12 @@
-// Script di estrazione + classificazione automatica movimenti PuntaNet (GRUPPO VISENTIN SRL).
-// Legge dall'istanza SQL Server locale SQLEXPRESS (copia isolata, mai il database live PUNTANET),
-// classifica categoria/cantiere con la stessa logica dell'app, e produce un report "dry run" —
-// non scrive MAI nel file dati vero. Quello e' un passo separato, deliberato, successivo.
-//
-// Architettura (validata su dati reali 2026 il 2026-09-09):
-// - CONSUNTIVO: da Conti Movimenti (tutto cio' che e' davvero successo in banca — fatture,
-//   mutui, tasse, stipendi diretti, spese bancarie), arricchito con categoria/cantiere via
-//   Documenti quando c'e' un documento collegato, altrimenti classificaRiga come fallback.
-// - PREVISIONE: da Documenti Scadenze con Pagato=0 (rate non ancora incassate/pagate).
-//
-// REGOLA ASSOLUTA: le previsioni gia' presenti nel file (inserite manualmente dall'utente)
-// non vengono MAI modificate ne' toccate — solo lette, per eventuale collegamento
-// (linkedForecastId) su una riga NUOVA di consuntivo. Nessuna riga esistente viene alterata.
-//
-// Uso: npx tsx scripts/importaPuntaNet.mjs
-// Presuppone che GC_Impresa2_RO / GC_Comune_RO esistano gia' sull'istanza SQLEXPRESS
-// (ripristinate dall'ultimo backup automatico di PuntaNet).
+// Test di validazione v2: architettura corretta.
+// - CONSUNTIVO: da Conti Movimenti (tutto cio' che e' davvero successo in banca), arricchito
+//   con Documenti/Cantiere/Tipologia quando c'e' un documento collegato, altrimenti classificaRiga
+//   (mutui, tasse, stipendi diretti, spese bancarie...).
+// - PREVISIONE: da Documenti Scadenze con Pagato=0 (rate non ancora pagate).
+// Scrive su una COPIA separata del file dati — mai il file vero.
+// REGOLA ASSOLUTA: le previsioni gia' presenti nel file (inserite manualmente) non vengono
+// MAI modificate ne' toccate — solo lette, per eventuale collegamento (linkedForecastId) su
+// una riga NUOVA di consuntivo. Nessuna riga esistente viene scritta o alterata.
 
 import { execFileSync } from 'child_process';
 import fs from 'fs';
@@ -32,14 +23,14 @@ import { CATEGORY_TO_CE_TYPE } from '../constants.ts';
 
 const SQLCMD = String.raw`C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\110\Tools\Binn\SQLCMD.EXE`;
 const INSTANCE = String.raw`localhost\SQLEXPRESS`;
-const DB_IMPRESA = 'GC_Impresa2_RO'; // GRUPPO VISENTIN SRL
+const DB_IMPRESA = 'GC_Impresa2_RO';
 const DB_COMUNE = 'GC_Comune_RO';
-const DATA_INIZIO = '2026-01-01'; // procedure automatiche partono dal 2026, mai prima
+const DATA_INIZIO = '2026-01-01';
 
 const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV\35_APP GV ECOSISTEM\04-GV GestioneFINANZIARIA\DATI SALVATI`;
 const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow.gvcf');
 const REGOLE_PATH = path.join(NAS_DATI, 'gv-regole.json');
-const REPORT_PATH = path.join(NAS_DATI, 'AUTO', `dryrun_${new Date().toISOString().slice(0, 10)}.json`);
+const TEST_OUTPUT = path.join(NAS_DATI, 'AUTO', 'TEST_gv-cashflow_confronto2026.gvcf');
 
 function runSql(database, query) {
   const tmpFile = path.join(os.tmpdir(), `sqlout_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
@@ -67,7 +58,7 @@ function calcolaVatRate(imponibile, imposte) {
   if (percent >= 20) return 22; if (percent >= 8) return 10; if (percent >= 3) return 4; return 0;
 }
 
-console.log(`=== Estrazione PuntaNet — GRUPPO VISENTIN SRL — da ${DATA_INIZIO} ===\n`);
+console.log(`=== TEST v2 confronto import 2026 (GRUPPO VISENTIN SRL) — NON tocca il file vero ===\n`);
 
 const gvData = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
 const cantiereToProject = new Map();
@@ -77,14 +68,10 @@ for (const p of gvData.projects) {
   projectMeta.set(p.name, p);
 }
 const regolePuntaNet = fs.existsSync(REGOLE_PATH) ? JSON.parse(fs.readFileSync(REGOLE_PATH, 'utf8')).regolePuntaNet : [];
-const previsioniEsistenti = gvData.transactions.filter(t => t.isForecast); // solo lette, mai modificate
+// Previsioni ESISTENTI: solo lette per eventuale collegamento, mai modificate.
+const previsioniEsistenti = gvData.transactions.filter(t => t.isForecast);
 
-const esistentiKey = new Set();
-for (const t of gvData.transactions) {
-  if (t.puntaNetIDDocumento != null && t.puntaNetIDRata != null) esistentiKey.add(`${t.puntaNetIDDocumento}|${t.puntaNetIDRata}`);
-}
-
-// ─── Dati arricchimento fattura (categoria/cantiere), da giugno anno precedente in poi ──
+// ─── Dati arricchimento fattura (uscite: tipologia; entrate: descrizione), per TUTTO il 2026 ──
 const docCantiereU = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT dic.IDDocumento, dic.IDCantiere, dic.Imponibile FROM [Documenti Imponibili Cantiere] dic JOIN Documenti d ON d.IDDocumento = dic.IDDocumento WHERE d.Tipo = 1 AND d.Data >= '2025-06-01' FOR JSON PATH`);
 const docTipologiaU = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT da.IDDocumento, da.Prezzo, da.Qta, tv.Tipologia FROM [Documenti Articoli] da JOIN Documenti d ON d.IDDocumento = da.IDDocumento LEFT JOIN ${DB_COMUNE}.dbo.[TAB_Tipi Voci] tv ON tv.IDTipologia = da.IDTipologia WHERE d.Tipo = 1 AND d.Data >= '2025-06-01' FOR JSON PATH`);
 const docCantiereE = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT dic.IDDocumento, dic.IDCantiere, dic.Imponibile FROM [Documenti Imponibili Cantiere] dic JOIN Documenti d ON d.IDDocumento = dic.IDDocumento WHERE d.Tipo = 0 AND d.Data >= '2025-06-01' FOR JSON PATH`);
@@ -108,9 +95,6 @@ for (const r of docDescrizioniE) descPerDoc.set(r.IDDocumento, (descPerDoc.get(r
 const headerPerDoc = new Map();
 for (const r of docHeader) headerPerDoc.set(r.IDDocumento, r);
 
-function cantiereUPerDocLookup(idDoc) { const info = cantierePerDocU.get(idDoc); return info ? cantiereToProject.get(info.IDCantiere) : undefined; }
-function cantiereEPerDocLookup(idDoc) { const info = cantierePerDocE.get(idDoc); return info ? cantiereToProject.get(info.IDCantiere) : undefined; }
-
 const MAPPING_ENTRATA = {
   sal:      { categoria: '[CANTIERE] SAL — Stato Avanzamento Lavori', ceType: 'ricavo_core' },
   acconto:  { categoria: '[CANTIERE] Anticipi da Clienti su Commessa', ceType: 'solo_cashflow' },
@@ -119,16 +103,14 @@ const MAPPING_ENTRATA = {
   altro:    { categoria: '[CANTIERE] Manutenzioni e Piccoli Lavori', ceType: 'ricavo_altro' },
 };
 
-// ─── CONSUNTIVO: Conti Movimenti = tutto quello che e' davvero successo in banca ──
-console.log('--- Consuntivo (Conti Movimenti) ---');
+const nuoveTransazioni = [];
+
+// ─── CONSUNTIVO: Conti Movimenti (tutto quello che e' davvero successo) ────
+console.log('--- Consuntivo: Conti Movimenti ---');
 const movimenti = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT Data, Causale, Descrizione, [Tipo Movimento] AS TipoMovimento, ImportoE, ImportoU, IDDocumento, IDRata FROM [Conti Movimenti] WHERE Data >= '${DATA_INIZIO}' AND (ImportoE > 0 OR ImportoU > 0) FOR JSON PATH`);
-console.log(`Movimenti bancari trovati: ${movimenti.length}`);
+console.log(`Movimenti bancari 2026: ${movimenti.length}`);
 
-const nuovoConsuntivo = [];
 for (const mv of movimenti) {
-  const key = `${mv.IDDocumento}|${mv.IDRata}`;
-  if (mv.IDDocumento && esistentiKey.has(key)) continue; // gia' importato in un giro precedente
-
   const isEntrata = mv.ImportoE > 0;
   const importo = isEntrata ? mv.ImportoE : mv.ImportoU;
   const tipo = isEntrata ? 'INCOME' : 'EXPENSE';
@@ -139,7 +121,8 @@ for (const mv of movimenti) {
     if (isEntrata) {
       const desc = descPerDoc.get(mv.IDDocumento) || '';
       let tipoEntrata = inferisciTipoEntrata(desc);
-      cantiereApp = cantiereEPerDocLookup(mv.IDDocumento);
+      const cInfo = cantiereEPerDocLookup(mv.IDDocumento);
+      cantiereApp = cInfo;
       if (!tipoEntrata && cantiereApp) {
         const meta = projectMeta.get(cantiereApp);
         if (meta?.metodoPagamento) tipoEntrata = meta.metodoPagamento;
@@ -149,7 +132,8 @@ for (const mv of movimenti) {
     } else {
       const tipologia = dominante(tipologiaPerDoc, mv.IDDocumento);
       if (tipologia) { categoria = mappaTipologiaACategoriaApp(tipologia, 'FEP'); ceType = categoria ? (CATEGORY_TO_CE_TYPE[categoria] ?? 'costo_variabile') : null; }
-      cantiereApp = cantiereUPerDocLookup(mv.IDDocumento);
+      const cInfo = cantiereUPerDocLookup(mv.IDDocumento);
+      cantiereApp = cInfo;
     }
     if (header) vatRate = calcolaVatRate(header.Imponibile, header.Imposte);
   }
@@ -163,27 +147,25 @@ for (const mv of movimenti) {
     if (cls.categoria) { categoria = cls.categoria; ceType = cls.ceType; if (vatRate == null) vatRate = cls.vatRateSuggerito; }
   }
 
-  // Collegamento a previsione ESISTENTE (solo lettura, mai modificata).
+  // Collegamento a previsione ESISTENTE (solo lettura, mai modificata): stesso mese+progetto+categoria+tipo,
+  // stessa identica logica gia' usata dall'app (ImportPuntaNetModal.tsx).
   let linkedForecastId = undefined;
+  const txMonth = mv.Data.slice(0, 7);
+  const txProj = cantiereApp || 'Generale';
   if (categoria) {
-    const txMonth = mv.Data.slice(0, 7);
-    const txProj = cantiereApp || 'Generale';
     const match = previsioniEsistenti.find(f =>
-      f.date && f.date.slice(0, 7) === txMonth && f.type === tipo &&
-      (f.project || 'Generale') === txProj && f.category === categoria &&
-      !nuovoConsuntivo.some(n => n.linkedForecastId === f.id)
+      f.date && f.date.slice(0, 7) === txMonth &&
+      f.type === tipo && (f.project || 'Generale') === txProj && f.category === categoria &&
+      !nuoveTransazioni.some(n => n.linkedForecastId === f.id) // non collegare due volte la stessa previsione
     );
     if (match) linkedForecastId = match.id;
   }
 
-  const grossAmount = importo;
-  const amount = vatRate ? Math.round((grossAmount / (1 + vatRate / 100)) * 100) / 100 : grossAmount;
-
-  nuovoConsuntivo.push({
+  nuoveTransazioni.push({
     id: crypto.randomUUID(),
     date: mv.Data.slice(0, 10),
-    amount,
-    grossAmount,
+    amount: null, // impostato sotto se vatRate noto
+    grossAmount: importo,
     vatRate,
     type: tipo,
     category: categoria || 'Altro / Non Classificato',
@@ -196,68 +178,51 @@ for (const mv of movimenti) {
     puntaNetIDRata: mv.IDRata || undefined,
   });
 }
-console.log(`Nuovo consuntivo (non ancora nel file): ${nuovoConsuntivo.length}`);
-console.log(`  con categoria: ${nuovoConsuntivo.filter(t => t.category !== 'Altro / Non Classificato').length}/${nuovoConsuntivo.length}`);
-console.log(`  con cantiere: ${nuovoConsuntivo.filter(t => t.project).length}/${nuovoConsuntivo.length}`);
-console.log(`  collegato a previsione esistente: ${nuovoConsuntivo.filter(t => t.linkedForecastId).length}\n`);
-
-// ─── PREVISIONE: Documenti Scadenze non ancora pagate ────────────────────
-console.log('--- Previsione (rate non ancora pagate) ---');
-const scadenzeAperte = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT d.IDDocumento, d.Tipo, ds.IDRata, ds.[Data Rata] AS DataRata, ds.[Importo Rata] AS ImportoRata, d.Imponibile, d.Imposte, d.Totale, cf.[Ragione Sociale] AS Controparte FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento LEFT JOIN [Clienti Fornitori] cf ON cf.IDCliFor = d.IDCliFor WHERE ds.Pagato = 0 AND d.Tipo IN (0,1) AND ds.[Data Rata] >= '${DATA_INIZIO}' FOR JSON PATH`);
-console.log(`Rate non pagate trovate: ${scadenzeAperte.length}`);
-
-const nuovaPrevisione = [];
-for (const s of scadenzeAperte) {
-  const key = `${s.IDDocumento}|${s.IDRata}`;
-  if (esistentiKey.has(key)) continue;
-  const isEntrata = s.Tipo === 0;
-  const tipo = isEntrata ? 'INCOME' : 'EXPENSE';
-  let categoria = null, ceType = null, cantiereApp = undefined;
-
-  if (isEntrata) {
-    const desc = descPerDoc.get(s.IDDocumento) || '';
-    let tipoEntrata = inferisciTipoEntrata(desc);
-    cantiereApp = cantiereEPerDocLookup(s.IDDocumento);
-    if (!tipoEntrata && cantiereApp) {
-      const meta = projectMeta.get(cantiereApp);
-      if (meta?.metodoPagamento) tipoEntrata = meta.metodoPagamento;
-    }
-    const mapped = tipoEntrata ? MAPPING_ENTRATA[tipoEntrata] : null;
-    if (mapped) { categoria = mapped.categoria; ceType = mapped.ceType; }
-  } else {
-    const tipologia = dominante(tipologiaPerDoc, s.IDDocumento);
-    if (tipologia) { categoria = mappaTipologiaACategoriaApp(tipologia, 'FEP'); ceType = categoria ? (CATEGORY_TO_CE_TYPE[categoria] ?? 'costo_variabile') : null; }
-    cantiereApp = cantiereUPerDocLookup(s.IDDocumento);
-  }
-  if (!categoria && s.Controparte) {
-    const riga = { data: new Date(s.DataRata), descrizione: s.Controparte, entity: s.Controparte, importo: s.ImportoRata, tipo, flagConto: 'B', tipoMovimento: 'ALTRO' };
-    const cls = classificaRiga(riga, regolePuntaNet);
-    if (cls.categoria) { categoria = cls.categoria; ceType = cls.ceType; }
-  }
-
-  const vatRate = calcolaVatRate(s.Imponibile, s.Imposte);
-  const grossAmount = s.ImportoRata;
-  const amount = vatRate ? Math.round((grossAmount / (1 + vatRate / 100)) * 100) / 100 : grossAmount;
-
-  nuovaPrevisione.push({
-    id: crypto.randomUUID(),
-    date: s.DataRata.slice(0, 10),
-    amount, grossAmount, vatRate,
-    type: tipo,
-    category: categoria || 'Altro / Non Classificato',
-    description: s.Controparte || '(non specificato)',
-    project: cantiereApp,
-    ceType: ceType || 'solo_cashflow',
-    isForecast: true,
-    puntaNetIDDocumento: s.IDDocumento,
-    puntaNetIDRata: s.IDRata,
-  });
+for (const t of nuoveTransazioni) {
+  t.amount = t.vatRate ? Math.round((t.grossAmount / (1 + t.vatRate / 100)) * 100) / 100 : t.grossAmount;
 }
-console.log(`Nuova previsione (non ancora nel file): ${nuovaPrevisione.length}\n`);
 
-// ─── Output dry-run ─────────────────────────────────────────────
-fs.mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
-fs.writeFileSync(REPORT_PATH, JSON.stringify({ consuntivo: nuovoConsuntivo, previsione: nuovaPrevisione }, null, 2));
-console.log(`=== Report dry-run salvato in: ${REPORT_PATH} ===`);
-console.log('NESSUNA scrittura sul file dati vero — questo script legge e classifica soltanto.');
-console.log('Le previsioni esistenti nel file NON sono state toccate — solo lette per il collegamento.');
+function cantiereUPerDocLookup(idDoc) {
+  const info = cantierePerDocU.get(idDoc);
+  return info ? cantiereToProject.get(info.IDCantiere) : undefined;
+}
+function cantiereEPerDocLookup(idDoc) {
+  const info = cantierePerDocE.get(idDoc);
+  return info ? cantiereToProject.get(info.IDCantiere) : undefined;
+}
+
+const consuntivoConCategoria = nuoveTransazioni.filter(t => t.category !== 'Altro / Non Classificato');
+console.log(`Consuntivo classificato: ${consuntivoConCategoria.length}/${nuoveTransazioni.length}`);
+console.log(`Consuntivo collegato a una previsione esistente: ${nuoveTransazioni.filter(t => t.linkedForecastId).length}\n`);
+
+// ─── Report finale ──────────────────────────────────────────────
+console.log(`Transazioni consuntivo generate: ${nuoveTransazioni.length}`);
+
+const copiaTest = JSON.parse(JSON.stringify(gvData));
+copiaTest.transactions = [...copiaTest.transactions, ...nuoveTransazioni];
+fs.mkdirSync(path.dirname(TEST_OUTPUT), { recursive: true });
+fs.writeFileSync(TEST_OUTPUT, JSON.stringify(copiaTest, null, 2));
+console.log(`\nCopia di test scritta in: ${TEST_OUTPUT}`);
+console.log('Le previsioni esistenti nel file NON sono state toccate — solo lette per il collegamento.\n');
+
+function aggregaPerMese(transazioni, soloConsuntivo = true) {
+  const agg = {};
+  for (const t of transazioni) {
+    if (soloConsuntivo && t.isForecast) continue;
+    if (!t.date || !t.date.startsWith('2026')) continue;
+    const key = `${t.date.slice(0, 7)}|${t.type}`;
+    agg[key] = (agg[key] || 0) + (t.grossAmount ?? t.amount ?? 0);
+  }
+  return agg;
+}
+const esistentiAgg = aggregaPerMese(gvData.transactions, true);
+const nuoviAgg = aggregaPerMese(nuoveTransazioni, true);
+const mesi = [...new Set([...Object.keys(esistentiAgg), ...Object.keys(nuoviAgg)])].sort();
+console.log('=== CONFRONTO MENSILE (consuntivo, GRUPPO VISENTIN SRL, 2026) ===');
+console.log('Mese     | Tipo    | Esistente      | Nuovo metodo   | Differenza');
+for (const key of mesi) {
+  const [mese, tipo] = key.split('|');
+  const es = esistentiAgg[key] || 0, nu = nuoviAgg[key] || 0, diff = nu - es;
+  const flag = Math.abs(diff) > 1 ? '  <-- DIVERSO' : '  OK';
+  console.log(`${mese} | ${tipo.padEnd(7)} | €${es.toFixed(2).padStart(12)} | €${nu.toFixed(2).padStart(12)} | €${diff.toFixed(2).padStart(10)}${flag}`);
+}
