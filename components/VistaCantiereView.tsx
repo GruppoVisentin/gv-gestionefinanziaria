@@ -75,15 +75,24 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
     const nettoEntratePrevisione = sommaNetta(entratePrevisione);
     const nettoUscitePrevisione = sommaNetta(uscitePrevisione);
 
+    // Entrate previste "dopo le precedenti": quanto manca al piano previsionale generale
+    // (Timeline Entrate, inserito a mano/da Excel — l'aspettativa complessiva sul cantiere) che
+    // NON e' ancora ne' incassato ne' fatturato su PuntaNet. E' la parte che oggi non esiste
+    // ancora come documento in PuntaNet, solo come previsione di budget. Si legge sempre da
+    // "transactions" (la Timeline vera), mai da storicoCantierePuntaNet, che qui e' gia' contato
+    // dentro "entrate registrate ma non pagate".
+    const timelinePrevisioneEntrate = transactions.filter(t =>
+      t.project === selezionato && t.type === TransactionType.INCOME && t.isForecast === true
+    );
+    const nettoTimelinePrevisioneEntrate = sommaNetta(timelinePrevisioneEntrate);
+    const nettoEntratePreviste = nettoTimelinePrevisioneEntrate - nettoEntrateConsuntivo - nettoEntratePrevisione;
+
     return {
       entrateConsuntivo: totEntrateConsuntivo,
       usciteConsuntivo: totUsciteConsuntivo,
       margineConsuntivo: totEntrateConsuntivo - totUsciteConsuntivo,
       entratePrevisione: totEntratePrevisione,
       uscitePrevisione: totUscitePrevisione,
-      // Margine previsto a fine cantiere: quello gia' realizzato + tutto cio' che manca ancora
-      // (previsioni non ancora chiuse), sia entrate che uscite.
-      margineFinaleProiettato: (totEntrateConsuntivo + totEntratePrevisione) - (totUsciteConsuntivo + totUscitePrevisione),
       // Stesse cifre calcolate sul netto (imponibile, senza IVA) — l'IVA non e' un vero costo/
       // ricavo del cantiere, e' un debito/credito verso l'erario, quindi il margine "vero" e'
       // spesso letto sul netto.
@@ -92,10 +101,14 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       nettoMargineConsuntivo: nettoEntrateConsuntivo - nettoUsciteConsuntivo,
       nettoEntratePrevisione,
       nettoUscitePrevisione,
-      nettoMargineFinaleProiettato: (nettoEntrateConsuntivo + nettoEntratePrevisione) - (nettoUsciteConsuntivo + nettoUscitePrevisione),
+      // Stima finale provvisoria: quanto manca oltre a quanto gia' fatturato/incassato o gia'
+      // registrato in PuntaNet, e il margine finale che ne deriva. E' una stima (dipende dal
+      // piano previsionale inserito), non un dato certificato come le righe PuntaNet sopra.
+      nettoEntratePreviste,
+      nettoMargineFinaleStimato: (nettoEntrateConsuntivo + nettoEntratePrevisione + nettoEntratePreviste) - (nettoUsciteConsuntivo + nettoUscitePrevisione),
       numRighe: righeCantiere.length,
     };
-  }, [righeCantiere]);
+  }, [righeCantiere, transactions, selezionato]);
 
   if (progettiAttivi.length === 0) {
     return (
@@ -154,7 +167,7 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       )}
 
       {/* ── Riepilogo ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center gap-2 text-emerald-600 mb-2">
             <TrendingUp size={18} />
@@ -196,10 +209,23 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
             - {formatEuro(stats.uscitePrevisione)}
             <span className="text-slate-400 font-semibold"> (netto {formatEuro(stats.nettoUscitePrevisione)})</span>
           </p>
+          <p className="text-[10px] text-slate-400 mt-2 leading-snug">Fatture/rate gia' registrate su PuntaNet, non ancora incassate/pagate.</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div className="flex items-center gap-2 text-violet-600 mb-2">
+            <HardHat size={18} />
+            <span className="text-[11px] font-black uppercase tracking-wider">Stima finale provvisoria</span>
+          </div>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Entrate previste dopo le precedenti</p>
+          <p className={`text-sm font-black ${stats.nettoEntratePreviste >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+            {stats.nettoEntratePreviste >= 0 ? '+ ' : ''}{formatEuro(stats.nettoEntratePreviste)}
+            <span className="text-slate-400 font-semibold"> (netto)</span>
+          </p>
+          <p className="text-[10px] text-slate-400 mt-1 leading-snug">Piano previsionale (Timeline) meno incassato meno gia' registrato su PuntaNet — non ancora fatturato.</p>
           <div className="mt-2 pt-2 border-t border-slate-100">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Margine previsto (netto)</p>
-            <p className={`text-sm font-black ${stats.nettoMargineFinaleProiettato >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
-              {formatEuro(stats.nettoMargineFinaleProiettato)}
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Margine finale stimato (netto)</p>
+            <p className={`text-sm font-black ${stats.nettoMargineFinaleStimato >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+              {formatEuro(stats.nettoMargineFinaleStimato)}
             </p>
           </div>
         </div>
