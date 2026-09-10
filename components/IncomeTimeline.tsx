@@ -748,20 +748,20 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                     const paid = stato === 'pagata';
                     const parziale = stato === 'parziale';
                     const chiusa = paid; // solo a copertura completa si blocca la modifica
-                    // Riferimento al mese della controparte: mostrato solo quando c'e' un unico
-                    // pagamento collegato (con piu' rate su mesi diversi il riferimento singolo
-                    // non avrebbe senso, si mostra invece il conteggio).
+                    // Riferimento al mese della controparte: mostrato sempre (anche se e' lo
+                    // stesso mese della previsione), cosi' e' chiaro a colpo d'occhio quando e'
+                    // stata incassata — non solo che lo e' stata. Con piu' pagamenti in mesi
+                    // diversi si mostra invece il conteggio.
                     const contropartMese = collegati.length === 1 ? parseUTCDate(collegati[0].date).getUTCMonth() : null;
-                    const stessoMese = contropartMese === mIdx;
                     return (
                       <div
                         key={t.id}
-                        className={`relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border transition-all ${
+                        className={`relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border-2 transition-all ${
                           paid
-                            ? 'bg-teal-50 text-teal-700 border-teal-200'
+                            ? 'bg-teal-100 text-teal-900 border-teal-400 shadow-sm'
                             : parziale
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : `${forecastItemClass} shadow-sm ${isAuthorized ? 'cursor-pointer hover:shadow-md' : ''}`
+                            ? 'bg-amber-100 text-amber-900 border-amber-400 shadow-sm'
+                            : `${forecastItemClass} border shadow-sm ${isAuthorized ? 'cursor-pointer hover:shadow-md' : ''}`
                         } ${rowType === 'standard' && stato === 'attesa' ? 'bg-slate-50 text-slate-600 border-slate-100' : ''}`}
                         title={
                           paid ? `${t.description} - Incassata per intero${collegati.length === 1 ? ` il ${DATE_FORMATTER.format(parseUTCDate(collegati[0].date))}` : ` (${collegati.length} pagamenti)`}`
@@ -796,14 +796,14 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                           {t.description}
                         </span>
                         {paid && (
-                          <span className="flex items-center gap-0.5 text-[9px] font-bold text-teal-600 mt-0.5">
-                            <CheckCircle2 size={9} />
-                            {collegati.length > 1 ? `completata (${collegati.length})` : stessoMese ? 'incassata' : contropartMese !== null ? `→ ${MESI_ABBR[contropartMese]}` : 'incassata'}
+                          <span className="flex items-center gap-0.5 text-[10px] font-extrabold text-teal-700 mt-0.5">
+                            <CheckCircle2 size={10} />
+                            {collegati.length > 1 ? `incassata (${collegati.length} pag.)` : contropartMese !== null ? `incassata ${MESI_ABBR[contropartMese]}` : 'incassata'}
                           </span>
                         )}
                         {parziale && (
-                          <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-600 mt-0.5">
-                            <Clock size={9} />
+                          <span className="flex items-center gap-0.5 text-[10px] font-extrabold text-amber-700 mt-0.5">
+                            <Clock size={10} />
                             parziale {CURRENCY_FORMATTER.format(copertura)}/{CURRENCY_FORMATTER.format(totale)}
                           </span>
                         )}
@@ -1077,13 +1077,12 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                           {actuals.map(t => {
                               const contropart = getControparteConsuntivo(t);
                               const contropartMese = contropart ? parseUTCDate(contropart.date).getUTCMonth() : null;
-                              const stessoMese = contropartMese === mIdx;
                               return (
-                              <div key={t.id} className="group/item flex flex-col items-center justify-center w-full relative">
-                                  <span className="text-[9px] text-emerald-500 truncate w-full max-w-[90px] text-center mt-0.5 flex items-center justify-center gap-1"
+                              <div key={t.id} className={`group/item flex flex-col items-center justify-center w-full relative rounded-md px-1 py-0.5 ${contropart ? 'bg-teal-100 border-2 border-teal-400' : ''}`}>
+                                  <span className={`text-[9px] truncate w-full max-w-[90px] text-center mt-0.5 flex items-center justify-center gap-1 ${contropart ? 'text-teal-900' : 'text-emerald-500'}`}
                                         title={t.sourceRef ?? t.description}>
-                                      {t.loanDetails && <Landmark size={8} className="text-emerald-400/70" />}
-                                      {t.category === '[FINANZA] Ritorno da Investimenti / Dividendi' && <TrendingUp size={8} className="text-emerald-400/70" />}
+                                      {t.loanDetails && <Landmark size={8} className={contropart ? 'text-teal-700' : 'text-emerald-400/70'} />}
+                                      {t.category === '[FINANZA] Ritorno da Investimenti / Dividendi' && <TrendingUp size={8} className={contropart ? 'text-teal-700' : 'text-emerald-400/70'} />}
                                       {t.sourceRef && (
                                         <span className="text-[7px] font-black text-blue-400 shrink-0">PN</span>
                                       )}
@@ -1091,11 +1090,11 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                   </span>
                                   {contropart && (
                                     <span
-                                      className="flex items-center gap-0.5 text-[8px] font-bold text-teal-600"
+                                      className="flex items-center gap-0.5 text-[10px] font-extrabold text-teal-700"
                                       title={`Da previsione: ${contropart.description} — ${DATE_FORMATTER.format(parseUTCDate(contropart.date))}`}
                                     >
-                                      <Link2 size={8} />
-                                      {stessoMese ? 'da previsione' : contropartMese !== null ? `← ${MESI_ABBR[contropartMese]}` : 'da previsione'}
+                                      <Link2 size={10} />
+                                      {contropartMese !== null ? `da previsione ${MESI_ABBR[contropartMese]}` : 'da previsione'}
                                     </span>
                                   )}
                                   {/* Edit Actual Actions - ONLY IF AUTHORIZED */}

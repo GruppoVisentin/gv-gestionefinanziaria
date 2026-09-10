@@ -2738,7 +2738,7 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto w-full relative flex flex-col bg-slate-50">
-        <div className="flex-1 p-4 md:p-8 max-w-[1600px] mx-auto w-full relative">
+        <div className={`flex-1 py-4 md:py-8 mx-auto w-full relative ${view === AppView.TIMELINE ? 'max-w-none px-4 md:px-14' : 'max-w-[1600px] px-4 md:px-8'}`}>
              <div className="hidden md:block absolute bottom-4 left-8 pointer-events-none opacity-50 z-0">
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                     <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-pulse"></div>
