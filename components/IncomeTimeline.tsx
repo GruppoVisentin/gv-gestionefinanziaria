@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Transaction, TransactionType, Project, LoanDetails, AppView, RinegoziazioneMutuo, InitialBalanceBreakdown, ExistingLoan } from '../types';
 import { fetchEuriborRates } from '../services/geminiService';
 import { CURRENCY_FORMATTER, DATE_FORMATTER, CATEGORY_TO_CE_TYPE } from '../constants';
-import { Plus, X, ArrowRight, Save, Landmark, TrendingUp, Pencil, Trash2, Calendar, FileText, User, Shield, Search, RefreshCw, ListFilter, MoreHorizontal, CheckCircle2, Link2, Clock } from 'lucide-react';
+import { Plus, X, ArrowRight, Save, Landmark, TrendingUp, Pencil, Trash2, Calendar, FileText, User, Shield, Search, RefreshCw, ListFilter, MoreHorizontal, CheckCircle2, Link2, Clock, AlertCircle } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { HelpButton } from './HelpPanel';
@@ -213,6 +213,20 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   // per intero, con tolleranza di 1 centesimo per arrotondamenti). Si attiva da solo sui dati
   // esistenti, anche quando i pagamenti cadono in mesi diversi da quello della previsione.
   const MESI_ABBR = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+
+  // Palette per distinguere a colpo d'occhio accoppiamenti diversi sulla stessa riga (previsione
+  // pagata + il/i consuntivo/i che la chiudono condividono lo stesso colore). Arancione e viola
+  // sono esclusi apposta: restano riservati a "parziale" e "non prevista".
+  const PAIR_PALETTE = [
+    { box: 'bg-teal-100 border-teal-400 text-teal-900', text: 'text-teal-700' },
+    { box: 'bg-sky-100 border-sky-400 text-sky-900', text: 'text-sky-700' },
+    { box: 'bg-pink-100 border-pink-400 text-pink-900', text: 'text-pink-700' },
+    { box: 'bg-lime-100 border-lime-500 text-lime-900', text: 'text-lime-700' },
+    { box: 'bg-cyan-100 border-cyan-400 text-cyan-900', text: 'text-cyan-700' },
+    { box: 'bg-rose-100 border-rose-400 text-rose-900', text: 'text-rose-700' },
+    { box: 'bg-indigo-100 border-indigo-400 text-indigo-900', text: 'text-indigo-700' },
+    { box: 'bg-emerald-100 border-emerald-500 text-emerald-900', text: 'text-emerald-700' },
+  ];
 
   const getCoperturaPrevisione = (forecast: Transaction) => {
     const collegati = incomeTransactions.filter(t => !t.isForecast && (
@@ -715,6 +729,22 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       : rowType === 'other' ? 'text-slate-500'
       : 'text-emerald-700';
 
+    // Un colore diverso per ogni accoppiamento previsione<->consuntivo pagato per intero sulla
+    // riga (arancione e viola sono riservati a "parziale" e "non prevista", non entrano nel ciclo).
+    // Previsione e i suoi consuntivi collegati condividono sempre lo stesso colore, cosi' si
+    // riconoscono anche se lontani in tabella.
+    const previsioniPagate = (rowType === 'financing' ? financingTransactions : rowType === 'investment' ? investmentTransactions : operationalTransactions)
+      .filter(t => {
+        const tProj = t.project?.trim() || 'Generale';
+        const matchKey = (rowType === 'financing' || rowType === 'investment') ? true : tProj === key;
+        return matchKey && t.isForecast && parseUTCDate(t.date).getUTCFullYear() === currentYear;
+      })
+      .sort((a, b) => (a.date < b.date ? -1 : 1))
+      .filter(p => getCoperturaPrevisione(p).stato === 'pagata');
+
+    const pairColorMap = new Map<string, typeof PAIR_PALETTE[number]>();
+    previsioniPagate.forEach((p, i) => pairColorMap.set(p.id, PAIR_PALETTE[i % PAIR_PALETTE.length]));
+
     return (
       <tr key={key} className={rowBgClass}>
         {/* Name Column */}
@@ -764,14 +794,15 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                     // stata incassata — non solo che lo e' stata. Con piu' pagamenti in mesi
                     // diversi si mostra invece il conteggio.
                     const contropartMese = collegati.length === 1 ? parseUTCDate(collegati[0].date).getUTCMonth() : null;
+                    const colore = paid ? pairColorMap.get(t.id) : undefined;
                     return (
                       <div
                         key={t.id}
                         className={`relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full transition-all ${isAuthorized ? 'cursor-pointer' : ''} ${
                           paid
-                            ? 'border-2 bg-teal-100 text-teal-900 border-teal-400 shadow-sm'
+                            ? `border-2 shadow-sm ${colore?.box ?? 'bg-teal-100 border-teal-400 text-teal-900'}`
                             : parziale
-                            ? 'border-2 bg-amber-100 text-amber-900 border-amber-400 shadow-sm'
+                            ? 'border-2 bg-orange-100 text-orange-900 border-orange-400 shadow-sm'
                             : attesaTextClass
                         }`}
                         title={
@@ -807,7 +838,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                           {t.description}
                         </span>
                         {paid && (
-                          <span className="flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold text-teal-700 mt-0.5 w-full text-center leading-tight">
+                          <span className={`flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold mt-0.5 w-full text-center leading-tight ${colore?.text ?? 'text-teal-700'}`}>
                             <CheckCircle2 size={10} className="shrink-0" />
                             <span className="min-w-0 break-words">
                               {collegati.length > 1 ? `incassata (${collegati.length} pag.)` : contropartMese !== null ? `incassata ${MESI_ABBR[contropartMese]}` : 'incassata'}
@@ -815,7 +846,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                           </span>
                         )}
                         {parziale && (
-                          <span className="flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold text-amber-700 mt-0.5 w-full text-center leading-tight">
+                          <span className="flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold text-orange-700 mt-0.5 w-full text-center leading-tight">
                             <Clock size={10} className="shrink-0" />
                             <span className="min-w-0 break-words">
                               parziale {CURRENCY_FORMATTER.format(copertura)}/{CURRENCY_FORMATTER.format(totale)}
@@ -1075,11 +1106,10 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                 <div className="flex flex-col items-center justify-between min-h-[30px] w-full">
                   {actualSum > 0 ? (
                       <div className="flex flex-col items-center w-full">
-                          {/* Totale della cella: nascosto solo se c'e' un unico pagamento GIA'
-                              collegato (quel caso mostra la cifra dentro il riquadro qui sotto) —
-                              altrimenti duplicherebbe la stessa cifra. Con un unico pagamento non
-                              collegato resta visibile, e' l'unico punto che mostra l'importo. */}
-                          {(actuals.length > 1 || !getControparteConsuntivo(actuals[0])) && (
+                          {/* Totale della cella: nascosto con un unico pagamento (la cifra e' gia'
+                              dentro il suo riquadro qui sotto, collegato o "non prevista" che sia)
+                              — mostrato solo quando serve sommare piu' pagamenti. */}
+                          {actuals.length > 1 && (
                             <div className="flex items-center gap-1 mb-1 justify-center">
                                 <span className={`font-mono font-bold text-xs ${actualItemClass} flex items-center justify-center gap-1`}>
                                     {actuals.some(t => !!t.loanDetails) && <Landmark size={8} className="text-emerald-400" />}
@@ -1098,31 +1128,49 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                           {actuals.map(t => {
                               const contropart = getControparteConsuntivo(t);
                               const contropartMese = contropart ? parseUTCDate(contropart.date).getUTCMonth() : null;
+                              const colore = contropart ? pairColorMap.get(contropart.id) : undefined;
+                              // Nota descrittiva presa dalla previsione collegata (es. "5^ acconto"),
+                              // la stessa che compare li' — mostrata anche qui sul consuntivo.
+                              const nota = contropart && contropart.description.includes(' — ')
+                                ? contropart.description.split(' — ').slice(1).join(' — ')
+                                : null;
+                              const boxClass = contropart
+                                ? (colore?.box ?? 'bg-teal-100 border-teal-400 text-teal-900')
+                                : 'bg-purple-100 border-purple-400 text-purple-900';
+                              const badgeTextClass = contropart ? (colore?.text ?? 'text-teal-700') : 'text-purple-700';
                               return (
-                              <div key={t.id} className={`group/item flex flex-col items-center justify-center w-full relative rounded-md px-1 py-1 ${contropart ? 'bg-teal-100 border-2 border-teal-400' : ''}`}>
-                                  {contropart && (
-                                    <span className="font-mono font-bold text-xs text-teal-900 leading-none">
-                                      {CURRENCY_FORMATTER.format(getGrossAmount(t))}
-                                    </span>
-                                  )}
-                                  <span className={`text-[9px] truncate w-full max-w-[90px] text-center mt-0.5 flex items-center justify-center gap-1 ${contropart ? 'text-teal-900' : 'text-emerald-500'}`}
+                              <div key={t.id} className={`group/item flex flex-col items-center justify-center w-full relative rounded-md px-1 py-1 border-2 ${boxClass}`}>
+                                  <span className="font-mono font-bold text-xs leading-none">
+                                    {CURRENCY_FORMATTER.format(getGrossAmount(t))}
+                                  </span>
+                                  <span className="text-[9px] truncate w-full max-w-[90px] text-center mt-0.5 flex items-center justify-center gap-1"
                                         title={t.sourceRef ?? t.description}>
-                                      {t.loanDetails && <Landmark size={8} className={contropart ? 'text-teal-700' : 'text-emerald-400/70'} />}
-                                      {t.category === '[FINANZA] Ritorno da Investimenti / Dividendi' && <TrendingUp size={8} className={contropart ? 'text-teal-700' : 'text-emerald-400/70'} />}
+                                      {t.loanDetails && <Landmark size={8} className="opacity-70" />}
+                                      {t.category === '[FINANZA] Ritorno da Investimenti / Dividendi' && <TrendingUp size={8} className="opacity-70" />}
                                       {t.sourceRef && (
                                         <span className="text-[7px] font-black text-blue-400 shrink-0">PN</span>
                                       )}
                                       {t.description}
                                   </span>
-                                  {contropart && (
+                                  {nota && (
+                                    <span className="text-[8px] italic opacity-80 truncate w-full max-w-[90px] text-center">
+                                      {nota}
+                                    </span>
+                                  )}
+                                  {contropart ? (
                                     <span
-                                      className="flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold text-teal-700 w-full text-center leading-tight"
+                                      className={`flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold w-full text-center leading-tight ${badgeTextClass}`}
                                       title={`Da previsione: ${contropart.description} — ${DATE_FORMATTER.format(parseUTCDate(contropart.date))}`}
                                     >
                                       <Link2 size={10} className="shrink-0" />
                                       <span className="min-w-0 break-words">
                                         {contropartMese !== null ? `da previsione ${MESI_ABBR[contropartMese]}` : 'da previsione'}
                                       </span>
+                                    </span>
+                                  ) : (
+                                    <span className="flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold w-full text-center leading-tight text-purple-700">
+                                      <AlertCircle size={10} className="shrink-0" />
+                                      <span className="min-w-0 break-words">non prevista</span>
                                     </span>
                                   )}
                                   {/* Edit Actual Actions - ONLY IF AUTHORIZED */}
@@ -1594,10 +1642,10 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                 const totalActual = getMonthlyTotal(mIdx, false);
                 return (
                   <React.Fragment key={`total-${mIdx}`}>
-                    <td className={`px-1 py-4 text-center border-r border-emerald-200 text-emerald-500 font-mono text-[11px] bg-emerald-50 backdrop-blur-sm ${COL_SUB_WIDTH}`}>
+                    <td className={`px-1 py-4 text-center border-r border-slate-300 text-slate-600 font-mono text-[11px] bg-slate-50 ${COL_SUB_WIDTH}`}>
                        {totalForecast > 0 ? CURRENCY_FORMATTER.format(totalForecast) : ''}
                     </td>
-                    <td className={`px-1 py-4 text-center border-r border-emerald-300 text-emerald-700 font-mono text-[11px] bg-emerald-100 backdrop-blur-sm ${COL_SUB_WIDTH}`}>
+                    <td className={`px-1 py-4 text-center border-r border-slate-300 text-slate-800 font-mono text-[11px] bg-slate-200 ${COL_SUB_WIDTH}`}>
                        {totalActual > 0 ? CURRENCY_FORMATTER.format(totalActual) : ''}
                     </td>
                   </React.Fragment>
