@@ -703,6 +703,12 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         actualItemClass = 'text-emerald-700';
     }
 
+    // Il colore per tipo di riga resta solo sulle colonne congelate (nome + totali a destra,
+    // gia' in grigio) — le colonne dinamiche dei mesi usano un grigio neutro uguale per tutte le
+    // righe, con due tonalita' distinte per distinguere Prev. da Cons. a colpo d'occhio.
+    forecastBg = 'bg-slate-50';
+    actualBg = 'bg-slate-100';
+
     return (
       <tr key={key} className={rowBgClass}>
         {/* Name Column */}
@@ -747,7 +753,6 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                     const { stato, copertura, totale, collegati } = getCoperturaPrevisione(t);
                     const paid = stato === 'pagata';
                     const parziale = stato === 'parziale';
-                    const chiusa = paid; // solo a copertura completa si blocca la modifica
                     // Riferimento al mese della controparte: mostrato sempre (anche se e' lo
                     // stesso mese della previsione), cosi' e' chiaro a colpo d'occhio quando e'
                     // stata incassata — non solo che lo e' stata. Con piu' pagamenti in mesi
@@ -756,12 +761,12 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                     return (
                       <div
                         key={t.id}
-                        className={`relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border-2 transition-all ${
+                        className={`relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border-2 transition-all ${isAuthorized ? 'cursor-pointer hover:shadow-md' : ''} ${
                           paid
                             ? 'bg-teal-100 text-teal-900 border-teal-400 shadow-sm'
                             : parziale
                             ? 'bg-amber-100 text-amber-900 border-amber-400 shadow-sm'
-                            : `${forecastItemClass} border shadow-sm ${isAuthorized ? 'cursor-pointer hover:shadow-md' : ''}`
+                            : `${forecastItemClass} border shadow-sm`
                         } ${rowType === 'standard' && stato === 'attesa' ? 'bg-slate-50 text-slate-600 border-slate-100' : ''}`}
                         title={
                           paid ? `${t.description} - Incassata per intero${collegati.length === 1 ? ` il ${DATE_FORMATTER.format(parseUTCDate(collegati[0].date))}` : ` (${collegati.length} pagamenti)`}`
@@ -769,8 +774,8 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                           : `${t.description} - In attesa`
                         }
                       >
-                         {/* Edit/Delete Overlay - ONLY IF AUTHORIZED (bloccato solo a copertura completa) */}
-                         {!chiusa && isAuthorized && (
+                         {/* Edit/Delete Overlay - ONLY IF AUTHORIZED (disponibile anche a copertura completa) */}
+                         {isAuthorized && (
                             <div className="absolute inset-0 bg-white/90 hidden group-hover/item:flex items-center justify-center gap-2 rounded-md z-10">
                                 <button
                                     onClick={(e) => { e.stopPropagation(); openForecastForm(key, mIdx, t, 'FORECAST'); }}
@@ -796,15 +801,19 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                           {t.description}
                         </span>
                         {paid && (
-                          <span className="flex items-center gap-0.5 text-[10px] font-extrabold text-teal-700 mt-0.5">
-                            <CheckCircle2 size={10} />
-                            {collegati.length > 1 ? `incassata (${collegati.length} pag.)` : contropartMese !== null ? `incassata ${MESI_ABBR[contropartMese]}` : 'incassata'}
+                          <span className="flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold text-teal-700 mt-0.5 w-full text-center leading-tight">
+                            <CheckCircle2 size={10} className="shrink-0" />
+                            <span className="min-w-0 break-words">
+                              {collegati.length > 1 ? `incassata (${collegati.length} pag.)` : contropartMese !== null ? `incassata ${MESI_ABBR[contropartMese]}` : 'incassata'}
+                            </span>
                           </span>
                         )}
                         {parziale && (
-                          <span className="flex items-center gap-0.5 text-[10px] font-extrabold text-amber-700 mt-0.5">
-                            <Clock size={10} />
-                            parziale {CURRENCY_FORMATTER.format(copertura)}/{CURRENCY_FORMATTER.format(totale)}
+                          <span className="flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold text-amber-700 mt-0.5 w-full text-center leading-tight">
+                            <Clock size={10} className="shrink-0" />
+                            <span className="min-w-0 break-words">
+                              parziale {CURRENCY_FORMATTER.format(copertura)}/{CURRENCY_FORMATTER.format(totale)}
+                            </span>
                           </span>
                         )}
                       </div>
@@ -1078,7 +1087,12 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                               const contropart = getControparteConsuntivo(t);
                               const contropartMese = contropart ? parseUTCDate(contropart.date).getUTCMonth() : null;
                               return (
-                              <div key={t.id} className={`group/item flex flex-col items-center justify-center w-full relative rounded-md px-1 py-0.5 ${contropart ? 'bg-teal-100 border-2 border-teal-400' : ''}`}>
+                              <div key={t.id} className={`group/item flex flex-col items-center justify-center w-full relative rounded-md px-1 py-1 ${contropart ? 'bg-teal-100 border-2 border-teal-400' : ''}`}>
+                                  {contropart && (
+                                    <span className="font-mono font-bold text-xs text-teal-900 leading-none">
+                                      {CURRENCY_FORMATTER.format(getGrossAmount(t))}
+                                    </span>
+                                  )}
                                   <span className={`text-[9px] truncate w-full max-w-[90px] text-center mt-0.5 flex items-center justify-center gap-1 ${contropart ? 'text-teal-900' : 'text-emerald-500'}`}
                                         title={t.sourceRef ?? t.description}>
                                       {t.loanDetails && <Landmark size={8} className={contropart ? 'text-teal-700' : 'text-emerald-400/70'} />}
@@ -1090,11 +1104,13 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                   </span>
                                   {contropart && (
                                     <span
-                                      className="flex items-center gap-0.5 text-[10px] font-extrabold text-teal-700"
+                                      className="flex flex-wrap items-center justify-center gap-0.5 text-[10px] font-extrabold text-teal-700 w-full text-center leading-tight"
                                       title={`Da previsione: ${contropart.description} — ${DATE_FORMATTER.format(parseUTCDate(contropart.date))}`}
                                     >
-                                      <Link2 size={10} />
-                                      {contropartMese !== null ? `da previsione ${MESI_ABBR[contropartMese]}` : 'da previsione'}
+                                      <Link2 size={10} className="shrink-0" />
+                                      <span className="min-w-0 break-words">
+                                        {contropartMese !== null ? `da previsione ${MESI_ABBR[contropartMese]}` : 'da previsione'}
+                                      </span>
                                     </span>
                                   )}
                                   {/* Edit Actual Actions - ONLY IF AUTHORIZED */}
@@ -1272,11 +1288,12 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
           );
         })}
 
-        {/* Annual Summary Columns */}
-        <td className={`px-2 py-4 text-center border-l-2 border-slate-200 border-r border-slate-100 font-mono text-xs font-bold ${rowType === 'financing' ? 'bg-slate-50 text-slate-400' : rowType === 'investment' ? 'bg-slate-50 text-slate-500' : 'bg-slate-50 text-slate-400'} sticky right-[120px] z-10 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>
+        {/* Annual Summary Columns — colonne congelate, stesso verde su tutte le righe (le due
+            tonalita' distinguono Tot. Prev. da Tot. Cons., coerente col resto della timeline) */}
+        <td className={`px-2 py-4 text-center border-l-2 border-emerald-100 border-r border-emerald-100 font-mono text-xs font-bold bg-emerald-50 text-emerald-700 sticky right-[120px] z-10 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>
            {annualForecast > 0 ? CURRENCY_FORMATTER.format(annualForecast) : '-'}
         </td>
-        <td className={`px-2 py-4 text-center border-r border-slate-200 font-mono text-xs font-bold ${rowType === 'financing' ? 'bg-slate-100 text-slate-700' : rowType === 'investment' ? 'bg-slate-100 text-slate-800' : 'bg-slate-100 text-slate-700'} sticky right-0 z-10 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>
+        <td className={`px-2 py-4 text-center border-r border-emerald-100 font-mono text-xs font-bold bg-emerald-100 text-emerald-900 sticky right-0 z-10 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>
            {annualActual > 0 ? CURRENCY_FORMATTER.format(annualActual) : '-'}
         </td>
       </tr>
@@ -1500,7 +1517,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                   </div>
                 </th>
               ))}
-              <th colSpan={2} className="px-4 py-2 border-l-2 border-slate-200 text-center min-w-[240px] bg-slate-100 font-bold text-slate-700 sticky right-0 z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]">
+              <th colSpan={2} className="px-4 py-2 border-l-2 border-emerald-200 text-center min-w-[240px] bg-emerald-100 font-bold text-emerald-900 sticky right-0 z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)]">
                 <div className="flex items-center justify-center gap-2">
                   TOTALE ANNUO
                   <button
@@ -1524,10 +1541,10 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                   </th>
                 </React.Fragment>
               ))}
-              <th className={`px-2 py-2 border-l-2 border-slate-200 border-r border-slate-300 text-slate-500 font-bold text-center bg-slate-100 sticky right-[120px] z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>
+              <th className={`px-2 py-2 border-l-2 border-emerald-200 border-r border-emerald-200 text-emerald-700 font-bold text-center bg-emerald-50 sticky right-[120px] z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>
                 Tot. Prev.
               </th>
-              <th className={`px-2 py-2 text-slate-700 font-bold text-center bg-slate-200 sticky right-0 z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>
+              <th className={`px-2 py-2 text-emerald-900 font-bold text-center bg-emerald-100 sticky right-0 z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>
                 Tot. Cons.
               </th>
             </tr>
