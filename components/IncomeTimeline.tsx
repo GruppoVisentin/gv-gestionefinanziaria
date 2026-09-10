@@ -206,9 +206,14 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       return total;
   };
 
-  // Helper: Is a forecast paid?
-  const isForecastPaid = (forecastId: string) => {
-    return incomeTransactions.some(t => !t.isForecast && t.linkedForecastId === forecastId);
+  // Helper: Is a forecast paid? Conta sia il collegamento diretto (linkedForecastId) sia, per i
+  // finanziamenti, il loanSourceId condiviso — coerente con la logica gia' usata altrove
+  // nell'app (es. CashFlowTimeline) per non contare due volte lo stesso mutuo.
+  const isForecastPaid = (forecast: Transaction) => {
+    return incomeTransactions.some(t => !t.isForecast && (
+      t.linkedForecastId === forecast.id ||
+      (!!forecast.loanSourceId && t.loanSourceId === forecast.loanSourceId)
+    ));
   };
 
   // Accoppiamento visivo previsione <-> consuntivo: trova la controparte reale (linkedForecastId,
@@ -257,7 +262,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
     return sourceList.filter(t => {
       const tProj = t.project?.trim() || 'Generale';
       const matchKey = (key === 'FINANCING' || key === 'INVESTMENT') ? true : tProj === key;
-      return t.isForecast && matchKey && !isForecastPaid(t.id);
+      return t.isForecast && matchKey && !isForecastPaid(t);
     });
   };
 
@@ -735,7 +740,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                       ) : null;
                   })()}
                   {forecasts.map(t => {
-                    const paid = isForecastPaid(t.id);
+                    const paid = isForecastPaid(t);
                     const contropart = paid ? getContropartePrevisione(t) : undefined;
                     const contropartMese = contropart ? parseUTCDate(contropart.date).getUTCMonth() : null;
                     const stessoMese = contropartMese === mIdx;
