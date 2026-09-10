@@ -247,6 +247,10 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
         </div>
       </div>
 
+      <p className="text-xs text-slate-400 italic px-1">
+        Nota: questi margini non includono il costo della manodopera interna (operai dipendenti) impiegata sul cantiere — va aggiunto a parte per avere il margine reale.
+      </p>
+
       {/* ── Elenco movimenti — solo storico reale (consuntivo), il previsionale resta nel
           riepilogo qui sopra ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
