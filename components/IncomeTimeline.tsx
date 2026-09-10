@@ -1075,20 +1075,26 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                 <div className="flex flex-col items-center justify-between min-h-[30px] w-full">
                   {actualSum > 0 ? (
                       <div className="flex flex-col items-center w-full">
-                          <div className="flex items-center gap-1 mb-1 justify-center">
-                              <span className={`font-mono font-bold text-xs ${actualItemClass} flex items-center justify-center gap-1`}>
-                                  {actuals.some(t => !!t.loanDetails) && <Landmark size={8} className="text-emerald-400" />}
-                                  {actuals.some(t => t.category === '[FINANZA] Ritorno da Investimenti / Dividendi') && <TrendingUp size={8} className="text-emerald-400" />}
-                                  {CURRENCY_FORMATTER.format(actualSum)}
-                              </span>
-                              <button 
-                                  onClick={(e) => { e.stopPropagation(); setBreakdownView({ key, monthIndex: mIdx }); }} 
-                                  className="text-emerald-400 hover:text-emerald-700 transition-colors p-0.5"
-                                  title="Dettaglio Incassi"
-                              >
-                                  <ListFilter size={10} />
-                              </button>
-                          </div>
+                          {/* Totale della cella: nascosto solo se c'e' un unico pagamento GIA'
+                              collegato (quel caso mostra la cifra dentro il riquadro qui sotto) —
+                              altrimenti duplicherebbe la stessa cifra. Con un unico pagamento non
+                              collegato resta visibile, e' l'unico punto che mostra l'importo. */}
+                          {(actuals.length > 1 || !getControparteConsuntivo(actuals[0])) && (
+                            <div className="flex items-center gap-1 mb-1 justify-center">
+                                <span className={`font-mono font-bold text-xs ${actualItemClass} flex items-center justify-center gap-1`}>
+                                    {actuals.some(t => !!t.loanDetails) && <Landmark size={8} className="text-emerald-400" />}
+                                    {actuals.some(t => t.category === '[FINANZA] Ritorno da Investimenti / Dividendi') && <TrendingUp size={8} className="text-emerald-400" />}
+                                    {CURRENCY_FORMATTER.format(actualSum)}
+                                </span>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setBreakdownView({ key, monthIndex: mIdx }); }}
+                                    className="text-emerald-400 hover:text-emerald-700 transition-colors p-0.5"
+                                    title="Dettaglio Incassi"
+                                >
+                                    <ListFilter size={10} />
+                                </button>
+                            </div>
+                          )}
                           {actuals.map(t => {
                               const contropart = getControparteConsuntivo(t);
                               const contropartMese = contropart ? parseUTCDate(contropart.date).getUTCMonth() : null;
