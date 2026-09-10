@@ -228,15 +228,21 @@ console.log(`  con cantiere: ${nuovoConsuntivo.filter(t => t.project).length}/${
 console.log(`  collegato a previsione esistente: ${nuovoConsuntivo.filter(t => t.linkedForecastId).length}\n`);
 
 // ─── PREVISIONE: Documenti Scadenze non ancora pagate ────────────────────
+// Tipo 0=FEA (entrata), 1=FEP (uscita), 2=nota di credito ATTIVA (storna una FEA), 3=nota di
+// credito PASSIVA (storna una FEP). Le note di credito vanno incluse col segno OPPOSTO alla
+// fattura che stornano — altrimenti una fattura sbagliata gia' corretta da una nota di credito
+// (stesso importo, stessa data) risulterebbe comunque "da pagare" per intero (bug verificato sui
+// dati reali: 3 fatture FKF Costruzioni azzerate da 3 note di credito identiche, tipo 3).
 console.log('--- Previsione (rate non ancora pagate) ---');
-const scadenzeAperte = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT d.IDDocumento, d.Tipo, ds.IDRata, ds.[Data Rata] AS DataRata, ds.[Importo Rata] AS ImportoRata, d.Imponibile, d.Imposte, d.Totale, cf.[Ragione Sociale] AS Controparte FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento LEFT JOIN [Clienti Fornitori] cf ON cf.IDCliFor = d.IDCliFor WHERE ds.Pagato = 0 AND d.Tipo IN (0,1) AND ds.[Data Rata] >= '${DATA_INIZIO}' FOR JSON PATH`);
+const scadenzeAperte = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT d.IDDocumento, d.Tipo, ds.IDRata, ds.[Data Rata] AS DataRata, ds.[Importo Rata] AS ImportoRata, d.Imponibile, d.Imposte, d.Totale, cf.[Ragione Sociale] AS Controparte FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento LEFT JOIN [Clienti Fornitori] cf ON cf.IDCliFor = d.IDCliFor WHERE ds.Pagato = 0 AND d.Tipo IN (0,1,2,3) AND ds.[Data Rata] >= '${DATA_INIZIO}' FOR JSON PATH`);
 console.log(`Rate non pagate trovate: ${scadenzeAperte.length}`);
 
 const nuovaPrevisione = [];
 for (const s of scadenzeAperte) {
   const key = `${s.IDDocumento}|${s.IDRata}`;
   if (esistentiKey.has(key)) continue;
-  const isEntrata = s.Tipo === 0;
+  const isEntrata = s.Tipo === 0 || s.Tipo === 2;
+  const isNotaCredito = s.Tipo === 2 || s.Tipo === 3;
   const tipo = isEntrata ? 'INCOME' : 'EXPENSE';
   let categoria = null, ceType = null, cantiereApp = undefined;
 
@@ -262,7 +268,7 @@ for (const s of scadenzeAperte) {
   }
 
   const vatRate = calcolaVatRate(s.Imponibile, s.Imposte);
-  const grossAmount = s.ImportoRata;
+  const grossAmount = isNotaCredito ? -s.ImportoRata : s.ImportoRata;
   const amount = vatRate ? Math.round((grossAmount / (1 + vatRate / 100)) * 100) / 100 : grossAmount;
 
   nuovaPrevisione.push({
@@ -271,7 +277,7 @@ for (const s of scadenzeAperte) {
     amount, grossAmount, vatRate,
     type: tipo,
     category: categoria || 'Altro / Non Classificato',
-    description: s.Controparte || '(non specificato)',
+    description: (isNotaCredito ? 'Nota di credito - ' : '') + (s.Controparte || '(non specificato)'),
     project: cantiereApp,
     ceType: ceType || 'solo_cashflow',
     isForecast: true,

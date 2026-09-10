@@ -142,9 +142,17 @@ const MAPPING_ENTRATA = {
   altro:    { categoria: '[CANTIERE] Manutenzioni e Piccoli Lavori', ceType: 'ricavo_altro' },
 };
 
+// Tipo Documenti: 0=FEA (fattura emessa attiva, entrata), 1=FEP (fattura passiva, uscita),
+// 2=nota di credito ATTIVA (storna una FEA: riduce un'entrata), 3=nota di credito PASSIVA
+// (storna una FEP: riduce un'uscita). Le note di credito vanno col segno OPPOSTO alla fattura
+// che stornano, altrimenti si sommano come se fossero un secondo debito/credito invece di
+// annullare quello sbagliato — bug reale verificato sui dati: 3 fatture FKF Costruzioni
+// sbagliate (tipo 1) e le 3 note di credito che le annullavano per intero (tipo 3, stesso
+// importo esatto, stessa data) venivano sommate come 6 debiti distinti invece di nettarsi a 0.
 const storicoCantierePuntaNet = [];
 for (const r of righeCantiere) {
-  const isEntrata = r.Tipo === 0;
+  const isEntrata = r.Tipo === 0 || r.Tipo === 2;
+  const isNotaCredito = r.Tipo === 2 || r.Tipo === 3;
   const tipo = isEntrata ? 'INCOME' : 'EXPENSE';
   const progettoApp = cantiereToProject.get(r.IDCantiere);
   let categoria = null, ceType = null;
@@ -164,7 +172,7 @@ for (const r of righeCantiere) {
   }
 
   const vatRate = calcolaVatRate(r.Imponibile, r.Imposte);
-  const grossAmount = r.ImportoRata;
+  const grossAmount = isNotaCredito ? -r.ImportoRata : r.ImportoRata;
   const amount = vatRate ? Math.round((grossAmount / (1 + vatRate / 100)) * 100) / 100 : grossAmount;
 
   storicoCantierePuntaNet.push({
@@ -173,7 +181,7 @@ for (const r of righeCantiere) {
     amount, grossAmount, vatRate,
     type: tipo,
     category: categoria || 'Altro / Non Classificato',
-    description: r.Controparte || '(non specificato)',
+    description: (isNotaCredito ? 'Nota di credito - ' : '') + (r.Controparte || '(non specificato)'),
     project: progettoApp,
     ceType: ceType || 'solo_cashflow',
     isForecast: r.Pagato !== 1,
