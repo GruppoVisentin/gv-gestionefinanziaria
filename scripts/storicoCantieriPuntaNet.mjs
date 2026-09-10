@@ -98,16 +98,29 @@ for (const s of scadenzeRaw) {
 
 // Ricostruisce l'elenco "righeCantiere" (una riga per documento x cantiere x rata), con l'importo
 // della rata gia' ripartito in base alla quota di competenza del cantiere su quel documento.
+// L'imponibile (netto) si calcola ripartendo DIRETTAMENTE dic.Imponibile (il valore netto esatto
+// gia' fornito da PuntaNet per quel cantiere) in base alla quota della rata — non ricavandolo a
+// ritroso da un'aliquota IVA indovinata (calcolaVatRate sceglie solo tra 4 aliquote fisse: su
+// documenti con aliquote miste puo' sbagliare scaglione, accumulando un piccolo scarto).
+// La quota di ogni rata si calcola sulla SOMMA DELLE RATE REGISTRATE per quel documento, non sul
+// Totale nominale del documento: verificato su dati reali che alcuni documenti hanno rate che non
+// coprono l'intero Totale (dato incompleto lato PuntaNet, es. doc 10207: rate per 37.408 su un
+// Totale documento di 44.408) — usando il Totale nominale come divisore si perdeva la quota "non
+// coperta" da nessuna rata. Cosi' invece tutto l'imponibile del cantiere viene sempre distribuito
+// per intero fra le rate che esistono davvero, qualunque cosa sommino.
 const righeCantiere = [];
 for (const r of quoteCantiere) {
   const share = r.ImponibileDoc && r.ImponibileDoc > 0 ? (r.ImponibileCantiere / r.ImponibileDoc) : 1;
   const scadenze = scadenzePerDoc.get(r.IDDocumento) || [];
+  const sommaRateDoc = scadenze.reduce((s, sc) => s + (sc.ImportoRata || 0), 0);
   for (const s of scadenze) {
+    const rataFraction = sommaRateDoc !== 0 ? (s.ImportoRata / sommaRateDoc) : (1 / scadenze.length);
     righeCantiere.push({
       IDDocumento: r.IDDocumento,
       IDRata: s.IDRata,
       DataRata: s.DataRata,
       ImportoRata: Math.round(s.ImportoRata * share * 100) / 100,
+      ImponibileDiretto: Math.round(r.ImponibileCantiere * rataFraction * 100) / 100,
       Pagato: s.Pagato,
       Tipo: r.Tipo,
       Imponibile: r.ImponibileDoc,
@@ -173,7 +186,9 @@ for (const r of righeCantiere) {
 
   const vatRate = calcolaVatRate(r.Imponibile, r.Imposte);
   const grossAmount = isNotaCredito ? -r.ImportoRata : r.ImportoRata;
-  const amount = vatRate ? Math.round((grossAmount / (1 + vatRate / 100)) * 100) / 100 : grossAmount;
+  // Netto: dal valore diretto (dic.Imponibile ripartito), non ricavato a ritroso dall'aliquota
+  // indovinata — piu' preciso, coerente col dato reale PuntaNet.
+  const amount = isNotaCredito ? -r.ImponibileDiretto : r.ImponibileDiretto;
 
   storicoCantierePuntaNet.push({
     id: crypto.randomUUID(),
