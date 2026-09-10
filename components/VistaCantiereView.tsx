@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   HardHat, TrendingUp, TrendingDown, Scale, ChevronDown,
-  CalendarClock, CheckCircle2, Clock, Link2, Database,
+  CalendarClock, Link2, Database,
 } from 'lucide-react';
 import { Project, Transaction, TransactionType } from '../types';
 import { CURRENCY_FORMATTER, DATE_FORMATTER } from '../constants';
@@ -37,6 +37,15 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       .filter(t => t.project === selezionato)
       .sort((a, b) => (a.date < b.date ? 1 : -1)),
     [transactions, storicoCantierePuntaNet, usaStoricoPuntaNet, selezionato]
+  );
+
+  // L'elenco movimenti e' lo storico di cio' che e' davvero successo sul cantiere — solo
+  // consuntivo. Il previsionale (cosa manca ancora da incassare/pagare) resta solo nel
+  // riepilogo "Previsione residua" qui sopra, gia' aggregato: mescolarlo riga per riga nello
+  // storico confonderebbe "successo" con "atteso".
+  const movimentiReali = useMemo(
+    () => righeCantiere.filter(t => !t.isForecast),
+    [righeCantiere]
   );
 
   const stats = useMemo(() => {
@@ -196,16 +205,17 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
         </div>
       </div>
 
-      {/* ── Elenco movimenti ── */}
+      {/* ── Elenco movimenti — solo storico reale (consuntivo), il previsionale resta nel
+          riepilogo qui sopra ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Movimenti ({stats.numRighe})</p>
+          <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Movimenti realizzati ({movimentiReali.length})</p>
         </div>
         <div className="max-h-[600px] overflow-y-auto divide-y divide-slate-50">
-          {righeCantiere.length === 0 && (
-            <p className="text-center text-slate-400 text-sm py-10">Nessun movimento collegato a questo cantiere.</p>
+          {movimentiReali.length === 0 && (
+            <p className="text-center text-slate-400 text-sm py-10">Nessun movimento realizzato per questo cantiere.</p>
           )}
-          {righeCantiere.map(t => {
+          {movimentiReali.map(t => {
             const isEntrata = t.type === TransactionType.INCOME;
             return (
               <div key={t.id} className="flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors">
@@ -218,15 +228,6 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                  {t.isForecast ? (
-                    <span className="flex items-center gap-1 text-[10px] font-black text-amber-600 uppercase bg-amber-50 px-2 py-1 rounded-lg">
-                      <Clock size={11} /> Previsione
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 px-2 py-1 rounded-lg">
-                      <CheckCircle2 size={11} /> Consuntivo
-                    </span>
-                  )}
                   <span className={`text-sm font-black font-mono ${isEntrata ? 'text-emerald-600' : 'text-rose-600'}`}>
                     {isEntrata ? '+' : '-'}{formatEuro(t.grossAmount ?? t.amount)}
                   </span>
