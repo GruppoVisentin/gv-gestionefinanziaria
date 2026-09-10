@@ -61,21 +61,64 @@ const idCantieriCollegati = [...cantiereToProject.keys()];
 console.log(`Cantieri collegati: ${idCantieriCollegati.join(', ')}\n`);
 const idList = idCantieriCollegati.join(',');
 
-// ─── Scadenze (tutte le date, tutti i tipi 0/1) per questi cantieri, via Documenti Imponibili Cantiere ──
-const righeCantiere = runSql(DB_IMPRESA, `SET NOCOUNT ON;
-SELECT ds.IDDocumento, ds.IDRata, ds.[Data Rata] AS DataRata, ds.[Importo Rata] AS ImportoRata, ds.Pagato,
-       d.Tipo, d.Imponibile, d.Imposte, d.Totale, dic.IDCantiere,
+// ─── Quota di competenza per cantiere di ogni documento (via Documenti Imponibili Cantiere) ──
+// Una fattura puo' essere condivisa fra piu' cantieri (es. materiali consegnati su piu' siti in
+// un solo documento): dic.Imponibile e' la quota di QUEL cantiere, d.Imponibile e' il totale del
+// documento. NON si fa il join diretto con Documenti Scadenze qui — un documento con sia piu'
+// cantieri sia piu' rate produrrebbe un prodotto cartesiano che conta l'intera rata su ciascun
+// cantiere invece che la sua quota (bug verificato su dati reali: stesso IDDocumento, stesso
+// importo pieno, ripetuto su cantieri diversi — es. doc 5235 EDILSERRAJOTTO contato per intero
+// sia su Trifamiliare Zogaj che su Borgo Gatto). Le rate si distribuiscono in proporzione piu' sotto.
+const quoteCantiere = runSql(DB_IMPRESA, `SET NOCOUNT ON;
+SELECT dic.IDDocumento, dic.IDCantiere, dic.Imponibile AS ImponibileCantiere,
+       d.Tipo, d.Imponibile AS ImponibileDoc, d.Imposte, d.Totale,
        cf.[Ragione Sociale] AS Controparte
 FROM [Documenti Imponibili Cantiere] dic
 JOIN Documenti d ON d.IDDocumento = dic.IDDocumento
-JOIN [Documenti Scadenze] ds ON ds.IDDocumento = d.IDDocumento
 LEFT JOIN [Clienti Fornitori] cf ON cf.IDCliFor = d.IDCliFor
 WHERE dic.IDCantiere IN (${idList})
 FOR JSON PATH`);
-console.log(`Rate trovate per i cantieri collegati (tutti gli anni): ${righeCantiere.length}`);
+console.log(`Quote cantiere trovate (documento x cantiere, tutti gli anni): ${quoteCantiere.length}`);
 
-const idDocumenti = [...new Set(righeCantiere.map(r => r.IDDocumento))];
+const idDocumenti = [...new Set(quoteCantiere.map(r => r.IDDocumento))];
 const idDocList = idDocumenti.length > 0 ? idDocumenti.join(',') : '0';
+
+// Rate (Documenti Scadenze) per TUTTI i documenti coinvolti, una query sola, poi distribuite
+// in proporzione ad ogni cantiere in base alla sua quota.
+const scadenzeRaw = runSql(DB_IMPRESA, `SET NOCOUNT ON;
+SELECT ds.IDDocumento, ds.IDRata, ds.[Data Rata] AS DataRata, ds.[Importo Rata] AS ImportoRata, ds.Pagato
+FROM [Documenti Scadenze] ds
+WHERE ds.IDDocumento IN (${idDocList})
+FOR JSON PATH`);
+const scadenzePerDoc = new Map();
+for (const s of scadenzeRaw) {
+  if (!scadenzePerDoc.has(s.IDDocumento)) scadenzePerDoc.set(s.IDDocumento, []);
+  scadenzePerDoc.get(s.IDDocumento).push(s);
+}
+
+// Ricostruisce l'elenco "righeCantiere" (una riga per documento x cantiere x rata), con l'importo
+// della rata gia' ripartito in base alla quota di competenza del cantiere su quel documento.
+const righeCantiere = [];
+for (const r of quoteCantiere) {
+  const share = r.ImponibileDoc && r.ImponibileDoc > 0 ? (r.ImponibileCantiere / r.ImponibileDoc) : 1;
+  const scadenze = scadenzePerDoc.get(r.IDDocumento) || [];
+  for (const s of scadenze) {
+    righeCantiere.push({
+      IDDocumento: r.IDDocumento,
+      IDRata: s.IDRata,
+      DataRata: s.DataRata,
+      ImportoRata: Math.round(s.ImportoRata * share * 100) / 100,
+      Pagato: s.Pagato,
+      Tipo: r.Tipo,
+      Imponibile: r.ImponibileDoc,
+      Imposte: r.Imposte,
+      Totale: r.Totale,
+      IDCantiere: r.IDCantiere,
+      Controparte: r.Controparte,
+    });
+  }
+}
+console.log(`Rate ripartite per i cantieri collegati (tutti gli anni): ${righeCantiere.length}`);
 
 const docTipologia = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT da.IDDocumento, da.Prezzo, da.Qta, tv.Tipologia FROM [Documenti Articoli] da LEFT JOIN ${DB_COMUNE}.dbo.[TAB_Tipi Voci] tv ON tv.IDTipologia = da.IDTipologia WHERE da.IDDocumento IN (${idDocList}) FOR JSON PATH`);
 const docDescrizioni = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT da.IDDocumento, da.Descrizione FROM [Documenti Articoli] da WHERE da.IDDocumento IN (${idDocList}) FOR JSON PATH`);
