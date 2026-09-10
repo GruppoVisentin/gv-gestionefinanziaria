@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   HardHat, TrendingUp, TrendingDown, Scale, ChevronDown,
-  CalendarClock, CheckCircle2, Clock, Link2,
+  CalendarClock, CheckCircle2, Clock, Link2, Database,
 } from 'lucide-react';
 import { Project, Transaction, TransactionType } from '../types';
 import { CURRENCY_FORMATTER, DATE_FORMATTER } from '../constants';
@@ -10,11 +10,12 @@ import { parseUTCDate } from '../utils/gasCoreEngine';
 interface VistaCantiereViewProps {
   projects: Project[];
   transactions: Transaction[];
+  storicoCantierePuntaNet?: Transaction[];
 }
 
 const formatEuro = (v: number) => CURRENCY_FORMATTER.format(v);
 
-const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transactions }) => {
+const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transactions, storicoCantierePuntaNet = [] }) => {
   const progettiAttivi = useMemo(
     () => [...projects].filter(p => p.status === 'ACTIVE').sort((a, b) => a.name.localeCompare(b.name)),
     [projects]
@@ -23,11 +24,19 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
   const [selezionato, setSelezionato] = useState<string>(progettiAttivi[0]?.name ?? '');
   const progetto = progettiAttivi.find(p => p.name === selezionato);
 
+  // Per i cantieri collegati a PuntaNet, lo storico dedicato (storicoCantierePuntaNet) e' molto
+  // piu' completo di "transactions" — quest'ultima storicamente non ha quasi mai il cantiere
+  // taggato sui costi. Se c'e' storico PuntaNet per il progetto selezionato, si usa quello come
+  // unica fonte per questa vista (evita di sommare due volte gli stessi movimenti);
+  // altrimenti si ricade su "transactions" com'e' oggi.
+  const usaStoricoPuntaNet = progetto?.puntaNetCantiereId != null &&
+    storicoCantierePuntaNet.some(t => t.project === selezionato);
+
   const righeCantiere = useMemo(
-    () => transactions
+    () => (usaStoricoPuntaNet ? storicoCantierePuntaNet : transactions)
       .filter(t => t.project === selezionato)
       .sort((a, b) => (a.date < b.date ? 1 : -1)),
-    [transactions, selezionato]
+    [transactions, storicoCantierePuntaNet, usaStoricoPuntaNet, selezionato]
   );
 
   const stats = useMemo(() => {
@@ -90,6 +99,15 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
           ) : (
             <span className="flex items-center gap-1.5 text-amber-600 font-semibold text-xs bg-amber-50 px-2.5 py-1 rounded-full">
               Non collegato a un cantiere PuntaNet
+            </span>
+          )}
+          {usaStoricoPuntaNet ? (
+            <span className="flex items-center gap-1.5 text-indigo-600 font-semibold text-xs bg-indigo-50 px-2.5 py-1 rounded-full">
+              <Database size={12} /> Dati: storico completo PuntaNet
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-slate-500 font-semibold text-xs bg-slate-100 px-2.5 py-1 rounded-full">
+              Dati: flusso di cassa app (potrebbe non essere completo sui costi storici)
             </span>
           )}
         </div>

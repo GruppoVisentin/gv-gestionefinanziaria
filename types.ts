@@ -317,6 +317,7 @@ export interface BackupData {
   importSessions?: ImportSession[];   // ← NUOVO
   storicoExcelImportato?: boolean;   // flag — impedisce doppio import accidentale
   aliquoteFiscali?: { ires: number; irap: number };
+  storicoCantierePuntaNet?: Transaction[]; // ← NUOVO — storico completo per cantiere da PuntaNet (sola lettura, solo Vista Cantiere)
 }
 
 export enum AppView {

@@ -721,6 +721,7 @@ const App: React.FC = () => {
   const [mappingContiPuntaNet, setMappingContiPuntaNet] = useState<import('./utils/puntaNetImporter').MappingConto | null>(null);
   const [bozzaImportPuntaNet, setBozzaImportPuntaNet] = useState<import('./utils/puntaNetImporter').RigaClassificata[]>([]);
   const [importSessions, setImportSessions] = useState<import('./types').ImportSession[]>([]);
+  const [storicoCantierePuntaNet, setStoricoCantierePuntaNet] = useState<Transaction[]>([]);
   const [fileBanca, setFileBanca] = useState<File | null>(null);
   const [fileFEP, setFileFEP] = useState<File | null>(null);
   const [fileFEA, setFileFEA] = useState<File | null>(null);
@@ -830,11 +831,13 @@ const App: React.FC = () => {
     importSessions,
     storicoExcelImportato: storicoImportato,
     aliquoteFiscali: { ires: aliquotaIRES, irap: aliquotaIRAP },
+    storicoCantierePuntaNet,
   }), [
-    transactions, projects, fixedCategories, variableCategories, incomeCategories, 
-    supplierPresets, initialData, responsiblesList, ceManualData, spSnapshots, 
+    transactions, projects, fixedCategories, variableCategories, incomeCategories,
+    supplierPresets, initialData, responsiblesList, ceManualData, spSnapshots,
     budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze,
-    regolePuntaNet, mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP
+    regolePuntaNet, mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
+    storicoCantierePuntaNet
   ]);
 
   // Ref che mantiene sempre l'ultima versione di buildBackupData
@@ -929,6 +932,7 @@ const App: React.FC = () => {
       setImportSessions(data.importSessions);
     }
     if (data.storicoExcelImportato) setStoricoImportato(data.storicoExcelImportato);
+    if (data.storicoCantierePuntaNet) setStoricoCantierePuntaNet(data.storicoCantierePuntaNet);
     if (data.aliquoteFiscali) {
       setAliquotaIRES(data.aliquoteFiscali.ires);
       setAliquotaIRAP(data.aliquoteFiscali.irap);
@@ -1014,6 +1018,7 @@ const App: React.FC = () => {
           ires: overrides?.aliquotaIRES !== undefined ? overrides.aliquotaIRES : aliquotaIRES,
           irap: overrides?.aliquotaIRAP !== undefined ? overrides.aliquotaIRAP : aliquotaIRAP
         },
+        storicoCantierePuntaNet,
       };
 
       await writeFile(fileHandle, data);
@@ -1038,7 +1043,8 @@ const App: React.FC = () => {
     fileHandle, backupFileHandle, transactions, projects, fixedCategories, variableCategories,
     incomeCategories, supplierPresets, initialData, saldoInizialeCF, responsiblesList, ceManualData,
     spSnapshots, budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze, regolePuntaNet,
-    mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP
+    mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
+    storicoCantierePuntaNet
   ]);
 
   // --- INITIALIZATION ---
@@ -2314,6 +2320,7 @@ const App: React.FC = () => {
           <VistaCantiereView
             projects={projects}
             transactions={transactions}
+            storicoCantierePuntaNet={storicoCantierePuntaNet}
           />
         );
       case AppView.SETTINGS:
