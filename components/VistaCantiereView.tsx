@@ -75,26 +75,6 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
     const nettoEntratePrevisione = sommaNetta(entratePrevisione);
     const nettoUscitePrevisione = sommaNetta(uscitePrevisione);
 
-    // Entrate previste "dopo le precedenti": quanto manca al piano previsionale generale
-    // (Timeline Entrate, inserito a mano/da Excel) che NON e' ancora ne' incassato ne' fatturato
-    // su PuntaNet. Il piano Timeline copre pero' solo l'anno per cui e' stato compilato (es. 2026),
-    // mentre "entrate consuntivo"/"registrate" sopra sono TUTTO lo storico del cantiere (anche
-    // anni precedenti). Confrontare un piano di un anno solo con uno storico pluriennale produce
-    // numeri negativi enormi e senza senso (verificato sui dati reali: es. un piano 2026 da
-    // 362.000 contro uno storico dal 2023 da 1.295.000). Si limita quindi il confronto agli
-    // stessi anni coperti dal piano Timeline, cosi' i due lati sono confrontabili.
-    const timelinePrevisioneEntrate = transactions.filter(t =>
-      t.project === selezionato && t.type === TransactionType.INCOME && t.isForecast === true
-    );
-    const anniTimeline = new Set(timelinePrevisioneEntrate.map(t => t.date.slice(0, 4)));
-    const entrateConsuntivoStessiAnni = entrateConsuntivo.filter(t => anniTimeline.has(t.date.slice(0, 4)));
-    const entratePrevisioneStessiAnni = entratePrevisione.filter(t => anniTimeline.has(t.date.slice(0, 4)));
-
-    const nettoTimelinePrevisioneEntrate = sommaNetta(timelinePrevisioneEntrate);
-    const nettoEntratePreviste = anniTimeline.size > 0
-      ? nettoTimelinePrevisioneEntrate - sommaNetta(entrateConsuntivoStessiAnni) - sommaNetta(entratePrevisioneStessiAnni)
-      : 0;
-
     return {
       entrateConsuntivo: totEntrateConsuntivo,
       usciteConsuntivo: totUsciteConsuntivo,
@@ -109,14 +89,9 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       nettoMargineConsuntivo: nettoEntrateConsuntivo - nettoUsciteConsuntivo,
       nettoEntratePrevisione,
       nettoUscitePrevisione,
-      // Stima finale provvisoria: quanto manca oltre a quanto gia' fatturato/incassato o gia'
-      // registrato in PuntaNet, e il margine finale che ne deriva. E' una stima (dipende dal
-      // piano previsionale inserito), non un dato certificato come le righe PuntaNet sopra.
-      nettoEntratePreviste,
-      nettoMargineFinaleStimato: (nettoEntrateConsuntivo + nettoEntratePrevisione + nettoEntratePreviste) - (nettoUsciteConsuntivo + nettoUscitePrevisione),
       numRighe: righeCantiere.length,
     };
-  }, [righeCantiere, transactions, selezionato]);
+  }, [righeCantiere]);
 
   if (progettiAttivi.length === 0) {
     return (
@@ -175,7 +150,7 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       )}
 
       {/* ── Riepilogo ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center gap-2 text-emerald-600 mb-2">
             <TrendingUp size={18} />
@@ -218,24 +193,6 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
             <span className="text-slate-400 font-semibold"> (netto {formatEuro(stats.nettoUscitePrevisione)})</span>
           </p>
           <p className="text-[10px] text-slate-400 mt-2 leading-snug">Fatture/rate gia' registrate su PuntaNet, non ancora incassate/pagate.</p>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-          <div className="flex items-center gap-2 text-violet-600 mb-2">
-            <HardHat size={18} />
-            <span className="text-[11px] font-black uppercase tracking-wider">Stima finale provvisoria</span>
-          </div>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Entrate previste dopo le precedenti</p>
-          <p className={`text-sm font-black ${stats.nettoEntratePreviste >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-            {stats.nettoEntratePreviste >= 0 ? '+ ' : ''}{formatEuro(stats.nettoEntratePreviste)}
-            <span className="text-slate-400 font-semibold"> (netto)</span>
-          </p>
-          <p className="text-[10px] text-slate-400 mt-1 leading-snug">Piano previsionale (Timeline) meno incassato meno gia' registrato su PuntaNet, confrontati sui soli anni coperti dal piano — non ancora fatturato.</p>
-          <div className="mt-2 pt-2 border-t border-slate-100">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Margine finale stimato (netto)</p>
-            <p className={`text-sm font-black ${stats.nettoMargineFinaleStimato >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
-              {formatEuro(stats.nettoMargineFinaleStimato)}
-            </p>
-          </div>
         </div>
       </div>
 
