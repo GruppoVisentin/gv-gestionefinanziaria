@@ -66,6 +66,11 @@ function calcolaVatRate(imponibile, imposte) {
   const percent = Math.round((imposte / imponibile) * 100);
   if (percent >= 20) return 22; if (percent >= 8) return 10; if (percent >= 3) return 4; return 0;
 }
+function importoLordoTx(t) {
+  if (typeof t.grossAmount === 'number') return t.grossAmount;
+  const vat = t.vatRate || 0;
+  return (t.amount || 0) * (1 + vat / 100);
+}
 
 console.log(`=== Estrazione PuntaNet — GRUPPO VISENTIN SRL — da ${DATA_INIZIO} ===\n`);
 
@@ -125,6 +130,23 @@ const movimenti = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT Data, Causale, Desc
 console.log(`Movimenti bancari trovati: ${movimenti.length}`);
 
 const nuovoConsuntivo = [];
+
+// Capienza residua di una previsione: totale meno quanto gia' collegato (sia nel file esistente
+// sia nei consuntivi appena aggiunti in questo stesso giro) — permette di riconoscere piu'
+// pagamenti/rate sulla stessa previsione nel tempo, invece di collegarne solo uno e basta.
+function getResiduoPrevisione(f) {
+  const totale = importoLordoTx(f);
+  const coperturaEsistente = gvData.transactions
+    .filter(t => t.type === f.type && !t.isForecast && (
+      t.linkedForecastId === f.id || (f.loanSourceId && t.loanSourceId === f.loanSourceId)
+    ))
+    .reduce((sum, t) => sum + importoLordoTx(t), 0);
+  const coperturaNuova = nuovoConsuntivo
+    .filter(t => t.linkedForecastId === f.id)
+    .reduce((sum, t) => sum + importoLordoTx(t), 0);
+  return totale - coperturaEsistente - coperturaNuova;
+}
+
 for (const mv of movimenti) {
   const key = `${mv.IDDocumento}|${mv.IDRata}`;
   if (mv.IDDocumento && esistentiKey.has(key)) continue; // gia' importato in un giro precedente
@@ -163,17 +185,21 @@ for (const mv of movimenti) {
     if (cls.categoria) { categoria = cls.categoria; ceType = cls.ceType; if (vatRate == null) vatRate = cls.vatRateSuggerito; }
   }
 
-  // Collegamento a previsione ESISTENTE (solo lettura, mai modificata).
+  // Collegamento a previsione ESISTENTE (solo lettura, mai modificata). Nessun vincolo di stesso
+  // mese: un incasso puo' arrivare mesi dopo quello previsto. Una previsione puo' anche essere
+  // incassata in piu' pagamenti (rate/acconti): si collega alla previsione, nello stesso
+  // progetto+categoria, che ha ancora capienza residua sufficiente per questo importo,
+  // preferendo il residuo piu' vicino (miglior fit, minimizza il sovraccoperto).
   let linkedForecastId = undefined;
   if (categoria) {
-    const txMonth = mv.Data.slice(0, 7);
     const txProj = cantiereApp || 'Generale';
-    const match = previsioniEsistenti.find(f =>
-      f.date && f.date.slice(0, 7) === txMonth && f.type === tipo &&
-      (f.project || 'Generale') === txProj && f.category === categoria &&
-      !nuovoConsuntivo.some(n => n.linkedForecastId === f.id)
-    );
-    if (match) linkedForecastId = match.id;
+    const TOLLERANZA = 0.5; // arrotondamenti
+    const candidati = previsioniEsistenti
+      .filter(f => f.type === tipo && (f.project || 'Generale') === txProj && f.category === categoria)
+      .map(f => ({ f, residuo: getResiduoPrevisione(f) }))
+      .filter(c => c.residuo >= importo - TOLLERANZA)
+      .sort((a, b) => a.residuo - b.residuo);
+    if (candidati.length > 0) linkedForecastId = candidati[0].f.id;
   }
 
   const grossAmount = importo;
