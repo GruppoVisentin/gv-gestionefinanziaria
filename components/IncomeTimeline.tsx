@@ -705,9 +705,15 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
 
     // Il colore per tipo di riga resta solo sulle colonne congelate (nome + totali a destra,
     // gia' in grigio) — le colonne dinamiche dei mesi usano un grigio neutro uguale per tutte le
-    // righe, con due tonalita' distinte per distinguere Prev. da Cons. a colpo d'occhio.
+    // righe, con due tonalita' ben distinte per riconoscere Prev. da Cons. a colpo d'occhio.
     forecastBg = 'bg-slate-50';
-    actualBg = 'bg-slate-100';
+    actualBg = 'bg-slate-200';
+    // Colore del testo per le previsioni NON ancora collegate (nessun riquadro, solo scritta) —
+    // l'unica cosa che resta colorata per tipo di riga, il riquadro e' riservato agli accoppiamenti.
+    const attesaTextClass = rowType === 'financing' ? 'text-sky-700'
+      : rowType === 'investment' ? 'text-amber-800'
+      : rowType === 'other' ? 'text-slate-500'
+      : 'text-emerald-700';
 
     return (
       <tr key={key} className={rowBgClass}>
@@ -761,13 +767,13 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                     return (
                       <div
                         key={t.id}
-                        className={`relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border-2 transition-all ${isAuthorized ? 'cursor-pointer hover:shadow-md' : ''} ${
+                        className={`relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full transition-all ${isAuthorized ? 'cursor-pointer' : ''} ${
                           paid
-                            ? 'bg-teal-100 text-teal-900 border-teal-400 shadow-sm'
+                            ? 'border-2 bg-teal-100 text-teal-900 border-teal-400 shadow-sm'
                             : parziale
-                            ? 'bg-amber-100 text-amber-900 border-amber-400 shadow-sm'
-                            : `${forecastItemClass} border shadow-sm`
-                        } ${rowType === 'standard' && stato === 'attesa' ? 'bg-slate-50 text-slate-600 border-slate-100' : ''}`}
+                            ? 'border-2 bg-amber-100 text-amber-900 border-amber-400 shadow-sm'
+                            : attesaTextClass
+                        }`}
                         title={
                           paid ? `${t.description} - Incassata per intero${collegati.length === 1 ? ` il ${DATE_FORMATTER.format(parseUTCDate(collegati[0].date))}` : ` (${collegati.length} pagamenti)`}`
                           : parziale ? `${t.description} - Incassata in parte: ${CURRENCY_FORMATTER.format(copertura)} di ${CURRENCY_FORMATTER.format(totale)} (${collegati.length} pagamento${collegati.length === 1 ? '' : 'i'})`
