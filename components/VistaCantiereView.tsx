@@ -76,16 +76,24 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
     const nettoUscitePrevisione = sommaNetta(uscitePrevisione);
 
     // Entrate previste "dopo le precedenti": quanto manca al piano previsionale generale
-    // (Timeline Entrate, inserito a mano/da Excel — l'aspettativa complessiva sul cantiere) che
-    // NON e' ancora ne' incassato ne' fatturato su PuntaNet. E' la parte che oggi non esiste
-    // ancora come documento in PuntaNet, solo come previsione di budget. Si legge sempre da
-    // "transactions" (la Timeline vera), mai da storicoCantierePuntaNet, che qui e' gia' contato
-    // dentro "entrate registrate ma non pagate".
+    // (Timeline Entrate, inserito a mano/da Excel) che NON e' ancora ne' incassato ne' fatturato
+    // su PuntaNet. Il piano Timeline copre pero' solo l'anno per cui e' stato compilato (es. 2026),
+    // mentre "entrate consuntivo"/"registrate" sopra sono TUTTO lo storico del cantiere (anche
+    // anni precedenti). Confrontare un piano di un anno solo con uno storico pluriennale produce
+    // numeri negativi enormi e senza senso (verificato sui dati reali: es. un piano 2026 da
+    // 362.000 contro uno storico dal 2023 da 1.295.000). Si limita quindi il confronto agli
+    // stessi anni coperti dal piano Timeline, cosi' i due lati sono confrontabili.
     const timelinePrevisioneEntrate = transactions.filter(t =>
       t.project === selezionato && t.type === TransactionType.INCOME && t.isForecast === true
     );
+    const anniTimeline = new Set(timelinePrevisioneEntrate.map(t => t.date.slice(0, 4)));
+    const entrateConsuntivoStessiAnni = entrateConsuntivo.filter(t => anniTimeline.has(t.date.slice(0, 4)));
+    const entratePrevisioneStessiAnni = entratePrevisione.filter(t => anniTimeline.has(t.date.slice(0, 4)));
+
     const nettoTimelinePrevisioneEntrate = sommaNetta(timelinePrevisioneEntrate);
-    const nettoEntratePreviste = nettoTimelinePrevisioneEntrate - nettoEntrateConsuntivo - nettoEntratePrevisione;
+    const nettoEntratePreviste = anniTimeline.size > 0
+      ? nettoTimelinePrevisioneEntrate - sommaNetta(entrateConsuntivoStessiAnni) - sommaNetta(entratePrevisioneStessiAnni)
+      : 0;
 
     return {
       entrateConsuntivo: totEntrateConsuntivo,
@@ -221,7 +229,7 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
             {stats.nettoEntratePreviste >= 0 ? '+ ' : ''}{formatEuro(stats.nettoEntratePreviste)}
             <span className="text-slate-400 font-semibold"> (netto)</span>
           </p>
-          <p className="text-[10px] text-slate-400 mt-1 leading-snug">Piano previsionale (Timeline) meno incassato meno gia' registrato su PuntaNet — non ancora fatturato.</p>
+          <p className="text-[10px] text-slate-400 mt-1 leading-snug">Piano previsionale (Timeline) meno incassato meno gia' registrato su PuntaNet, confrontati sui soli anni coperti dal piano — non ancora fatturato.</p>
           <div className="mt-2 pt-2 border-t border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Margine finale stimato (netto)</p>
             <p className={`text-sm font-black ${stats.nettoMargineFinaleStimato >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
