@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Transaction, TransactionType, Project, LoanDetails, AppView, RinegoziazioneMutuo, InitialBalanceBreakdown, ExistingLoan } from '../types';
 import { fetchEuriborRates } from '../services/geminiService';
 import { CURRENCY_FORMATTER, DATE_FORMATTER, CATEGORY_TO_CE_TYPE } from '../constants';
-import { Plus, X, ArrowRight, Save, Landmark, TrendingUp, Pencil, Trash2, Calendar, FileText, User, Shield, Search, RefreshCw, ListFilter, MoreHorizontal } from 'lucide-react';
+import { Plus, X, ArrowRight, Save, Landmark, TrendingUp, Pencil, Trash2, Calendar, FileText, User, Shield, Search, RefreshCw, ListFilter, MoreHorizontal, CheckCircle2, Link2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { HelpButton } from './HelpPanel';
@@ -210,6 +210,19 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   const isForecastPaid = (forecastId: string) => {
     return incomeTransactions.some(t => !t.isForecast && t.linkedForecastId === forecastId);
   };
+
+  // Accoppiamento visivo previsione <-> consuntivo: trova la controparte reale (linkedForecastId,
+  // o loanSourceId condiviso per i finanziamenti) cosi' da poter segnare il collegamento anche
+  // quando previsione e consuntivo cadono in mesi diversi (si attiva da solo sui dati esistenti).
+  const MESI_ABBR = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+
+  const getContropartePrevisione = (forecast: Transaction) =>
+    incomeTransactions.find(a => !a.isForecast &&
+      (a.linkedForecastId === forecast.id || (!!forecast.loanSourceId && a.loanSourceId === forecast.loanSourceId)));
+
+  const getControparteConsuntivo = (actual: Transaction) =>
+    incomeTransactions.find(f => f.isForecast &&
+      (actual.linkedForecastId === f.id || (!!f.loanSourceId && actual.loanSourceId === f.loanSourceId)));
 
   // Get specific transactions for a cell
   const getCellTransactions = (key: string, monthIndex: number, isForecast: boolean) => {
@@ -723,26 +736,29 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                   })()}
                   {forecasts.map(t => {
                     const paid = isForecastPaid(t.id);
+                    const contropart = paid ? getContropartePrevisione(t) : undefined;
+                    const contropartMese = contropart ? parseUTCDate(contropart.date).getUTCMonth() : null;
+                    const stessoMese = contropartMese === mIdx;
                     return (
-                      <div 
-                        key={t.id} 
+                      <div
+                        key={t.id}
                         className={`relative group/item flex flex-col items-center justify-center px-2 py-1 rounded-md w-full border transition-all ${
-                          paid 
-                            ? 'bg-slate-50 text-slate-600 border-slate-100 opacity-70' 
+                          paid
+                            ? 'bg-teal-50 text-teal-700 border-teal-200'
                             : `${forecastItemClass} shadow-sm ${isAuthorized ? 'cursor-pointer hover:shadow-md' : ''}`
                         } ${rowType === 'standard' && !paid ? 'bg-slate-50 text-slate-600 border-slate-100' : ''}`}
-                        title={`${t.description} - ${paid ? 'Incassato' : 'In attesa'}`}
+                        title={`${t.description} - ${paid ? `Incassata${contropart ? ` il ${DATE_FORMATTER.format(parseUTCDate(contropart.date))}` : ''}` : 'In attesa'}`}
                       >
                          {/* Edit/Delete Overlay - ONLY IF AUTHORIZED */}
                          {!paid && isAuthorized && (
                             <div className="absolute inset-0 bg-white/90 hidden group-hover/item:flex items-center justify-center gap-2 rounded-md z-10">
-                                <button 
+                                <button
                                     onClick={(e) => { e.stopPropagation(); openForecastForm(key, mIdx, t, 'FORECAST'); }}
                                     className="p-1 hover:text-slate-600 text-slate-400"
                                 >
                                     <Pencil size={12} />
                                 </button>
-                                <button 
+                                <button
                                     onClick={(e) => handleDelete(t.id, e)}
                                     className="p-1 hover:text-slate-600 text-slate-400"
                                 >
@@ -752,13 +768,19 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                          )}
 
                         <span className="text-[11px] font-mono font-medium leading-none flex items-center gap-1">
-                          {t.loanDetails && <Landmark size={8} className="text-slate-400" />}
-                          {t.category === '[FINANZA] Ritorno da Investimenti / Dividendi' && <TrendingUp size={8} className="text-slate-400" />}
+                          {t.loanDetails && <Landmark size={8} className={paid ? 'text-teal-500' : 'text-slate-400'} />}
+                          {t.category === '[FINANZA] Ritorno da Investimenti / Dividendi' && <TrendingUp size={8} className={paid ? 'text-teal-500' : 'text-slate-400'} />}
                           {CURRENCY_FORMATTER.format(getGrossAmount(t))}
                         </span>
                         <span className="text-[9px] opacity-80 truncate w-full text-center mt-0.5 max-w-[90px]">
                           {t.description}
                         </span>
+                        {paid && (
+                          <span className="flex items-center gap-0.5 text-[9px] font-bold text-teal-600 mt-0.5">
+                            <CheckCircle2 size={9} />
+                            {stessoMese ? 'incassata' : contropartMese !== null ? `→ ${MESI_ABBR[contropartMese]}` : 'incassata'}
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -1026,8 +1048,12 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                   <ListFilter size={10} />
                               </button>
                           </div>
-                          {actuals.map(t => (
-                              <div key={t.id} className="group/item flex items-center justify-center w-full relative">
+                          {actuals.map(t => {
+                              const contropart = getControparteConsuntivo(t);
+                              const contropartMese = contropart ? parseUTCDate(contropart.date).getUTCMonth() : null;
+                              const stessoMese = contropartMese === mIdx;
+                              return (
+                              <div key={t.id} className="group/item flex flex-col items-center justify-center w-full relative">
                                   <span className="text-[9px] text-emerald-500 truncate w-full max-w-[90px] text-center mt-0.5 flex items-center justify-center gap-1"
                                         title={t.sourceRef ?? t.description}>
                                       {t.loanDetails && <Landmark size={8} className="text-emerald-400/70" />}
@@ -1037,17 +1063,26 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                       )}
                                       {t.description}
                                   </span>
+                                  {contropart && (
+                                    <span
+                                      className="flex items-center gap-0.5 text-[8px] font-bold text-teal-600"
+                                      title={`Da previsione: ${contropart.description} — ${DATE_FORMATTER.format(parseUTCDate(contropart.date))}`}
+                                    >
+                                      <Link2 size={8} />
+                                      {stessoMese ? 'da previsione' : contropartMese !== null ? `← ${MESI_ABBR[contropartMese]}` : 'da previsione'}
+                                    </span>
+                                  )}
                                   {/* Edit Actual Actions - ONLY IF AUTHORIZED */}
                                   {isAuthorized && (
                                     <div className="absolute right-0 -top-1 bg-white shadow-sm border border-slate-100 rounded px-1 hidden group-hover/item:flex gap-1">
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); openForecastForm(key, mIdx, t, 'ACTUAL'); }} 
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); openForecastForm(key, mIdx, t, 'ACTUAL'); }}
                                             className="text-slate-400 hover:text-slate-600"
                                         >
                                             <Pencil size={10} />
                                         </button>
-                                        <button 
-                                            onClick={(e) => handleDelete(t.id, e)} 
+                                        <button
+                                            onClick={(e) => handleDelete(t.id, e)}
                                             className="text-slate-400 hover:text-slate-600"
                                         >
                                             <Trash2 size={10} />
@@ -1055,7 +1090,8 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                     </div>
                                   )}
                               </div>
-                          ))}
+                              );
+                          })}
                       </div>
                   ) : (
                     <span className="text-slate-300">-</span>

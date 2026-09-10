@@ -122,10 +122,12 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   ];
 
   // COL WIDTH CONSTANTS FOR ALIGNMENT
-  const COL_LABEL_WIDTH = "min-w-[300px] w-[300px] max-w-[300px]";
+  // Colonne congelate (etichetta a sinistra, riepilogo a destra) ristrette verso i margini
+  // per liberare piu' spazio centrale alle colonne dinamiche dei mesi.
+  const COL_LABEL_WIDTH = "min-w-[200px] w-[200px] max-w-[200px]";
   const COL_MONTH_WIDTH = "min-w-[240px] w-[240px]";
   const COL_SUB_WIDTH = "w-[120px]";
-  const COL_SUMMARY_WIDTH = "w-[120px]";
+  const COL_SUMMARY_WIDTH = "w-[90px]";
 
   const getGrossAmount = (t: Transaction) => {
     if (typeof t.grossAmount === 'number') return t.grossAmount;
@@ -1782,7 +1784,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
 
 
         <div ref={scrollContainerRef} className="overflow-x-auto w-full relative">
-        <table className="w-full text-sm text-left border-collapse" style={{ tableLayout: 'fixed', minWidth: 3420 }}>
+        <table className="w-full text-sm text-left border-collapse" style={{ tableLayout: 'fixed', minWidth: 3260 }}>
           <colgroup>
             <col style={{ width: 300 }} />
             {Array.from({ length: 12 }).map((_, i) => (
@@ -1854,7 +1856,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                   </th>
                 </React.Fragment>
               ))}
-              <th className={`px-2 py-2 border-l-2 border-slate-700 border-r border-slate-700 text-slate-500 font-bold text-center bg-slate-800 sticky right-[120px] z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_SUMMARY_WIDTH}`}>
+              <th className={`px-2 py-2 border-l-2 border-slate-700 border-r border-slate-700 text-slate-500 font-bold text-center bg-slate-800 sticky right-[90px] z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_SUMMARY_WIDTH}`}>
                 Tot. Prev.
               </th>
               <th className={`px-2 py-2 text-slate-300 font-bold text-center bg-slate-900 sticky right-0 z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_SUMMARY_WIDTH}`}>
@@ -1891,7 +1893,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 );
               })}
               
-              <td className={`px-2 py-4 text-center border-l-2 border-slate-700 border-r border-slate-700 text-slate-400 font-mono text-xs bg-slate-900/50 font-bold sticky right-[120px] z-10 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_SUMMARY_WIDTH}`}>
+              <td className={`px-2 py-4 text-center border-l-2 border-slate-700 border-r border-slate-700 text-slate-400 font-mono text-xs bg-slate-900/50 font-bold sticky right-[90px] z-10 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_SUMMARY_WIDTH}`}>
                  {CURRENCY_FORMATTER.format(calculateYearFlow(true))}
               </td>
               <td className={`px-2 py-4 text-center border-r border-slate-700 text-slate-900 font-mono text-xs bg-slate-100 font-bold sticky right-0 z-10 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_SUMMARY_WIDTH}`}>
@@ -1926,7 +1928,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                 );
               })}
               
-              <td className={`px-2 py-4 text-center border-l-2 border-slate-700 border-r border-slate-700 text-slate-400 font-mono text-xs bg-slate-900/50 font-bold sticky right-[120px] z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_SUMMARY_WIDTH}`}>
+              <td className={`px-2 py-4 text-center border-l-2 border-slate-700 border-r border-slate-700 text-slate-400 font-mono text-xs bg-slate-900/50 font-bold sticky right-[90px] z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_SUMMARY_WIDTH}`}>
                  {CURRENCY_FORMATTER.format(forecastFinalBalance)}
               </td>
               <td className={`px-2 py-4 text-center border-r border-slate-700 text-slate-300 font-mono text-xs bg-slate-800 font-bold sticky right-0 z-30 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.3)] ${COL_SUMMARY_WIDTH}`}>
