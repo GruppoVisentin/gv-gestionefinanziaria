@@ -42,8 +42,15 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
   const stats = useMemo(() => {
     const entrateConsuntivo = righeCantiere.filter(t => t.type === TransactionType.INCOME && !t.isForecast);
     const usciteConsuntivo = righeCantiere.filter(t => t.type === TransactionType.EXPENSE && !t.isForecast);
-    const entratePrevisione = righeCantiere.filter(t => t.type === TransactionType.INCOME && t.isForecast);
-    const uscitePrevisione = righeCantiere.filter(t => t.type === TransactionType.EXPENSE && t.isForecast);
+
+    // "Residua" = quanto manca davvero da incassare/pagare: previsioni gia' chiuse da un
+    // consuntivo collegato (linkedForecastId) non contano piu' — altrimenti si conta due volte
+    // la stessa cifra (una come previsione, una come consuntivo gia' arrivato).
+    const idPrevisioniChiuse = new Set(
+      righeCantiere.filter(t => !t.isForecast && t.linkedForecastId).map(t => t.linkedForecastId)
+    );
+    const entratePrevisione = righeCantiere.filter(t => t.type === TransactionType.INCOME && t.isForecast && !idPrevisioniChiuse.has(t.id));
+    const uscitePrevisione = righeCantiere.filter(t => t.type === TransactionType.EXPENSE && t.isForecast && !idPrevisioniChiuse.has(t.id));
 
     const somma = (arr: Transaction[]) => arr.reduce((s, t) => s + (t.grossAmount ?? t.amount ?? 0), 0);
 
