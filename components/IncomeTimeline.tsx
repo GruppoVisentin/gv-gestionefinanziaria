@@ -77,6 +77,9 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
   const [newForecastInteressi, setNewForecastInteressi] = useState('');
   const [newForecastClient, setNewForecastClient] = useState('');
   const [newForecastDesc, setNewForecastDesc] = useState('');
+  // Collegamento manuale (solo per modifica di un CONSUNTIVO esistente): quale previsione chiude,
+  // '' = nessuna. Permette di correggere a mano un accoppiamento sbagliato o mancante.
+  const [newForecastLinkedId, setNewForecastLinkedId] = useState('');
 
   // Loan Specific State for Timeline Form
   const [loanInterestRate, setLoanInterestRate] = useState('');
@@ -382,6 +385,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       setNewForecastClient('');
       setNewForecastVat(transaction.vatRate?.toString() || '22');
       setEditingId(transaction.id);
+      setNewForecastLinkedId(transaction.linkedForecastId || '');
 
       // Populate loan details if present
       if (transaction.loanDetails) {
@@ -414,6 +418,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       setNewForecastCapitale('');
       setNewForecastInteressi('');
       setEditingId(null);
+      setNewForecastLinkedId('');
 
       // Reset loan details
       setLoanInterestRate('');
@@ -538,6 +543,12 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         loanDetails,
         ceType: CATEGORY_TO_CE_TYPE[category] || 'solo_cashflow'
     };
+
+    // Collegamento manuale a una previsione (solo sui consuntivi) — permette di correggere a
+    // mano un accoppiamento sbagliato o di aggiungerne/toglierne uno. '' = nessun collegamento.
+    if (formType === 'ACTUAL') {
+        transactionData.linkedForecastId = newForecastLinkedId || undefined;
+    }
 
     // SYNC DIRECTION 2 (Timeline -> Gestisci) Create/Update
     if (isFinancing && initialData && onUpdateInitialData) {
@@ -934,6 +945,37 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
                                   placeholder="Descrizione Opzionale"
                                 />
                               </div>
+                              {/* Collegamento manuale a una previsione — solo modificando un consuntivo
+                                  esistente. Permette di correggere un accoppiamento sbagliato o mancante,
+                                  o toglierlo del tutto ("Nessuna"). Si applica ovunque nell'app perche'
+                                  tutto (colori, "incassata"/"parziale", Vista Cantiere) legge lo stesso
+                                  campo linkedForecastId. */}
+                              {formType === 'ACTUAL' && editingId && (() => {
+                                const candidatiPrevisione = (addingForecast.key === 'FINANCING' ? financingTransactions : addingForecast.key === 'INVESTMENT' ? investmentTransactions : operationalTransactions)
+                                  .filter(t => {
+                                    const tProj = t.project?.trim() || 'Generale';
+                                    const matchKey = (addingForecast.key === 'FINANCING' || addingForecast.key === 'INVESTMENT') ? true : tProj === addingForecast.key;
+                                    return matchKey && t.isForecast;
+                                  })
+                                  .sort((a, b) => (a.date < b.date ? -1 : 1));
+                                return (
+                                  <div>
+                                    <label className="block text-[9px] text-slate-600 font-semibold mb-0.5">Collegata a previsione</label>
+                                    <select
+                                      value={newForecastLinkedId}
+                                      onChange={(e) => setNewForecastLinkedId(e.target.value)}
+                                      className="w-full p-1 text-[10px] rounded border border-slate-300 focus:border-slate-500 outline-none bg-white"
+                                    >
+                                      <option value="">— Nessuna (non prevista) —</option>
+                                      {candidatiPrevisione.map(p => (
+                                        <option key={p.id} value={p.id}>
+                                          {DATE_FORMATTER.format(parseUTCDate(p.date))} — {p.description} ({CURRENCY_FORMATTER.format(getGrossAmount(p))})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                );
+                              })()}
                               {addingForecast.key === 'INVESTMENT' && !editingId ? (
                                 <div className="space-y-1.5">
                                   <div className="flex gap-2">

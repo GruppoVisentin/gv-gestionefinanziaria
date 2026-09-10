@@ -52,14 +52,38 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
     const entratePrevisione = righeCantiere.filter(t => t.type === TransactionType.INCOME && t.isForecast && !idPrevisioniChiuse.has(t.id));
     const uscitePrevisione = righeCantiere.filter(t => t.type === TransactionType.EXPENSE && t.isForecast && !idPrevisioniChiuse.has(t.id));
 
-    const somma = (arr: Transaction[]) => arr.reduce((s, t) => s + (t.grossAmount ?? t.amount ?? 0), 0);
+    // Lordo = IVA inclusa (grossAmount), netto = imponibile (amount).
+    const sommaLorda = (arr: Transaction[]) => arr.reduce((s, t) => s + (t.grossAmount ?? t.amount ?? 0), 0);
+    const sommaNetta = (arr: Transaction[]) => arr.reduce((s, t) => s + (t.amount ?? 0), 0);
+
+    const totEntrateConsuntivo = sommaLorda(entrateConsuntivo);
+    const totUsciteConsuntivo = sommaLorda(usciteConsuntivo);
+    const totEntratePrevisione = sommaLorda(entratePrevisione);
+    const totUscitePrevisione = sommaLorda(uscitePrevisione);
+
+    const nettoEntrateConsuntivo = sommaNetta(entrateConsuntivo);
+    const nettoUsciteConsuntivo = sommaNetta(usciteConsuntivo);
+    const nettoEntratePrevisione = sommaNetta(entratePrevisione);
+    const nettoUscitePrevisione = sommaNetta(uscitePrevisione);
 
     return {
-      entrateConsuntivo: somma(entrateConsuntivo),
-      usciteConsuntivo: somma(usciteConsuntivo),
-      margineConsuntivo: somma(entrateConsuntivo) - somma(usciteConsuntivo),
-      entratePrevisione: somma(entratePrevisione),
-      uscitePrevisione: somma(uscitePrevisione),
+      entrateConsuntivo: totEntrateConsuntivo,
+      usciteConsuntivo: totUsciteConsuntivo,
+      margineConsuntivo: totEntrateConsuntivo - totUsciteConsuntivo,
+      entratePrevisione: totEntratePrevisione,
+      uscitePrevisione: totUscitePrevisione,
+      // Margine previsto a fine cantiere: quello gia' realizzato + tutto cio' che manca ancora
+      // (previsioni non ancora chiuse), sia entrate che uscite.
+      margineFinaleProiettato: (totEntrateConsuntivo + totEntratePrevisione) - (totUsciteConsuntivo + totUscitePrevisione),
+      // Stesse cifre calcolate sul netto (imponibile, senza IVA) — l'IVA non e' un vero costo/
+      // ricavo del cantiere, e' un debito/credito verso l'erario, quindi il margine "vero" e'
+      // spesso letto sul netto.
+      nettoEntrateConsuntivo,
+      nettoUsciteConsuntivo,
+      nettoMargineConsuntivo: nettoEntrateConsuntivo - nettoUsciteConsuntivo,
+      nettoEntratePrevisione,
+      nettoUscitePrevisione,
+      nettoMargineFinaleProiettato: (nettoEntrateConsuntivo + nettoEntratePrevisione) - (nettoUsciteConsuntivo + nettoUscitePrevisione),
       numRighe: righeCantiere.length,
     };
   }, [righeCantiere]);
@@ -128,6 +152,7 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
             <span className="text-[11px] font-black uppercase tracking-wider">Entrate consuntivo</span>
           </div>
           <p className="text-2xl font-black text-slate-900">{formatEuro(stats.entrateConsuntivo)}</p>
+          <p className="text-xs font-semibold text-slate-400 mt-0.5">netto {formatEuro(stats.nettoEntrateConsuntivo)}</p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center gap-2 text-rose-600 mb-2">
@@ -135,6 +160,7 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
             <span className="text-[11px] font-black uppercase tracking-wider">Uscite consuntivo</span>
           </div>
           <p className="text-2xl font-black text-slate-900">{formatEuro(stats.usciteConsuntivo)}</p>
+          <p className="text-xs font-semibold text-slate-400 mt-0.5">netto {formatEuro(stats.nettoUsciteConsuntivo)}</p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center gap-2 text-indigo-600 mb-2">
@@ -144,14 +170,29 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
           <p className={`text-2xl font-black ${stats.margineConsuntivo >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
             {formatEuro(stats.margineConsuntivo)}
           </p>
+          <p className={`text-xs font-semibold mt-0.5 ${stats.nettoMargineConsuntivo >= 0 ? 'text-slate-400' : 'text-rose-400'}`}>
+            netto {formatEuro(stats.nettoMargineConsuntivo)}
+          </p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center gap-2 text-slate-500 mb-2">
             <CalendarClock size={18} />
             <span className="text-[11px] font-black uppercase tracking-wider">Previsione residua</span>
           </div>
-          <p className="text-sm font-bold text-emerald-600">+ {formatEuro(stats.entratePrevisione)}</p>
-          <p className="text-sm font-bold text-rose-500">- {formatEuro(stats.uscitePrevisione)}</p>
+          <p className="text-sm font-bold text-emerald-600">
+            + {formatEuro(stats.entratePrevisione)}
+            <span className="text-slate-400 font-semibold"> (netto {formatEuro(stats.nettoEntratePrevisione)})</span>
+          </p>
+          <p className="text-sm font-bold text-rose-500">
+            - {formatEuro(stats.uscitePrevisione)}
+            <span className="text-slate-400 font-semibold"> (netto {formatEuro(stats.nettoUscitePrevisione)})</span>
+          </p>
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Margine previsto (netto)</p>
+            <p className={`text-sm font-black ${stats.nettoMargineFinaleProiettato >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+              {formatEuro(stats.nettoMargineFinaleProiettato)}
+            </p>
+          </div>
         </div>
       </div>
 
