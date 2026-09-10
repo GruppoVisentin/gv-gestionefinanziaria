@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   HardHat, TrendingUp, TrendingDown, Scale, ChevronDown,
-  CalendarClock, Link2, Database,
+  CalendarClock, Link2, Database, AlertTriangle,
 } from 'lucide-react';
 import { Project, Transaction, TransactionType } from '../types';
 import { CURRENCY_FORMATTER, DATE_FORMATTER } from '../constants';
@@ -58,8 +58,19 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
     const idPrevisioniChiuse = new Set(
       righeCantiere.filter(t => !t.isForecast && t.linkedForecastId).map(t => t.linkedForecastId)
     );
-    const entratePrevisione = righeCantiere.filter(t => t.type === TransactionType.INCOME && t.isForecast && !idPrevisioniChiuse.has(t.id));
-    const uscitePrevisione = righeCantiere.filter(t => t.type === TransactionType.EXPENSE && t.isForecast && !idPrevisioniChiuse.has(t.id));
+    // "Previsione residua" ha senso solo per i cantieri collegati a PuntaNet: le righe isForecast
+    // di storicoCantierePuntaNet sono vere Documenti/Scadenze registrate ma non ancora pagate.
+    // Quando il progetto NON e' collegato a PuntaNet, righeCantiere ricade su "transactions" (il
+    // piano Timeline), dove isForecast significa tutt'altro (previsione pianificata, mai
+    // registrata su PuntaNet) — mescolarla qui la farebbe passare per un dato PuntaNet reale.
+    // In quel caso il residuo PuntaNet resta vuoto: quelle righe sono gia' coperte dalla card
+    // "Stima incassi a chiudere" qui sotto, che le legge direttamente dal piano Timeline.
+    const entratePrevisione = usaStoricoPuntaNet
+      ? righeCantiere.filter(t => t.type === TransactionType.INCOME && t.isForecast && !idPrevisioniChiuse.has(t.id))
+      : [];
+    const uscitePrevisione = usaStoricoPuntaNet
+      ? righeCantiere.filter(t => t.type === TransactionType.EXPENSE && t.isForecast && !idPrevisioniChiuse.has(t.id))
+      : [];
 
     // Lordo = IVA inclusa (grossAmount), netto = imponibile (amount).
     const sommaLorda = (arr: Transaction[]) => arr.reduce((s, t) => s + (t.grossAmount ?? t.amount ?? 0), 0);
@@ -122,7 +133,7 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       numRigheStima: stimaIncassiDaChiudere.length,
       numRighe: righeCantiere.length,
     };
-  }, [righeCantiere, transactions, storicoCantierePuntaNet, selezionato]);
+  }, [righeCantiere, transactions, storicoCantierePuntaNet, selezionato, usaStoricoPuntaNet]);
 
   if (progettiAttivi.length === 0) {
     return (
@@ -223,7 +234,11 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
             - {formatEuro(stats.uscitePrevisione)}
             <span className="text-slate-400 font-semibold"> (netto {formatEuro(stats.nettoUscitePrevisione)})</span>
           </p>
-          <p className="text-[10px] text-slate-400 mt-2 leading-snug">Fatture/rate gia' registrate su PuntaNet, non ancora incassate/pagate.</p>
+          <p className="text-[10px] text-slate-400 mt-2 leading-snug">
+            {usaStoricoPuntaNet
+              ? "Fatture/rate gia' registrate su PuntaNet, non ancora incassate/pagate."
+              : "Cantiere non collegato a PuntaNet: nessun dato residuo verificato disponibile. Vedi \"Stima incassi a chiudere\" per il piano Timeline."}
+          </p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center gap-2 text-violet-600 mb-2">
@@ -247,9 +262,12 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
         </div>
       </div>
 
-      <p className="text-xs text-slate-400 italic px-1">
-        Nota: questi margini non includono il costo della manodopera interna (operai dipendenti) impiegata sul cantiere — va aggiunto a parte per avere il margine reale.
-      </p>
+      <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3">
+        <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+        <p className="text-xs font-semibold text-amber-800">
+          Attenzione: questi margini <span className="underline">non</span> includono il costo della manodopera interna (operai dipendenti) impiegata sul cantiere — va aggiunto a parte per avere il margine reale.
+        </p>
+      </div>
 
       {/* ── Elenco movimenti — solo storico reale (consuntivo), il previsionale resta nel
           riepilogo qui sopra ── */}
