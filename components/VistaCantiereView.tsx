@@ -96,6 +96,13 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
     );
     const nettoStimaIncassiDaChiudere = sommaNetta(stimaIncassiDaChiudere);
 
+    // Margine netto stimato dopo questo ipotetico incasso: quanto gia' realizzato + tutto cio'
+    // che e' gia' noto (fatture PuntaNet non ancora incassate/pagate) + la stima sopra — tutto sul
+    // netto, coerente col resto della vista.
+    const nettoMargineStimato =
+      (nettoEntrateConsuntivo + nettoEntratePrevisione + nettoStimaIncassiDaChiudere) -
+      (nettoUsciteConsuntivo + nettoUscitePrevisione);
+
     return {
       entrateConsuntivo: totEntrateConsuntivo,
       usciteConsuntivo: totUsciteConsuntivo,
@@ -111,6 +118,7 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       nettoEntratePrevisione,
       nettoUscitePrevisione,
       nettoStimaIncassiDaChiudere,
+      nettoMargineStimato,
       numRigheStima: stimaIncassiDaChiudere.length,
       numRighe: righeCantiere.length,
     };
@@ -229,6 +237,13 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
           <p className="text-[10px] text-slate-400 mt-2 leading-snug">
             Previsioni sul piano Timeline ({stats.numRigheStima}) non ancora incassate e non gia' registrate su PuntaNet — cio' che manca ancora oltre a quanto sopra.
           </p>
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Margine netto stimato</p>
+            <p className={`text-sm font-black ${stats.nettoMargineStimato >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+              {formatEuro(stats.nettoMargineStimato)}
+            </p>
+            <p className="text-[9px] text-slate-400 mt-0.5 leading-snug">Realizzato + fatture PuntaNet aperte + questa stima, entrate meno uscite.</p>
+          </div>
         </div>
       </div>
 
