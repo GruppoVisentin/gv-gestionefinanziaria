@@ -75,6 +75,27 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
     const nettoEntratePrevisione = sommaNetta(entratePrevisione);
     const nettoUscitePrevisione = sommaNetta(uscitePrevisione);
 
+    // Stima incassi a chiudere: righe previsionali della Timeline (flusso di cassa, inserite a
+    // mano/da Excel) per questo progetto che NON sono ancora chiuse da un consuntivo reale (ne'
+    // su PuntaNet ne' altrove) E NON sono gia' contate nel riquadro "Previsione residua" qui
+    // sopra (stesso progetto+importo, per non contare due volte la stessa fattura vista da due
+    // fonti diverse). Si filtrano le RIGHE una per una — nessuna somma di aggregati di periodi
+    // diversi, quindi nessun rischio di confrontare un piano annuale con uno storico pluriennale.
+    const idPrevisioniChiuseOvunque = new Set([
+      ...storicoCantierePuntaNet.filter(t => !t.isForecast && t.linkedForecastId).map(t => t.linkedForecastId),
+      ...transactions.filter(t => !t.isForecast && t.linkedForecastId).map(t => t.linkedForecastId),
+    ]);
+    const importiGiaInResiduali = new Set(entratePrevisione.map(t => Math.round((t.amount ?? 0) * 100)));
+
+    const timelinePrevisioneEntrate = transactions.filter(t =>
+      t.project === selezionato && t.type === TransactionType.INCOME && t.isForecast === true
+    );
+    const stimaIncassiDaChiudere = timelinePrevisioneEntrate.filter(t =>
+      !idPrevisioniChiuseOvunque.has(t.id) &&
+      !importiGiaInResiduali.has(Math.round((t.amount ?? 0) * 100))
+    );
+    const nettoStimaIncassiDaChiudere = sommaNetta(stimaIncassiDaChiudere);
+
     return {
       entrateConsuntivo: totEntrateConsuntivo,
       usciteConsuntivo: totUsciteConsuntivo,
@@ -89,9 +110,11 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       nettoMargineConsuntivo: nettoEntrateConsuntivo - nettoUsciteConsuntivo,
       nettoEntratePrevisione,
       nettoUscitePrevisione,
+      nettoStimaIncassiDaChiudere,
+      numRigheStima: stimaIncassiDaChiudere.length,
       numRighe: righeCantiere.length,
     };
-  }, [righeCantiere]);
+  }, [righeCantiere, transactions, storicoCantierePuntaNet, selezionato]);
 
   if (progettiAttivi.length === 0) {
     return (
@@ -150,7 +173,7 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       )}
 
       {/* ── Riepilogo ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center gap-2 text-emerald-600 mb-2">
             <TrendingUp size={18} />
@@ -193,6 +216,19 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
             <span className="text-slate-400 font-semibold"> (netto {formatEuro(stats.nettoUscitePrevisione)})</span>
           </p>
           <p className="text-[10px] text-slate-400 mt-2 leading-snug">Fatture/rate gia' registrate su PuntaNet, non ancora incassate/pagate.</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div className="flex items-center gap-2 text-violet-600 mb-2">
+            <HardHat size={18} />
+            <span className="text-[11px] font-black uppercase tracking-wider">Stima incassi a chiudere</span>
+          </div>
+          <p className="text-lg font-black text-violet-700">
+            + {formatEuro(stats.nettoStimaIncassiDaChiudere)}
+            <span className="text-slate-400 font-semibold text-xs"> (netto)</span>
+          </p>
+          <p className="text-[10px] text-slate-400 mt-2 leading-snug">
+            Previsioni sul piano Timeline ({stats.numRigheStima}) non ancora incassate e non gia' registrate su PuntaNet — cio' che manca ancora oltre a quanto sopra.
+          </p>
         </div>
       </div>
 
