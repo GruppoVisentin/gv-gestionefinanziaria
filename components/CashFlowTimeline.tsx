@@ -652,8 +652,16 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
     t.loanDetails
   );
 
+  // Il "Consuntivo" deve riflettere la situazione attuale, non una proiezione a fine anno:
+  // la quota capitale va sommata solo per i mesi gia' trascorsi (fino a oggi), non per l'intero
+  // anno fiscale — altrimenti mostrerebbe rate di Nov/Dic non ancora pagate.
+  const oggi = new Date();
+  const meseUltimoTrascorso = currentYear < oggi.getUTCFullYear() ? 11
+    : currentYear > oggi.getUTCFullYear() ? -1
+    : oggi.getUTCMonth();
+
   let actualTotalPrincipalRepaid = 0;
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i <= meseUltimoTrascorso; i++) {
     loanTransactionsActual.forEach(loan => {
       const comps = calculateLoanComponents(loan.amount, loan.loanDetails!, i);
       actualTotalPrincipalRepaid += comps.principal;
@@ -668,7 +676,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         });
     }
   }
-  
+
   const actualRemainingDebt = Math.max(0, totalLoanDebtStart + newLoansAmountActual - actualTotalPrincipalRepaid);
   const actualOwnFunds = actualFinalBalance - actualRemainingDebt;
 
