@@ -443,7 +443,9 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
         }
 
         // Se non arricchito o manca categoria, usa classificazione automatica
-        const auto = classificaRiga(mov, regoleSalvate);
+        // (passa il cantiere gia' abbinato: serve a smistare le utenze "doppio uso"
+        // come Duferco/Enel Energia/ATS tra sede fissa e cantiere variabile)
+        const auto = classificaRiga(mov, regoleSalvate, cantiereSuggerito);
         if (!categoria) {
           categoria = auto.categoria;
           ceType = auto.ceType;

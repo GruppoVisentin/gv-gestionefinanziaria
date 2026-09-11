@@ -182,6 +182,13 @@ for (const r of righeCantiere) {
   } else {
     const tipologia = dominante(tipologiaPerDoc, r.IDDocumento);
     if (tipologia) { categoria = mappaTipologiaACategoriaApp(tipologia, 'FEP'); ceType = categoria ? (CATEGORY_TO_CE_TYPE[categoria] ?? 'costo_variabile') : null; }
+    // Ogni riga qui e' gia' filtrata su un cantiere reale (WHERE dic.IDCantiere IN (idList) piu'
+    // sopra) — quindi un'utenza (Duferco, Enel Energia, ecc.) mappata di default su "Utenze Sedi"
+    // (fisso, pensato per la sede) e' sempre sbagliata in questo contesto: va sempre sul cantiere.
+    if (categoria === '[STRUTTURA] Utenze Sedi') {
+      categoria = '[CANTIERE] Utenze Cantiere';
+      ceType = 'costo_variabile';
+    }
   }
 
   const vatRate = calcolaVatRate(r.Imponibile, r.Imposte);

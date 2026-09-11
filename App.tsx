@@ -217,7 +217,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps & { handleLoadFromPastedText: (
                 <div>
                   <h3 className="font-black text-slate-900 text-lg leading-tight">File trovato</h3>
                   <p className="text-sm text-slate-600 mt-1">
-                    È stato rilevato il file <span className="font-bold text-slate-900">gv-cashflow.txt</span> dall'ultima sessione.
+                    È stato rilevato il file <span className="font-bold text-slate-900">{pendingHandleFromIDB.name}</span> dall'ultima sessione.
                   </p>
                 </div>
               </div>
@@ -2567,11 +2567,31 @@ const App: React.FC = () => {
             <AlertCircle size={16} />
             <span>Modalità demo — i dati non vengono salvati automaticamente</span>
           </div>
-          <button 
+          <button
             onClick={() => setAppState('welcome')}
             className="bg-white text-slate-900 px-3 py-1 rounded-full text-xs hover:bg-slate-50 transition-colors"
           >
             Collega file
+          </button>
+        </div>
+      )}
+
+      {/* Avviso import PuntaNet in sospeso — un import lasciato a meta', con righe ancora
+          da classificare, resta salvato in bozzaImportPuntaNet. Senza questo banner l'unico
+          modo per accorgersene era riaprire manualmente la schermata di import. */}
+      {bozzaImportPuntaNet.length > 0 && (
+        <div className="bg-amber-500 text-white px-4 py-2 flex items-center justify-between text-sm font-bold z-[70]">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} />
+            <span>
+              {bozzaImportPuntaNet.length} {bozzaImportPuntaNet.length === 1 ? 'movimento PuntaNet' : 'movimenti PuntaNet'} in sospeso, da classificare
+            </span>
+          </div>
+          <button
+            onClick={() => setShowImportPuntaNet(true)}
+            className="bg-white text-amber-700 px-3 py-1 rounded-full text-xs hover:bg-amber-50 transition-colors"
+          >
+            Completa import
           </button>
         </div>
       )}

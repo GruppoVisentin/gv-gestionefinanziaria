@@ -870,13 +870,29 @@ export const isDuplicato = (
 export const estraiEntity = (descr: string): string => {
   let m = descr.match(/(?:Pagamento|Incasso)\s+(?:FEP|NEP)\s+n\.\s+[\w/]+\s+-\s+(.+?)\s+-\s+/i);
   if (m) return m[1].trim();
+  // Fallback: stessa forma "Pagamento/Incasso FEP/NEP n. X - FORNITORE" ma senza un secondo trattino
+  // finale (manca il "- (Prot.: ...)") — senza questo fallback l'intera riga (incluso il numero
+  // fattura) diventava l'entity, rendendo ogni regola salvata valida solo per quella singola fattura
+  // invece che per il fornitore in generale.
+  m = descr.match(/(?:Pagamento|Incasso)\s+(?:FEP|NEP)\s+n\.\s+[\w/]+\s+-\s+(.+)$/i);
+  if (m) return m[1].trim();
   m = descr.match(/RIF\.TO\s+(.+?)\s+-\s+/i);
+  if (m) return m[1].trim();
+  // Fallback: "... RIF.TO NOME" senza trattino finale (es. "SALDO STIPENDIO MESE DI ... -
+  // RIF.TO MARTIGNAGO ILARIA") — senza questo, il catch-all sotto tronca l'intera riga a 60
+  // caratteri e il nome, che sta proprio in fondo, viene tagliato a meta' (perdendo l'ultima
+  // lettera): la regola/il pattern per quella persona non combacia mai piu'.
+  m = descr.match(/RIF\.TO\s+(.+)$/i);
   if (m) return m[1].trim();
   m = descr.match(/^.+?\s+-\s+(.+?)\s+-\s+Home banking/i);
   if (m) return m[1].trim();
   m = descr.match(/-\s+(.+?)\s+-\s+Bonifico/i);
   if (m) return m[1].trim();
-  return descr.slice(0, 60);
+  // Catch-all: nessuno schema noto riconosciuto. 60 caratteri erano troppo pochi — descrizioni
+  // come "SALDO STIP. MESE DI GIUGNO + QUATTORDICESIMA MENSILITA' MARTIGNAGO ILARIA" (74+
+  // caratteri, col nome proprio in fondo) venivano tagliate a meta' nome, facendo fallire ogni
+  // corrispondenza per quella persona/fornitore. 160 copre la quasi totalita' delle righe reali.
+  return descr.slice(0, 160);
 };
 
 // ─── MAPPA TIPOLOGIA → CATEGORIA ─────────────────────────────────
@@ -941,7 +957,8 @@ const matchesPattern = (text: string, pattern: string): boolean => {
 
 export const classificaRiga = (
   riga: PuntaNetRiga,
-  regoleSalvate: RegolaMapping[]
+  regoleSalvate: RegolaMapping[],
+  cantiereSuggerito?: string | null
 ): {
   categoria: string | null;
   ceType: string | null;
@@ -970,8 +987,8 @@ export const classificaRiga = (
 
   // Riconoscimento automatico spese e commissioni bancarie / bolli / interessi
   if (
-    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(descLower) ||
-    /spese bonifico|spese per bonifico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(entLower)
+    /spese bonifico|spese per bonifico|spese per bonigfico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|spese per incasso|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(descLower) ||
+    /spese bonifico|spese per bonifico|spese per bonigfico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|spese per incasso|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(entLower)
   ) {
     const isInteressi = /interessi/i.test(descLower) || /interessi/i.test(entLower);
     const categoria = isInteressi 
@@ -1098,7 +1115,11 @@ export const classificaRiga = (
   }
 
   // Automazione Assicurazioni e Polizze (Mezzi vs Cantieri vs Generali)
-  if (/unipol|generali|zurich|polizza|assicur/i.test(descLower) || /unipol|generali|zurich|polizza|assicur/i.test(entLower)) {
+  // "Unipol Move" e' un servizio di noleggio/mobilita' flotta, non una polizza — va escluso
+  // esplicitamente, altrimenti la sola parola "unipol" lo fa scambiare per un'assicurazione
+  // (mappato correttamente su Noleggi piu' sotto, in REGOLE_BUILTIN).
+  const isUnipolMove = /unipol\s*move/i.test(descLower) || /unipol\s*move/i.test(entLower);
+  if (!isUnipolMove && (/unipol|generali|zurich|polizza|assicur/i.test(descLower) || /unipol|generali|zurich|polizza|assicur/i.test(entLower))) {
     const isMezzi = /escavatore|terna|furgone|camion|daily|mercedes|jeep|veicolo|mezzi|mezzo|auto|tg/i.test(descLower) || /escavatore|terna|furgone|camion|daily|mercedes|jeep|veicolo|mezzi|mezzo|auto|tg/i.test(entLower);
     const isCantiere = /cantiere|cantieri|postuma|decennale|car/i.test(descLower) || /cantiere|cantieri|postuma|decennale|car/i.test(entLower);
     let categoria = '[COMPLIANCE] Assicurazioni Generali';
@@ -1116,6 +1137,23 @@ export const classificaRiga = (
       matchKey: 'automazione assicurazioni',
       vatRateSuggerito: 0,
       vatRateNota: 'Polizza assicurativa — esente IVA art.10'
+    };
+  }
+
+  // Automazione Utenze "doppio uso" (Duferco, Enel Energia, ATS...): questi fornitori fatturano
+  // sia utenze di sede/ufficio (fisso) sia allacci/consumi di un cantiere specifico (variabile) —
+  // l'operatore oggi li smista a mano guardando a quale cantiere PuntaNet è attribuita la fattura.
+  // Qui usiamo lo stesso segnale: se al movimento è già stato abbinato un cantiere reale
+  // (cantiereSuggerito), la spesa è di quel cantiere; altrimenti resta un'utenza di sede.
+  if (/duferco|enel energia|\bats\b/i.test(descLower) || /duferco|enel energia|\bats\b/i.test(entLower)) {
+    const isCantiere = !!cantiereSuggerito;
+    return {
+      categoria: isCantiere ? '[CANTIERE] Utenze Cantiere' : '[STRUTTURA] Utenze Sedi',
+      ceType: isCantiere ? 'costo_variabile' : 'costo_fisso',
+      confidenza: isCantiere ? 'alta' : 'media',
+      matchKey: 'automazione utenze doppio uso',
+      vatRateSuggerito: 22,
+      vatRateNota: 'Utenza — aliquota 22%'
     };
   }
 
@@ -1441,11 +1479,11 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "PUBBLIELLE", categoria: "[MARKETING] Pubblicità e Marketing", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "GIFT CAMPAIGN", categoria: "[MARKETING] Pubblicità e Marketing", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "ELIOCARTOTECNICA", categoria: "[MARKETING] Pubblicità e Marketing", ceType: "costo_fisso", confidenza: "alta" },
-  { pattern: "ENEL ENERGIA", categoria: "[STRUTTURA] Utenze Sedi", ceType: "costo_fisso", confidenza: "alta" },
+  // ENEL ENERGIA e DUFERCO: gestiti dall'automazione "utenze doppio uso" piu' sopra
+  // (sede fissa vs cantiere variabile in base al cantiere abbinato), non piu' qui.
   { pattern: "API RETI GAS", categoria: "[STRUTTURA] Utenze Sedi", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "A2A ENERGIA", categoria: "[STRUTTURA] Utenze Sedi", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "TIM SPA", categoria: "[STRUTTURA] Utenze Sedi", ceType: "costo_fisso", confidenza: "alta" },
-  { pattern: "DUFERCO", categoria: "[STRUTTURA] Utenze Sedi", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "TEAM UFFICIO", categoria: "[STRUTTURA] Cancelleria e Materiali Ufficio", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "FELKART", categoria: "[STRUTTURA] Cancelleria e Materiali Ufficio", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "BS SISTEMI", categoria: "[STRUTTURA] Software e Abbonamenti", ceType: "costo_fisso", confidenza: "alta" },
@@ -1475,10 +1513,9 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "IKON SRLS", categoria: "[COMPLIANCE] Corsi Dipendenti", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "GESTIONE AMBIENTI", categoria: "[COMPLIANCE] Corsi Dipendenti", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "LABORMEDICA", categoria: "[COMPLIANCE] Visite Mediche Dipendenti", ceType: "costo_fisso", confidenza: "alta" },
-  { pattern: "VISENTIN ANDREA", categoria: "[PERSONALE] Stipendi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
-  { pattern: "BELLINI SIMONE", categoria: "[PERSONALE] Stipendi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
-  { pattern: "TRONCON NICOLA", categoria: "[PERSONALE] Stipendi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
-  { pattern: "MARTIGNAGO ILARIA", categoria: "[PERSONALE] Stipendi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
+  // Visentin Andrea / Bellini Simone / Troncon Nicola / Martignago Ilaria: rimossi da qui
+  // (erano duplicati con ceType "costo_fisso" sbagliato — la voce corretta e' piu' sotto,
+  // insieme agli altri stipendi ufficio/operativi, con ceType "costo_studio").
   { pattern: "EDILCASSA VENETO", categoria: "[PERSONALE] Contributi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "CNA", categoria: "[PERSONALE] Contributi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
   { pattern: "COIM", categoria: "[PERSONALE] Contributi Dipendenti Ufficio", ceType: "costo_fisso", confidenza: "alta" },
@@ -1493,7 +1530,7 @@ const REGOLE_BUILTIN: Array<{
   { pattern: "SERVICE PONTEGGI", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "SERVIZIO ECOLOGICI SU WC", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "IDEAL SERVICE", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
-  { pattern: "VELLO", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
+  { pattern: "VELLO", categoria: "[CANTIERE] Rifiuti e Macerie", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "SFEDIL", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "UNIPOL MOVE", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },
   { pattern: "TREVISO MACCHINE", categoria: "[CANTIERE] Noleggi Attrezzature e Mezzi", ceType: "costo_variabile", confidenza: "alta" },

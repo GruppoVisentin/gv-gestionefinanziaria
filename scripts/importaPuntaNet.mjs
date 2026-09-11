@@ -172,6 +172,14 @@ for (const mv of movimenti) {
       const tipologia = dominante(tipologiaPerDoc, mv.IDDocumento);
       if (tipologia) { categoria = mappaTipologiaACategoriaApp(tipologia, 'FEP'); ceType = categoria ? (CATEGORY_TO_CE_TYPE[categoria] ?? 'costo_variabile') : null; }
       cantiereApp = cantiereUPerDocLookup(mv.IDDocumento);
+      // Utenze "doppio uso" (Duferco, Enel Energia, ecc.): se il documento e' attribuito a un
+      // cantiere reale (non Costi Generali/Magazzino/nessuna attribuzione), la spesa e' di quel
+      // cantiere (variabile), non della sede (fisso) — a differenza di storicoCantieriPuntaNet.mjs
+      // qui il dataset non e' pre-filtrato su cantieri collegati, quindi va controllato caso per caso.
+      if (categoria === '[STRUTTURA] Utenze Sedi' && cantiereApp) {
+        categoria = '[CANTIERE] Utenze Cantiere';
+        ceType = 'costo_variabile';
+      }
     }
     if (header) vatRate = calcolaVatRate(header.Imponibile, header.Imposte);
   }
@@ -181,7 +189,7 @@ for (const mv of movimenti) {
     const descrizioneBanca = `${mv.Descrizione} - ${mv.TipoMovimento}`;
     const entity = estraiEntity(descrizioneBanca);
     const riga = { data: new Date(mv.Data), descrizione: descrizioneBanca, entity, importo, tipo, flagConto: 'B', tipoMovimento: /FEP|FEA|NEP/i.test(mv.Descrizione) ? mv.Descrizione.match(/FEP|FEA|NEP/i)[0].toUpperCase() : 'ALTRO' };
-    const cls = classificaRiga(riga, regolePuntaNet);
+    const cls = classificaRiga(riga, regolePuntaNet, cantiereApp);
     if (cls.categoria) { categoria = cls.categoria; ceType = cls.ceType; if (vatRate == null) vatRate = cls.vatRateSuggerito; }
   }
 
@@ -260,10 +268,15 @@ for (const s of scadenzeAperte) {
     const tipologia = dominante(tipologiaPerDoc, s.IDDocumento);
     if (tipologia) { categoria = mappaTipologiaACategoriaApp(tipologia, 'FEP'); ceType = categoria ? (CATEGORY_TO_CE_TYPE[categoria] ?? 'costo_variabile') : null; }
     cantiereApp = cantiereUPerDocLookup(s.IDDocumento);
+    // Utenze "doppio uso" (Duferco, Enel Energia, ecc.): vedi nota identica piu' sopra.
+    if (categoria === '[STRUTTURA] Utenze Sedi' && cantiereApp) {
+      categoria = '[CANTIERE] Utenze Cantiere';
+      ceType = 'costo_variabile';
+    }
   }
   if (!categoria && s.Controparte) {
     const riga = { data: new Date(s.DataRata), descrizione: s.Controparte, entity: s.Controparte, importo: s.ImportoRata, tipo, flagConto: 'B', tipoMovimento: 'ALTRO' };
-    const cls = classificaRiga(riga, regolePuntaNet);
+    const cls = classificaRiga(riga, regolePuntaNet, cantiereApp);
     if (cls.categoria) { categoria = cls.categoria; ceType = cls.ceType; }
   }
 

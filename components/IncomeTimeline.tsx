@@ -1705,7 +1705,12 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
         </table>
       </div>
 
-      <HelpPanel 
+      <div className="px-6 py-3 border-t border-emerald-100 bg-emerald-50/50 flex items-center justify-end gap-2">
+        <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Media Mensile Entrate Previsionali</span>
+        <span className="text-sm font-mono font-bold text-emerald-800">{CURRENCY_FORMATTER.format(getGrandAnnualTotal(true) / 12)}</span>
+      </div>
+
+      <HelpPanel
         isOpen={showHelp}
         onClose={() => setShowHelp(false)}
         currentView={AppView.TIMELINE}

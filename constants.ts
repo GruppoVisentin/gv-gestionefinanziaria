@@ -108,6 +108,10 @@ export const VARIABLE_COST_CATEGORIES: string[] = [
   "[CANTIERE] Oneri Comunali, Abaco e Occupazioni",
   "[CANTIERE] Rifiuti e Macerie",
   "[CANTIERE] Pranzi e Trasferte Cantiere",           // era: PRANZI
+  // Utenze (energia/gas/acqua) allacciate a un cantiere specifico — a differenza
+  // di "[STRUTTURA] Utenze Sedi" (fisso, sede/ufficio), qui il costo varia con
+  // l'attività del cantiere e va imputato a quella commessa.
+  "[CANTIERE] Utenze Cantiere",
 
   // ─── RIPARAZIONI URGENTI ──────────────────────────────────────
   // Le riparazioni urgenti/impreviste variano con l'attività
@@ -216,6 +220,7 @@ export const CATEGORY_TO_CE_TYPE: Record<string, CEType> = {
   "[CANTIERE] Oneri Comunali, Abaco e Occupazioni":    'costo_variabile',
   "[CANTIERE] Rifiuti e Macerie":                      'costo_variabile',
   "[CANTIERE] Pranzi e Trasferte Cantiere":            'costo_variabile',
+  "[CANTIERE] Utenze Cantiere":                        'costo_variabile',
   "[MEZZI] Riparazioni Macchinari Urgenti":            'costo_variabile',
   "[CANTIERE] Mediazione Agenzia":                     'costo_variabile',
 
@@ -376,7 +381,7 @@ export const SUPPLIER_PRESETS: Record<string, string[]> = {
   '[CANTIERE] Carburanti': ['Oil Italia'],
   '[CANTIERE] Noleggi Attrezzature e Mezzi': [
     'Gr box', 'Sebach', 'Tailorsan', 'Service Ponteggi', 'Servizio ecologici su wc',
-    'Ideal service', 'Vello', 'Sfedil', 'Unipol Move', 'Treviso Macchine'
+    'Ideal service', 'Sfedil', 'Unipol Move', 'Treviso Macchine'
   ],
   '[CANTIERE] Assicurazione Cantieri': [
     'Polizza CAR Condominio Solare - Godego', 'Polizza postuma Mihali Ioan', 'Polizza postuma Fruscalzo',
