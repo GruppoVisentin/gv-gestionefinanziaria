@@ -571,6 +571,10 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   // piano). I dati "reali" in `ce` sono già stati costruiti a monte da buildCEData con il set NON
   // inclusivo (solo saldi davvero incassati) e non vanno ricalcolati qui.
   const commesseCompletate = computeCommesseCompletate(transactions, projects, true);
+  // Serve anche il set NON inclusivo, per distinguere le commesse GIÀ completate per davvero (il loro
+  // rilascio cumulativo è già dentro `ce`, da buildCEData) da quelle che risultano completate SOLO
+  // grazie a un saldo pianificato (vedi step 3 di getForecastSum qui sotto).
+  const commesseCompletateReale = computeCommesseCompletate(transactions, projects, false);
   const sum12 = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
   const add12 = (a: number[], b: number[]) => a.map((v, i) => Number((v + b[i]).toFixed(2)));
   const sub12 = (a: number[], b: number[]) => a.map((v, i) => Number((v - b[i]).toFixed(2)));
@@ -694,6 +698,33 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
             }
           }
         }
+      });
+    }
+
+    // 3. Rilascio cumulativo PREVISIONALE: una commessa ad acconto che risulta completata SOLO grazie
+    // a un saldo pianificato (non ancora incassato — altrimenti sarebbe già in commesseCompletateReale
+    // e il suo rilascio sarebbe già dentro `ce`, da buildCEData) porta a ricavo, nella proiezione, anche
+    // tutti gli incassi REALI già in cassa su quella commessa — di quest'anno E di anni precedenti —
+    // non solo l'importo del saldo stesso. Altrimenti la proiezione mostrerebbe solo il saldo previsto
+    // e "dimenticherebbe" gli acconti già davvero incassati sulla stessa commessa (bug segnalato
+    // dall'utente 2026-09-11: la vista Proiezione non "sbloccava" gli acconti pregressi di Residence Hop
+    // pur avendo in timeline il saldo previsionale entro l'anno).
+    if (isCurrentYear && projects) {
+      projects.filter(p => p.metodoPagamento === 'acconto').forEach(p => {
+        const key = `${p.name}||${ce.anno}`;
+        if (!commesseCompletate.has(key) || commesseCompletateReale.has(key)) return;
+        const bucket = p.jobType === 'Immobiliare' ? 'ricavo_immobiliare' : 'ricavo_core';
+        if (!types.includes(bucket)) return;
+        const incassiNonAncoraRilasciati = transactions
+          .filter(tx =>
+            tx.type === 'INCOME' &&
+            !tx.isForecast &&
+            parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear() <= ce.anno &&
+            commessaDiIncasso(tx, projects)?.name === p.name &&
+            getDynamicCEType(tx, projects, commesseCompletateReale) === 'solo_cashflow'
+          )
+          .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+        sum += incassiNonAncoraRilasciati;
       });
     }
 
