@@ -48,7 +48,66 @@ export const commessaDiIncasso = (tx: Transaction, projects?: Project[]): Projec
   );
 };
 
-// Insieme delle commesse COMPLETATE (saldate) in un dato anno, come chiavi `${nomeCommessa}||${anno}`.
+const COMBINING_DIACRITICS = new RegExp('[̀-ͯ]', 'g');
+const normalizzaTesto = (s: string): string =>
+  s.toUpperCase()
+    .normalize('NFD').replace(COMBINING_DIACRITICS, '')
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const PAROLE_GENERICHE_INTESTATARIO = new Set(['SRL', 'SPA', 'SNC', 'SAS', 'SRLS', 'COOP', 'DITTA', 'SOCIETA', 'DEFINIRE', 'DA']);
+
+// Determina a quale INTESTATARIO di una commessa appartiene un incasso, quando la commessa ne ha
+// più di uno (es. Condominio Spin 2: il condominio + Fan Srl; Residence Hop: più acquirenti diversi
+// per unità). Necessario perché il criterio OIC 23 di "commessa completata" (vedi sotto) va applicato
+// per singolo intestatario quando possibile: il saldo di UN cliente non deve rilasciare a ricavo anche
+// gli acconti pregressi degli ALTRI clienti della stessa commessa, che possono avere una storia di
+// fatturazione completamente indipendente (bug segnalato dall'utente 2026-09-11 su Condominio Spin 2:
+// il saldo Fan Srl del 2026 rilasciava anche i ~550k del Condominio, già andati a fatturato 2025).
+// Ritorna l'id dell'intestatario SOLO se il match nel testo è univoco; altrimenti null (nessuna parola
+// distintiva trovata, o trovata su più di un intestatario — es. "coniugi" con cognomi diversi entrambi
+// citati) e il chiamante ricade sul comportamento "intera commessa", più prudente che un'attribuzione
+// indovinata male. Con un solo intestatario (il caso più comune) ritorna sempre null: nessun cambio di
+// comportamento per la maggioranza delle commesse, dove la distinzione non serve.
+export const matchIntestatario = (tx: Transaction, project?: Project): string | null => {
+  if (!project?.intestatari || project.intestatari.length <= 1) return null;
+  const desc = normalizzaTesto(tx.description || '');
+  if (!desc) return null;
+
+  // Il nome della commessa spesso apre la descrizione (es. "Condominio Spin 2 — fan srl saldo") e a
+  // volte condivide parole con uno degli intestatari stessi (qui: "Condominio Residence Spin"). Senza
+  // distinguere, quella riga risulterebbe candidata per ENTRAMBI gli intestatari — matcha "Fan Srl" per
+  // la parola "FAN", ma matcha ANCHE "Condominio Residence Spin" solo perché la descrizione contiene
+  // "Condominio"/"Spin", che sono anche nel nome della commessa. Un match su una parola distintiva (non
+  // condivisa col nome della commessa) è più affidabile di un match che dipende solo da quella
+  // sovrapposizione, e va preferito quando è l'unico.
+  const paroleCommessa = new Set(normalizzaTesto(project.name).split(' '));
+  const candidati = project.intestatari
+    .map(i => {
+      const paroleNome = normalizzaTesto(i.nome).split(' ').filter(p => p.length >= 3 && !PAROLE_GENERICHE_INTESTATARIO.has(p));
+      const paroleTrovate = paroleNome.filter(p => desc.includes(p));
+      const distintivo = paroleTrovate.some(p => !paroleCommessa.has(p));
+      return { id: i.id, match: paroleTrovate.length > 0, distintivo };
+    })
+    .filter(c => c.match);
+
+  if (candidati.length === 0) return null;
+  const distintivi = candidati.filter(c => c.distintivo);
+  if (distintivi.length === 1) return distintivi[0].id;
+  if (distintivi.length > 1) return null; // ambiguo tra più match distintivi
+  // Nessun match "distintivo": va bene un solo candidato rimasto (di norma coincide col nome commessa).
+  return candidati.length === 1 ? candidati[0].id : null;
+};
+
+// Chiave di raggruppamento per il tracciamento del completamento OIC 23: nome commessa + intestatario
+// (quando distinguibile) + anno. Usare SEMPRE questa funzione, mai comporre la stringa a mano, per
+// restare sincronizzati tra computeCommesseCompletate, getDynamicCEType e i due loop di rilascio
+// cumulativo (reale e previsionale).
+const chiaveCompletamento = (nomeCommessa: string, tx: Transaction, project: Project | undefined, anno: number): string =>
+  `${nomeCommessa}||${matchIntestatario(tx, project) ?? '*'}||${anno}`;
+
+// Insieme delle commesse COMPLETATE (saldate) in un dato anno, come chiavi `${nomeCommessa}||${intestatario}||${anno}`.
 // Criterio OIC 23 della "commessa completata": una commessa ad acconto è completata nell'anno in cui riceve
 // un SALDO (categoria "[CANTIERE] Saldo Finale Commessa" oppure la parola "saldo" nella descrizione).
 // Nell'anno di completamento TUTTI gli incassi della commessa (di quell'anno E degli anni precedenti)
@@ -69,10 +128,11 @@ export const computeCommesseCompletate = (transactions: Transaction[], projects?
     const isSaldo = tx.category === '[CANTIERE] Saldo Finale Commessa' ||
                     /\bsaldo\b/i.test(tx.description || '');
     if (!isSaldo) continue;
-    const nome = commessaDiIncasso(tx, projects)?.name || tx.project;
+    const project = commessaDiIncasso(tx, projects);
+    const nome = project?.name || tx.project;
     if (!nome) continue;
     const anno = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
-    set.add(`${nome}||${anno}`);
+    set.add(chiaveCompletamento(nome, tx, project, anno));
   }
   return set;
 };
@@ -99,7 +159,7 @@ export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesse
       //   consuntivo sia per la proiezione (i saldi previsionali sono inclusi nel set).
       if (proj.metodoPagamento === 'acconto' && tx.type === 'INCOME') {
         const anno = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
-        const completata = commesseCompletate?.has(`${proj.name}||${anno}`) ?? false;
+        const completata = commesseCompletate?.has(chiaveCompletamento(proj.name, tx, proj, anno)) ?? false;
         if (!completata) {
           return 'solo_cashflow';
         }
@@ -184,22 +244,28 @@ export const aggregateByMonthAndType = (
       if (soloPrevisionale ? !tx.isForecast : !!tx.isForecast) return;
       const isSaldo = tx.category === '[CANTIERE] Saldo Finale Commessa' || /\bsaldo\b/i.test(tx.description || '');
       if (!isSaldo) return;
-      const nome = commessaDiIncasso(tx, projects)?.name || tx.project;
+      const project = commessaDiIncasso(tx, projects);
+      const nome = project?.name || tx.project;
       if (!nome) return;
       const d = parseUTCDate(tx.invoiceDate || tx.date);
       if (d.getUTCFullYear() !== anno) return;
-      meseSaldo.set(nome, Math.max(meseSaldo.get(nome) ?? 0, d.getUTCMonth()));
+      const chiave = chiaveCompletamento(nome, tx, project, anno);
+      meseSaldo.set(chiave, Math.max(meseSaldo.get(chiave) ?? 0, d.getUTCMonth()));
     });
     transactions.forEach(tx => {
       if (tx.type !== 'INCOME') return;
       if (tx.isForecast) return; // gli incassi di anni precedenti rilasciati sono sempre quelli reali
       const proj = commessaDiIncasso(tx, projects);
       if (!proj || proj.metodoPagamento !== 'acconto') return;
-      if (!commesseCompletate.has(`${proj.name}||${anno}`)) return;
+      // Chiave dell'INCASSO da rilasciare (non del saldo): stesso intestatario, stesso criterio di
+      // matchIntestatario applicato coerentemente su ogni singola transazione — così un saldo di UN
+      // cliente rilascia solo gli acconti pregressi dello STESSO cliente, non dell'intera commessa.
+      const chiave = chiaveCompletamento(proj.name, tx, proj, anno);
+      if (!commesseCompletate.has(chiave)) return;
       const y = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
       if (y >= anno) return; // solo anni PRECEDENTI: l'anno corrente è già a ricavo
       const bucket = proj.jobType === 'Immobiliare' ? 'ricavo_immobiliare' : 'ricavo_core';
-      const m = meseSaldo.get(proj.name) ?? 11;
+      const m = meseSaldo.get(chiave) ?? 11;
       result[bucket][m] += Math.abs(tx.amount);
     });
   }
@@ -711,18 +777,33 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     // pur avendo in timeline il saldo previsionale entro l'anno).
     if (isCurrentYear && projects) {
       projects.filter(p => p.metodoPagamento === 'acconto').forEach(p => {
-        const key = `${p.name}||${ce.anno}`;
-        if (!commesseCompletate.has(key) || commesseCompletateReale.has(key)) return;
         const bucket = p.jobType === 'Immobiliare' ? 'ricavo_immobiliare' : 'ricavo_core';
         if (!types.includes(bucket)) return;
+
+        // Chiavi di completamento SOLO previsionale (non ancora reali, altrimenti gia' dentro `ce` da
+        // buildCEData) per QUESTA commessa in ce.anno — possono essere piu' di una se la commessa ha
+        // più intestatari con saldi previsionali distinti nello stesso anno (es. Condominio Spin 2:
+        // Fan Srl completa nel 2026, il Condominio no — vedi chiaveCompletamento).
+        const chiaviDaRilasciare = new Set(
+          Array.from(commesseCompletate).filter(k => {
+            if (commesseCompletateReale.has(k)) return false;
+            const parti = k.split('||');
+            return parti[0] === p.name && parti[2] === String(ce.anno);
+          })
+        );
+        if (chiaviDaRilasciare.size === 0) return;
+
         const incassiNonAncoraRilasciati = transactions
-          .filter(tx =>
-            tx.type === 'INCOME' &&
-            !tx.isForecast &&
-            parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear() <= ce.anno &&
-            commessaDiIncasso(tx, projects)?.name === p.name &&
-            getDynamicCEType(tx, projects, commesseCompletateReale) === 'solo_cashflow'
-          )
+          .filter(tx => {
+            if (tx.type !== 'INCOME' || tx.isForecast) return false;
+            if (parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear() > ce.anno) return false;
+            if (commessaDiIncasso(tx, projects)?.name !== p.name) return false;
+            if (getDynamicCEType(tx, projects, commesseCompletateReale) !== 'solo_cashflow') return false;
+            // Rilascia SOLO se l'intestatario di QUESTA transazione è fra quelli completati in
+            // ce.anno — un saldo previsionale di un cliente non sblocca gli acconti degli altri
+            // clienti della stessa commessa.
+            return chiaviDaRilasciare.has(chiaveCompletamento(p.name, tx, p, ce.anno));
+          })
           .reduce((s, tx) => s + Math.abs(tx.amount), 0);
         sum += incassiNonAncoraRilasciati;
       });
