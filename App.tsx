@@ -927,7 +927,16 @@ const App: React.FC = () => {
       setRegolePuntaNet(getGlobalRules());
     }
     if (data.mappingContiPuntaNet) setMappingContiPuntaNet(data.mappingContiPuntaNet);
-    if (data.bozzaImportPuntaNet) setBozzaImportPuntaNet(data.bozzaImportPuntaNet);
+    if (data.bozzaImportPuntaNet) {
+      // riga.data e' tipizzata Date, ma dopo un salvataggio/ricarica da file (JSON.stringify
+      // la converte in stringa ISO e JSON.parse non la "ravviva" mai automaticamente) arriva
+      // come stringa — rompendo silenziosamente il tasto "Importa" nella revisione (che chiama
+      // .getTime() assumendo sia gia' un Date). Qui la normalizziamo una volta per tutte.
+      setBozzaImportPuntaNet(data.bozzaImportPuntaNet.map(r => ({
+        ...r,
+        riga: { ...r.riga, data: new Date(r.riga.data as unknown as string) }
+      })));
+    }
     if (data.importSessions) {
       setImportSessions(data.importSessions);
     }

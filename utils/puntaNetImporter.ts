@@ -1405,16 +1405,20 @@ export const rigaToTransaction = (
 ): Transaction => {
   const rate = vatRate ?? 0;
   const netAmount = riga.importo / (1 + rate / 100);
+  // riga.data e' tipizzata Date, ma puo' arrivare come stringa ISO se la riga e' sopravvissuta
+  // a un salvataggio/ricarica da file (JSON non ravviva mai le Date automaticamente) — normalizzata
+  // qui per sicurezza, anche se il chiamante dovrebbe gia' averlo fatto.
+  const dataRiga = riga.data instanceof Date ? riga.data : new Date(riga.data);
   return {
     id: uuidv4(),
-    date: getLocalYMD(riga.data),
+    date: getLocalYMD(dataRiga),
     description: riga.descrizione,
     amount: Math.round(netAmount * 100) / 100,
     type: riga.tipo === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
     category: categoria,
     ceType: ceType as any,
     vatRate: rate,
-    sourceRef: sourceRef ?? `Punta Net · ${riga.data.toLocaleDateString('it-IT')}`,
+    sourceRef: sourceRef ?? `Punta Net · ${dataRiga.toLocaleDateString('it-IT')}`,
     importSessionId,
     invoiceDate,
     grossAmount: Math.round(riga.importo * 100) / 100

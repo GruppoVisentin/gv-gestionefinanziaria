@@ -538,6 +538,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   };
 
   const importa = () => {
+    setErrore(null);
     try {
       // Una riga è importabile solo se ha anche l'IVA determinata (letta dal dato o inserita a mano).
       // Le righe con IVA "da precisare" (vatRate null) restano sospese nella bozza per la precisazione manuale.
@@ -554,7 +555,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       const sessionId = crypto.randomUUID();
       
       const dates = daImportare.map(r => {
-        const t = r.riga.data.getTime();
+        const t = new Date(r.riga.data).getTime();
         return isNaN(t) ? Date.now() : t;
       });
       const minDate = dates.length > 0 ? getLocalYMD(new Date(Math.min(...dates))) : getLocalYMD();
@@ -652,6 +653,14 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   const confermate = righe.filter(r => r.confermata).length;
 
   const allCategories = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES];
+
+  // Una riga "da completare" e' pronta per l'importazione (verde) quando ha tutto il necessario —
+  // stessa condizione usata da importa() per decidere cosa finisce davvero nei dati definitivi —
+  // altrimenti resta segnalata come da fare (giallo/ambra), cosi' il colore della card riflette
+  // sempre lo stato reale invece di restare fisso indipendentemente da cosa l'utente ha gia' fatto.
+  const rigaPronta = (r: typeof righe[number]) =>
+    !!r.categoria && !!r.ceType && (r.vatRateConfermato ?? r.vatRateSuggerito) !== null &&
+    !(r.riga.tipo === 'INCOME' && r.tipoEntrata === null);
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -796,6 +805,13 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                 </div>
               </div>
 
+              {errore && (
+                <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex gap-3">
+                  <AlertCircle size={18} className="text-red-500 shrink-0" />
+                  <p className="text-xs text-red-700">{errore}</p>
+                </div>
+              )}
+
               {/* Sezione Duplicati */}
               {duplicati > 0 && (
                 <div className="space-y-2">
@@ -811,8 +827,8 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                             <p className="text-[11px] font-bold text-slate-700">{r.riga.entity}</p>
                             <p className="text-[9px] text-rose-500">
                               {r.livelloDuplicato === 3
-                                ? `Sospetto Duplicato (Stessa data e importo: ${r.riga.data.toLocaleDateString()})`
-                                : `Livello ${r.livelloDuplicato} — ${r.riga.data.toLocaleDateString()}`}
+                                ? `Sospetto Duplicato (Stessa data e importo: ${new Date(r.riga.data).toLocaleDateString()})`
+                                : `Livello ${r.livelloDuplicato} — ${new Date(r.riga.data).toLocaleDateString()}`}
                             </p>
                           </div>
                           <div className="flex items-center gap-3">
@@ -831,8 +847,14 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                 <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Movimenti da classificare ({daRevisione})</p>
                 {righe.filter(r => !r.isDuplicato && (!r.categoria || r.confidenza === 'bassa' || r.vatRateSuggerito === null || (r.riga.tipoMovimento === 'FEA' && r.tipoEntrata === null))).map((r, idx) => {
                   const realIdx = righe.indexOf(r);
+                  const pronta = rigaPronta(r);
                   return (
-                    <div key={realIdx} className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                    <div key={realIdx} className={`border rounded-2xl p-4 space-y-3 transition-colors ${pronta ? 'bg-emerald-50 border-emerald-300' : 'bg-amber-50 border-amber-200'}`}>
+                      {pronta && (
+                        <p className="text-[9px] font-black text-emerald-700 uppercase tracking-widest flex items-center gap-1.5">
+                          <CheckCircle2 size={12} /> Pronta per l'importazione
+                        </p>
+                      )}
                       <div className="flex justify-between items-start">
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-black text-slate-900 truncate">{r.riga.entity}</p>
