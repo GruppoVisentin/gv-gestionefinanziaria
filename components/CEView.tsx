@@ -953,6 +953,13 @@ const CEView: React.FC<CEViewProps> = ({
     };
   };
 
+  // La tabella principale mostra UNA sola lente per volta (mai più verde+viola insieme):
+  // 'reale' per YTD Consuntivo e Mese per Mese, 'proiezione' per Proiezione Anno.
+  // Nessun dato viene perso: per vedere l'altra lente basta cambiare tab, invece di scorrere
+  // colonne doppie su ogni riga (richiesta esplicita 2026-09-11: leggibilità).
+  const mainTableLens: 'reale' | 'proiezione' = activeTab === 'projection' ? 'proiezione' : 'reale';
+  const colSpanSezione = activeTab === 'monthly' ? 15 : 3;
+
   const renderRow = (label: string, data: number[], type: 'auto' | 'manual' | 'calc' | 'kpi', field?: keyof CEData, projOverride?: number, customKpiId?: string) => {
     const sum = data.reduce((a, b) => a + b, 0);
     const pct = metrics.fatturato > 0 ? sum / metrics.fatturato : 0;
@@ -1005,14 +1012,21 @@ const CEView: React.FC<CEViewProps> = ({
             )
           ))
         ) : null}
-        <CalcCell value={sum} isKPI={type === 'kpi'} />
-        <td className="p-1 text-right text-[10px] font-medium text-slate-500">
-          {formatPercent(pct)}
-        </td>
-        <ProjectionCell value={projection} />
-        <td className="p-1 text-right text-[10px] font-medium text-violet-600 font-bold">
-          {formatPercent(projectionPct)}
-        </td>
+        {mainTableLens === 'reale' ? (
+          <>
+            <CalcCell value={sum} isKPI={type === 'kpi'} />
+            <td className="p-1 text-right text-[10px] font-medium text-slate-500">
+              {formatPercent(pct)}
+            </td>
+          </>
+        ) : (
+          <>
+            <ProjectionCell value={projection} />
+            <td className="p-1 text-right text-[10px] font-medium text-violet-600 font-bold">
+              {formatPercent(projectionPct)}
+            </td>
+          </>
+        )}
       </tr>
     );
   };
@@ -1195,7 +1209,7 @@ const CEView: React.FC<CEViewProps> = ({
         </div>
 
 
-      {activeTab !== 'previsionale' && (
+      {(activeTab === 'ytd' || activeTab === 'monthly' || activeTab === 'projection') && (
       <>
       {/* KPI Summary Cards */}
       <InfoTooltipWrapper className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -1335,50 +1349,78 @@ const CEView: React.FC<CEViewProps> = ({
                 {activeTab === 'monthly' && MONTHS.map(m => (
                   <th key={m} className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">{m}</th>
                 ))}
-                <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Totale YTD</th>
-                <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% Fatt.</th>
-                <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Proiezione 📈</th>
-                <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% Proi.</th>
+                {mainTableLens === 'reale' ? (
+                  <>
+                    <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Totale YTD</th>
+                    <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% Fatt.</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Proiezione 📈</th>
+                    <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% Proi.</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
               {/* RICAVI */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">① Ricavi di Struttura</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">① Ricavi di Struttura</td></tr>
               {renderRow('Ricavi Core (SAL/Commesse)', ceData.ricaviCore, 'auto', undefined, metrics.proiezioneRicaviCore)}
               {renderRow('Vendite Immobiliari', ceData.ricaviImmobiliare, 'auto', undefined, metrics.proiezioneRicaviImmobiliare)}
               {renderRow('Altri Ricavi (Affitti/Sviluppo)', ceData.ricaviAltro, 'auto', undefined, metrics.proiezioneRicaviAltro)}
               <tr className="bg-slate-100 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALE RICAVI (A)</td>
                 {activeTab === 'monthly' && metrics.totRicavi.map((v, i) => <CalcCell key={i} value={v} />)}
-                <CalcCell value={metrics.fatturato} isKPI />
-                <td className="p-1 text-right text-[10px]">100%</td>
-                <ProjectionCell value={metrics.proiezioneFatturato} />
-                <td className="p-1 text-right text-[10px] font-bold text-violet-600">100%</td>
+                {mainTableLens === 'reale' ? (
+                  <>
+                    <CalcCell value={metrics.fatturato} isKPI />
+                    <td className="p-1 text-right text-[10px]">100%</td>
+                  </>
+                ) : (
+                  <>
+                    <ProjectionCell value={metrics.proiezioneFatturato} />
+                    <td className="p-1 text-right text-[10px] font-bold text-violet-600">100%</td>
+                  </>
+                )}
               </tr>
 
               {/* COSTI VARIABILI */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">② Costi Variabili</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">② Costi Variabili</td></tr>
               {renderRow('Costi Variabili (Materiali/Subappalti)', ceData.costiVariabili, 'auto', undefined, metrics.proiezioneCostiVariabili)}
               <tr className="bg-slate-50/30 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-50/30 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALE COSTI VARIABILI (B)</td>
                 {activeTab === 'monthly' && metrics.totCostiVar.map((v, i) => <CalcCell key={i} value={v} />)}
-                <CalcCell value={metrics.totCostiVar.reduce((a,b)=>a+b,0)} isKPI />
-                <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.totCostiVar.reduce((a,b)=>a+b,0)/metrics.fatturato : 0)}</td>
-                <ProjectionCell value={metrics.proiezioneCostiVariabili} />
-                <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiVariabili/metrics.proiezioneFatturato : 0)}</td>
+                {mainTableLens === 'reale' ? (
+                  <>
+                    <CalcCell value={metrics.totCostiVar.reduce((a,b)=>a+b,0)} isKPI />
+                    <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.totCostiVar.reduce((a,b)=>a+b,0)/metrics.fatturato : 0)}</td>
+                  </>
+                ) : (
+                  <>
+                    <ProjectionCell value={metrics.proiezioneCostiVariabili} />
+                    <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiVariabili/metrics.proiezioneFatturato : 0)}</td>
+                  </>
+                )}
               </tr>
 
               <tr className="bg-[#222222] text-white font-black">
                 <td className="py-4 px-4 text-sm sticky left-0 bg-[#222222] z-10">PRIMO MARGINE (A - B)</td>
                 {activeTab === 'monthly' && metrics.primoMargine.map((v, i) => <td key={i} className="text-right px-2 text-xs">{formatEuro(v)}</td>)}
-                <td className="text-right px-4 text-sm">{formatEuro(metrics.primoMargineTot)}</td>
-                <td className="text-right px-2 text-xs">{formatPercent(metrics.primoMarginePercent)}</td>
-                <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezionePrimoMargine)}</td>
-                <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine/metrics.proiezioneFatturato : 0)}</td>
+                {mainTableLens === 'reale' ? (
+                  <>
+                    <td className="text-right px-4 text-sm">{formatEuro(metrics.primoMargineTot)}</td>
+                    <td className="text-right px-2 text-xs">{formatPercent(metrics.primoMarginePercent)}</td>
+                  </>
+                ) : (
+                  <>
+                    <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezionePrimoMargine)}</td>
+                    <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine/metrics.proiezioneFatturato : 0)}</td>
+                  </>
+                )}
               </tr>
 
               {/* COSTI FISSI */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">③ Costi Fissi di Struttura</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">③ Costi Fissi di Struttura</td></tr>
               {renderRow('Costi Studio (Personale/Amm.)', ceData.costiStudio, 'auto', undefined, metrics.proiezioneCostiStudio)}
               {renderRow('Altri Costi Fissi (Sedi/Marketing)', ceData.costiFissi, 'auto', undefined, metrics.proiezioneCostiFissi)}
               {renderRow('Ammortamenti (Manuale)', ceData.ammortamenti, 'manual', 'ammortamenti', metrics.proiezioneAmmortamenti)}
@@ -1386,13 +1428,20 @@ const CEView: React.FC<CEViewProps> = ({
               <tr className="bg-[#222222] text-white font-black">
                 <td className="py-4 px-4 text-sm sticky left-0 bg-[#222222] z-10">EBITDA</td>
                 {activeTab === 'monthly' && metrics.ebitda.map((v, i) => <td key={i} className="text-right px-2 text-xs">{formatEuro(v)}</td>)}
-                <td className="text-right px-4 text-sm">{formatEuro(metrics.ebitdaTot)}</td>
-                <td className="text-right px-2 text-xs">{formatPercent(metrics.ebitdaPercent)}</td>
-                <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezioneEbitda)}</td>
-                <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda/metrics.proiezioneFatturato : 0)}</td>
+                {mainTableLens === 'reale' ? (
+                  <>
+                    <td className="text-right px-4 text-sm">{formatEuro(metrics.ebitdaTot)}</td>
+                    <td className="text-right px-2 text-xs">{formatPercent(metrics.ebitdaPercent)}</td>
+                  </>
+                ) : (
+                  <>
+                    <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezioneEbitda)}</td>
+                    <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda/metrics.proiezioneFatturato : 0)}</td>
+                  </>
+                )}
               </tr>
 
-              {effettoRimanenze && modalita === 'cassa' && (
+              {effettoRimanenze && modalita === 'cassa' && mainTableLens === 'reale' && (
                 <tr className="bg-emerald-50/50 font-bold border-b border-emerald-100">
                   <td className="py-3 px-4 text-xs sticky left-0 bg-emerald-50/50 z-10 text-emerald-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                     <div className="flex flex-col">
@@ -1405,7 +1454,6 @@ const CEView: React.FC<CEViewProps> = ({
                   <td className="text-right px-2 text-xs text-emerald-600">
                     {formatPercent(effettoRimanenze.fatturatoCompetenzaRettificato > 0 ? (metrics.ebitdaTot + effettoRimanenze.variazioneRimanenzeNetta) / effettoRimanenze.fatturatoCompetenzaRettificato : 0)}
                   </td>
-                  <td colSpan={2}></td>
                 </tr>
               )}
 
@@ -1413,21 +1461,28 @@ const CEView: React.FC<CEViewProps> = ({
                 <td className="py-4 px-4 text-sm sticky left-0 bg-[#1a1a1a] z-10 text-slate-300">
                   EBIT (dopo ammortamenti)
                 </td>
-                {activeTab === 'monthly' && metrics.ebit.map((v, i) => 
+                {activeTab === 'monthly' && metrics.ebit.map((v, i) =>
                   <td key={i} className="text-right px-2 text-xs text-slate-300">{formatEuro(v)}</td>
                 )}
-                <td className="text-right px-4 text-sm text-slate-300">{formatEuro(metrics.ebitTot)}</td>
-                <td className="text-right px-2 text-xs text-slate-400">
-                  {formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}
-                </td>
-                <ProjectionCell value={metrics.proiezioneEbit} />
-                <td className="p-1 text-right text-[10px] font-bold text-violet-600">
-                  {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)}
-                </td>
+                {mainTableLens === 'reale' ? (
+                  <>
+                    <td className="text-right px-4 text-sm text-slate-300">{formatEuro(metrics.ebitTot)}</td>
+                    <td className="text-right px-2 text-xs text-slate-400">
+                      {formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <ProjectionCell value={metrics.proiezioneEbit} />
+                    <td className="p-1 text-right text-[10px] font-bold text-violet-600">
+                      {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)}
+                    </td>
+                  </>
+                )}
               </tr>
 
               {/* ONERI E IMPOSTE */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">④ Oneri, Proventi e Imposte</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">④ Oneri, Proventi e Imposte</td></tr>
               {renderRow('Oneri Finanziari', ceData.oneriFin, 'auto', undefined, metrics.proiezioneOneriFin)}
               {renderRow('Proventi Finanziari', ceData.proventiFin, 'auto', undefined, metrics.proiezioneProventiFin)}
               {renderRow('Risultato Straordinario', ceData.straordinario, 'auto', undefined, metrics.proiezioneStraordinario)}
@@ -1445,10 +1500,17 @@ const CEView: React.FC<CEViewProps> = ({
                   </div>
                 </td>
                 {activeTab === 'monthly' && metrics.ebt.map((v, i) => <CalcCell key={i} value={v} />)}
-                <CalcCell value={metrics.ebtTot} isKPI />
-                <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.ebtTot/metrics.fatturato : 0)}</td>
-                <ProjectionCell value={metrics.proiezioneEbt} />
-                <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbt/metrics.proiezioneFatturato : 0)}</td>
+                {mainTableLens === 'reale' ? (
+                  <>
+                    <CalcCell value={metrics.ebtTot} isKPI />
+                    <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.ebtTot/metrics.fatturato : 0)}</td>
+                  </>
+                ) : (
+                  <>
+                    <ProjectionCell value={metrics.proiezioneEbt} />
+                    <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbt/metrics.proiezioneFatturato : 0)}</td>
+                  </>
+                )}
               </tr>
 
               {renderRow('Imposte Stimate (Manuale)', ceData.imposte, 'manual', 'imposte', previsioneFiscale.totaleImposteStimate)}
@@ -1466,14 +1528,21 @@ const CEView: React.FC<CEViewProps> = ({
                   </div>
                 </td>
                 {activeTab === 'monthly' && metrics.utileNetto.map((v, i) => <td key={i} className="text-right px-2 text-xs">{formatEuro(v)}</td>)}
-                <td className="text-right px-4 text-sm">{formatEuro(metrics.utileNettoTot)}</td>
-                <td className="text-right px-2 text-xs">{formatPercent(metrics.utileNettoPercent)}</td>
-                <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezioneUtile)}</td>
-                <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneUtile/metrics.proiezioneFatturato : 0)}</td>
+                {mainTableLens === 'reale' ? (
+                  <>
+                    <td className="text-right px-4 text-sm">{formatEuro(metrics.utileNettoTot)}</td>
+                    <td className="text-right px-2 text-xs">{formatPercent(metrics.utileNettoPercent)}</td>
+                  </>
+                ) : (
+                  <>
+                    <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezioneUtile)}</td>
+                    <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneUtile/metrics.proiezioneFatturato : 0)}</td>
+                  </>
+                )}
               </tr>
 
               {/* SOCI */}
-              <tr className="bg-slate-50/50"><td colSpan={activeTab === 'monthly' ? 17 : 5} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">⑤ Compenso Imprenditore</td></tr>
+              <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">⑤ Compenso Imprenditore</td></tr>
               {renderRow('Prelievo Utile Soci', ceData.compensoImprenditore, 'auto', undefined, metrics.proiezioneCompensoImprenditore)}
             </tbody>
           </table>
