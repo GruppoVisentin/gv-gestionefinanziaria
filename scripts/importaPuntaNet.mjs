@@ -112,7 +112,7 @@ function notaRevisione(dataOk) {
 
 // Costruisce una riga in formato "bozza" (RigaClassificata) da mettere in bozzaImportPuntaNet,
 // per revisione manuale in app — stessa forma che produce la modalita' interattiva del modale.
-function costruisciBozza({ dataISO, descrizione, entity, importo, tipo, tipoMovimento, categoria, ceType, confidenza, matchKey, vatRateSuggerito, vatRateNota, cantiereApp, idDocumento, idRata, idMovimento }) {
+function costruisciBozza({ dataISO, descrizione, entity, importo, tipo, tipoMovimento, categoria, ceType, confidenza, matchKey, vatRateSuggerito, vatRateNota, cantiereApp, idDocumento, idRata, idMovimento, dataDocumento }) {
   return {
     riga: { data: new Date(dataISO), descrizione, entity, importo, tipo, flagConto: 'B', tipoMovimento },
     categoria: categoria || null,
@@ -131,7 +131,7 @@ function costruisciBozza({ dataISO, descrizione, entity, importo, tipo, tipoMovi
     cantierePuntaNet: cantiereApp || '',
     cantiereMatchFonte: cantiereApp ? (tipo === 'INCOME' ? 'cliente_fea' : 'fornitore_fep') : null,
     tipoEntrata: null,
-    dataDocumento: null,
+    dataDocumento: dataDocumento || null,
     // Campi extra (non nello schema RigaClassificata dell'app, ignorati dalla UI) — servono solo
     // a questo script per non riproporre la stessa riga in bozza il giorno dopo. Preferisce
     // IDMovimento (sempre presente per i movimenti bancari) a IDDocumento|IDRata (spesso assente
@@ -177,7 +177,7 @@ const docCantiereU = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT dic.IDDocumento,
 const docTipologiaU = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT da.IDDocumento, da.Prezzo, da.Qta, tv.Tipologia FROM [Documenti Articoli] da JOIN Documenti d ON d.IDDocumento = da.IDDocumento LEFT JOIN ${DB_COMUNE}.dbo.[TAB_Tipi Voci] tv ON tv.IDTipologia = da.IDTipologia WHERE d.Tipo = 1 AND d.Data >= '2025-06-01' FOR JSON PATH`);
 const docCantiereE = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT dic.IDDocumento, dic.IDCantiere, dic.Imponibile FROM [Documenti Imponibili Cantiere] dic JOIN Documenti d ON d.IDDocumento = dic.IDDocumento WHERE d.Tipo = 0 AND d.Data >= '2025-06-01' FOR JSON PATH`);
 const docDescrizioniE = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT da.IDDocumento, da.Descrizione FROM [Documenti Articoli] da JOIN Documenti d ON d.IDDocumento = da.IDDocumento WHERE d.Tipo = 0 AND d.Data >= '2025-06-01' FOR JSON PATH`);
-const docHeader = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT IDDocumento, Imponibile, Imposte, Totale FROM Documenti WHERE Data >= '2025-06-01' FOR JSON PATH`);
+const docHeader = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT IDDocumento, Data, Imponibile, Imposte, Totale FROM Documenti WHERE Data >= '2025-06-01' FOR JSON PATH`);
 
 const cantierePerDocU = new Map();
 for (const r of docCantiereU) { const c = cantierePerDocU.get(r.IDDocumento); if (!c || r.Imponibile > c.somma) cantierePerDocU.set(r.IDDocumento, { IDCantiere: r.IDCantiere, somma: r.Imponibile }); }
@@ -267,9 +267,11 @@ for (const mv of movimenti) {
   const tipoMovimento = tipoMovimentoDa(mv.Descrizione);
 
   let categoria = null, ceType = null, cantiereApp = undefined, vatRate = null, confidenza = null, matchKey = null;
+  let invoiceDate = undefined;
 
   if (mv.IDDocumento) {
     const header = headerPerDoc.get(mv.IDDocumento);
+    if (header?.Data) invoiceDate = header.Data.slice(0, 10);
     if (isEntrata) {
       const desc = descPerDoc.get(mv.IDDocumento) || '';
       let tipoEntrata = inferisciTipoEntrata(desc);
@@ -346,6 +348,7 @@ for (const mv of movimenti) {
     project: cantiereApp,
     ceType: ceType || 'solo_cashflow',
     isForecast: false,
+    invoiceDate,
     linkedForecastId,
     sourceRef: `Punta Net (automatico) - IDMovimento ${mv.IDMovimento}`,
     puntaNetIDMovimento: mv.IDMovimento,
@@ -359,7 +362,7 @@ for (const mv of movimenti) {
     revisioneConsuntivo.push(costruisciBozza({
       dataISO, descrizione: mv.Descrizione || '', entity, importo, tipo, tipoMovimento,
       categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate, vatRateNota: notaRevisione(dataOk),
-      cantiereApp, idDocumento: mv.IDDocumento, idRata: mv.IDRata, idMovimento: mv.IDMovimento,
+      cantiereApp, idDocumento: mv.IDDocumento, idRata: mv.IDRata, idMovimento: mv.IDMovimento, dataDocumento: invoiceDate,
     }));
   }
 }
@@ -387,7 +390,7 @@ console.log(`  collegato a previsione esistente: ${autoConsuntivo.filter(t => t.
 // (stesso importo, stessa data) risulterebbe comunque "da pagare" per intero (bug verificato sui
 // dati reali: 3 fatture FKF Costruzioni azzerate da 3 note di credito identiche, tipo 3).
 console.log('--- Scadenze (fatture emesse, non ancora incassate/pagate) ---');
-const scadenzeAperte = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT d.IDDocumento, d.Tipo, ds.IDRata, ds.[Data Rata] AS DataRata, ds.[Importo Rata] AS ImportoRata, d.Imponibile, d.Imposte, d.Totale, cf.[Ragione Sociale] AS Controparte FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento LEFT JOIN [Clienti Fornitori] cf ON cf.IDCliFor = d.IDCliFor WHERE ds.Pagato = 0 AND d.Tipo IN (0,1,2,3) AND ds.[Data Rata] >= '${DATA_INIZIO}' FOR JSON PATH`);
+const scadenzeAperte = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT d.IDDocumento, d.Tipo, d.Data AS DataDocumento, ds.IDRata, ds.[Data Rata] AS DataRata, ds.[Importo Rata] AS ImportoRata, d.Imponibile, d.Imposte, d.Totale, cf.[Ragione Sociale] AS Controparte FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento LEFT JOIN [Clienti Fornitori] cf ON cf.IDCliFor = d.IDCliFor WHERE ds.Pagato = 0 AND d.Tipo IN (0,1,2,3) AND ds.[Data Rata] >= '${DATA_INIZIO}' FOR JSON PATH`);
 console.log(`Rate non pagate trovate: ${scadenzeAperte.length}`);
 
 let duplicatiPerContenutoScadenze = 0;
@@ -453,6 +456,12 @@ for (const s of scadenzeAperte) {
     project: cantiereApp,
     ceType: ceType || 'solo_cashflow',
     isForecast: false, // fattura gia' emessa/ricevuta = dato certo (consuntivo), mai previsionale
+    // Data della fattura (competenza), distinta dalla scadenza di pagamento usata come `date`
+    // (cassa/scadenza) — senza questa la vista "per competenza" e il criterio OIC23 di commessa
+    // completata cadono sempre sulla data di incasso/scadenza, che puo' slittare all'anno dopo
+    // rispetto a quando la fattura e' stata davvero emessa (bug segnalato dall'utente 2026-09-11
+    // su Condominio Spin 2: ultima fattura emessa nel 2025, pagamento atteso nel 2026).
+    invoiceDate: s.DataDocumento ? s.DataDocumento.slice(0, 10) : undefined,
     linkedForecastId,
     sourceRef: `Punta Net (automatico) - IDDocumento ${s.IDDocumento} / IDRata ${s.IDRata}`,
     puntaNetIDDocumento: s.IDDocumento,
@@ -465,7 +474,7 @@ for (const s of scadenzeAperte) {
     revisioneScadenze.push(costruisciBozza({
       dataISO, descrizione, entity, importo: s.ImportoRata, tipo, tipoMovimento,
       categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate, vatRateNota: notaRevisione(dataOk),
-      cantiereApp, idDocumento: s.IDDocumento, idRata: s.IDRata,
+      cantiereApp, idDocumento: s.IDDocumento, idRata: s.IDRata, dataDocumento: s.DataDocumento ? s.DataDocumento.slice(0, 10) : undefined,
     }));
   }
 }
