@@ -109,6 +109,7 @@ import {
   readRulesFile,
   writeRulesFile
 } from './services/fileStorage';
+import { fetchSharedCantieri, pushSharedCantiere } from './services/cantieriSync';
 
 interface WelcomeScreenProps {
   pendingHandleFromIDB: FileSystemFileHandle | null;
@@ -1741,6 +1742,67 @@ const App: React.FC = () => {
   const handleDeleteProject = (id: string) => {
     setProjects(prev => prev.filter(p => p.id !== id));
   };
+
+  // --- CROSS-APP SYNC (registro condiviso cantieri/commesse con DirettoreCantiere) ---
+  const syncFromRegistry = useCallback(async () => {
+    try {
+      const rows = await fetchSharedCantieri();
+      setProjects(prev => {
+        const existingExternalIds = new Set(
+          prev.filter(p => p.externalSource === 'direttore_cantiere').map(p => p.externalId)
+        );
+        const toImport = rows.filter(r =>
+          r.source === 'direttore_cantiere' &&
+          (r.stato === 'active' || r.stato === 'completed') &&
+          !existingExternalIds.has(r.sourceId)
+        );
+        if (toImport.length === 0) return prev;
+        const imported: Project[] = toImport.map(r => ({
+          id: crypto.randomUUID(),
+          name: r.nome,
+          client: r.cliente || '',
+          location: r.luogo || '',
+          jobType: '',
+          startDate: r.dataInizio || new Date().toISOString().split('T')[0],
+          status: r.stato === 'completed' ? 'COMPLETED' : 'ACTIVE',
+          externalSource: 'direttore_cantiere',
+          externalId: r.sourceId,
+        }));
+        return [...imported, ...prev];
+      });
+    } catch (e) {
+      console.error('Sincronizzazione registro cantieri fallita', e);
+    }
+  }, []);
+
+  // Import iniziale + polling periodico per intercettare cantieri attivati su DirettoreCantiere
+  useEffect(() => {
+    if (appState !== 'ready') return;
+    syncFromRegistry();
+    const interval = setInterval(syncFromRegistry, 120000);
+    return () => clearInterval(interval);
+  }, [appState, syncFromRegistry]);
+
+  // Pubblica sul registro condiviso le commesse create/gestite qui (non quelle importate da altre app)
+  useEffect(() => {
+    if (appState !== 'ready') return;
+    const timer = setTimeout(() => {
+      projects
+        .filter(p => !p.externalSource)
+        .forEach(p => {
+          pushSharedCantiere({
+            source: 'gestione_finanziaria',
+            sourceId: p.id,
+            nome: p.name,
+            cliente: p.client || null,
+            luogo: p.location || null,
+            dataInizio: p.startDate,
+            stato: p.status,
+          }).catch(e => console.error('Pubblicazione commessa sul registro fallita', e));
+        });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [projects, appState]);
 
   // SV-B Handlers
   const handleSaveTipologia = (t: TipologiaCantiere) => {

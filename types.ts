@@ -99,6 +99,9 @@ export interface Project {
   estimatedSubcontractors?: number;
   estimatedProfessionals?: number;
   estimatedRevenue?: number;
+  // Set when this commessa was auto-imported from another GV app (es. DirettoreCantiere)
+  externalSource?: 'direttore_cantiere';
+  externalId?: string; // id di questo cantiere nell'app di origine
 }
 
 export interface BankAccount {

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.35.0",
+    "@neondatabase/serverless": "^0.10.4",
     "@types/uuid": "^10.0.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
