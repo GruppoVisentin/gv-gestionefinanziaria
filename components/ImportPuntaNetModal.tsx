@@ -55,7 +55,7 @@ interface ImportPuntaNetModalProps {
   onSetFileFEA?: (file: File | null) => void;
   onSetFileFEA2?: (file: File | null) => void;
   onAggiornaBozza: (righe: RigaClassificata[]) => void;
-  onImport: (transactions: Transaction[]) => void;
+  onImport: (transactions: Transaction[], righeRimanenti: RigaClassificata[]) => void;
   onSalvaRegole: (regole: RegolaMapping[]) => void;
   onSalvaMappingConti: (mapping: MappingConto) => void;
   onSalvaSessione: (session: ImportSession) => void;
@@ -632,7 +632,14 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
     });
 
       onSalvaSessione(session);
-      onImport(transactions);
+      // daSospendere passato esplicitamente (non solo via onAggiornaBozza) perche' il salvataggio
+      // immediato scattato da onImport legge lo stato al momento della chiamata: se leggesse
+      // bozzaImportPuntaNet dalla chiusura di App.tsx invece che dal valore fresco appena
+      // calcolato qui, salverebbe su file la bozza COMPLETA di prima (la setBozzaImportPuntaNet
+      // sottostante e' asincrona, non ancora applicata in questo stesso giro) — un utente che
+      // importa solo una parte delle righe e poi richiude l'app rischierebbe di ritrovarsi la
+      // bozza sbagliata (o vuota) al rientro, invece delle righe ancora da completare.
+      onImport(transactions, daSospendere);
       onAggiornaBozza(daSospendere);
 
       setImportateCount(daImportare.length);
@@ -646,10 +653,23 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   };
 
   // ─── STATISTICHE ─────────────────────────────────────────────
+  // "Auto-classificata" = la riga era gia' completa fin dall'inizio, senza bisogno di intervento
+  // (alta confidenza dalla classificazione automatica, IVA e tipo-incasso gia' determinati).
+  // "Da completare" e' definito come lo STRETTO COMPLEMENTARE di questo — non una condizione
+  // indipendente — cosi' ogni riga non duplicata finisce sempre in uno dei due elenchi, mai in
+  // nessuno dei due. Con condizioni indipendenti (versione precedente) una riga che partiva con
+  // confidenza 'media' (non 'alta' ne' 'bassa') e IVA gia' nota, una volta scelta la categoria a
+  // mano, non soddisfaceva piu' ne' l'una ne' l'altra condizione e SPARIVA dalla vista pur
+  // restando nei dati (contava nel "Totale" ma non in nessun elenco visibile) — bug trovato e
+  // corretto il 2026-09-11.
+  const isAutoClassificata = (r: typeof righe[number]) =>
+    !!r.categoria && r.confidenza === 'alta' && r.vatRateSuggerito !== null &&
+    (r.riga.tipoMovimento !== 'FEA' || r.tipoEntrata !== null);
+
   const totale = righe.length;
   const duplicati = righe.filter(r => r.isDuplicato).length;
-  const autoClassificate = righe.filter(r => !r.isDuplicato && r.categoria && r.confidenza === 'alta' && r.vatRateSuggerito !== null && (r.riga.tipoMovimento !== 'FEA' || r.tipoEntrata !== null)).length;
-  const daRevisione = righe.filter(r => !r.isDuplicato && (!r.categoria || r.confidenza === 'bassa' || r.vatRateSuggerito === null || (r.riga.tipoMovimento === 'FEA' && r.tipoEntrata === null))).length;
+  const autoClassificate = righe.filter(r => !r.isDuplicato && isAutoClassificata(r)).length;
+  const daRevisione = righe.filter(r => !r.isDuplicato && !isAutoClassificata(r)).length;
   const confermate = righe.filter(r => r.confermata).length;
 
   const allCategories = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES];
@@ -845,14 +865,14 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
               {/* Sezione Da Completare */}
               <div className="space-y-3">
                 <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Movimenti da classificare ({daRevisione})</p>
-                {righe.filter(r => !r.isDuplicato && (!r.categoria || r.confidenza === 'bassa' || r.vatRateSuggerito === null || (r.riga.tipoMovimento === 'FEA' && r.tipoEntrata === null))).map((r, idx) => {
+                {righe.filter(r => !r.isDuplicato && !isAutoClassificata(r)).map((r, idx) => {
                   const realIdx = righe.indexOf(r);
                   const pronta = rigaPronta(r);
                   return (
                     <div key={realIdx} className={`border rounded-2xl p-4 space-y-3 transition-colors ${pronta ? 'bg-emerald-50 border-emerald-300' : 'bg-amber-50 border-amber-200'}`}>
                       {pronta && (
                         <p className="text-[9px] font-black text-emerald-700 uppercase tracking-widest flex items-center gap-1.5">
-                          <CheckCircle2 size={12} /> Pronta per l'importazione
+                          <CheckCircle2 size={12} /> Pronta per l'importazione{!r.confermata && ' — spunta per includerla'}
                         </p>
                       )}
                       <div className="flex justify-between items-start">
@@ -864,6 +884,27 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                           <p className={`text-sm font-black font-mono ${r.riga.tipo === 'INCOME' ? 'text-emerald-600' : 'text-rose-600'}`}>
                             {r.riga.tipo === 'INCOME' ? '+' : '-'}{formatEuro(r.riga.importo)}
                           </p>
+                          {pronta && (
+                            // Una riga puo' arrivare gia' completa (es. bassa confidenza ma con
+                            // categoria/IVA gia' note) senza che l'utente tocchi mai una select —
+                            // in quel caso aggiornaCategoria/selezionaTipoEntrata non scattano mai
+                            // e "confermata" resta false per sempre: senza questo toggle l'unico
+                            // modo per includerla era "Conferma tutte" (tutto o niente), pur
+                            // mostrando gia' il badge verde "pronta" — incoerente.
+                            <button
+                              onClick={() => {
+                                setRighe(righe.map((x, i) => i === realIdx ? { ...x, confermata: !x.confermata } : x));
+                              }}
+                              className={`p-1 rounded-lg transition-all ${
+                                r.confermata
+                                  ? 'text-emerald-600 hover:bg-emerald-50'
+                                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                              }`}
+                              title={r.confermata ? "Escludi da importazione" : "Includi in importazione"}
+                            >
+                              {r.confermata ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               if (window.confirm("Annullare l'importazione di questo movimento?")) {
@@ -987,7 +1028,7 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
                 </button>
                 {showAutoClassificati && (
                   <div className="mt-2 space-y-2">
-                    {righe.filter(r => !r.isDuplicato && r.categoria && r.confidenza === 'alta' && r.vatRateSuggerito !== null && (r.riga.tipoMovimento !== 'FEA' || r.tipoEntrata !== null)).map((r, idx) => {
+                    {righe.filter(r => !r.isDuplicato && isAutoClassificata(r)).map((r, idx) => {
                       const realIdx = righe.indexOf(r);
                       return (
                         <div 

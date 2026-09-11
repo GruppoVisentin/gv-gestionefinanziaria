@@ -993,6 +993,7 @@ const App: React.FC = () => {
       incomeCategories?: string[];
       aliquotaIRES?: number;
       aliquotaIRAP?: number;
+      bozzaImportPuntaNet?: import('./utils/puntaNetImporter').RigaClassificata[];
     }
   ) => {
     if (!fileHandle) return;
@@ -1020,7 +1021,7 @@ const App: React.FC = () => {
         rimanenze: overrides?.rimanenze || rimanenze,
         regolePuntaNet,
         mappingContiPuntaNet,
-        bozzaImportPuntaNet,
+        bozzaImportPuntaNet: overrides?.bozzaImportPuntaNet ?? bozzaImportPuntaNet,
         importSessions: updatedSessions || importSessions,
         storicoExcelImportato: updatedStoricoImportato !== undefined ? updatedStoricoImportato : storicoImportato,
         aliquoteFiscali: {
@@ -2840,12 +2841,16 @@ const App: React.FC = () => {
             onSetFileFEA={setFileFEA}
             onSetFileFEA2={setFileFEA2}
             onAggiornaBozza={setBozzaImportPuntaNet}
-            onImport={(txs) => {
+            onImport={(txs, righeRimanenti) => {
               setTransactions(prev => {
                 const newTxs = [...prev, ...txs];
                 // Note: triggerImmediateSave here might use a slightly stale importSessions if onSalvaSessione was just called.
                 // But it's better than not saving at all. We will also save on SalvaSessione.
-                triggerImmediateSave(newTxs, undefined);
+                // righeRimanenti passato esplicitamente: bozzaImportPuntaNet nella chiusura di questa
+                // callback e' ancora il valore PRIMA dell'import (setBozzaImportPuntaNet e' asincrona),
+                // quindi senza l'override qui il file salverebbe la bozza sbagliata quando si importa
+                // solo una parte delle righe (bug: al rientro l'utente non ritrovava le righe rimaste).
+                triggerImmediateSave(newTxs, undefined, undefined, undefined, { bozzaImportPuntaNet: righeRimanenti });
                 return newTxs;
               });
               // Non puliamo la bozza qui e non chiudiamo il modal: lasciamo che l'utente veda lo step "completato"
@@ -2860,7 +2865,13 @@ const App: React.FC = () => {
               });
             }}
             onClose={() => {
-              setBozzaImportPuntaNet([]);
+              // NON azzerare bozzaImportPuntaNet qui: chiudere la modale (con la X, o col tasto
+              // "Chiudi" dopo un'importazione parziale) deve lasciare intatte le righe ancora da
+              // completare, cosi' l'utente puo' rientrare e continuare finche' non sono finite
+              // tutte — svuotare la bozza e' una scelta esplicita, gia' gestita a parte da
+              // "Annulla Import" con la sua conferma dedicata (bug corretto il 2026-09-11: la X
+              // e il tasto "Chiudi" cancellavano sempre tutto, anche le righe appena rimaste in
+              // sospeso dopo un import parziale, facendo sparire il banner in sospeso).
               setFileBanca(null);
               setFileFEP(null);
               setFileFEA(null);
