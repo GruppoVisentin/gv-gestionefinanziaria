@@ -1217,9 +1217,9 @@ const CEView: React.FC<CEViewProps> = ({
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Fatturato YTD</span>
-                <InfoTooltip 
-                  termId="fatturato" 
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Fatturato {mainTableLens === 'reale' ? 'YTD' : '(Proiezione)'}</span>
+                <InfoTooltip
+                  termId="fatturato"
                   calculatedValues={`Fatturato YTD:\n- Consuntivo YTD: ${formatEuro(metrics.fatturato)}\n- Proiezione 12m: ${formatEuro(metrics.proiezioneFatturato)}`}
                 />
               </div>
@@ -1230,11 +1230,8 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            <div className="text-2xl font-black text-slate-900">{formatEuro(metrics.fatturato)}</div>
-            <div className="text-[10px] text-slate-500 mt-1">reale YTD</div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 text-[10px] text-violet-600 font-bold">
-            Proiezione: {formatEuro(metrics.proiezioneFatturato)}
+            <div className="text-2xl font-black text-slate-900">{formatEuro(mainTableLens === 'reale' ? metrics.fatturato : metrics.proiezioneFatturato)}</div>
+            <div className="text-[10px] text-slate-500 mt-1">{mainTableLens === 'reale' ? 'reale YTD' : 'proiezione 12 mesi'}</div>
           </div>
         </div>
  
@@ -1242,9 +1239,9 @@ const CEView: React.FC<CEViewProps> = ({
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Primo Margine</span>
-                <InfoTooltip 
-                  termId="primo_margine" 
+                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Primo Margine {mainTableLens === 'proiezione' ? '(Proiezione)' : ''}</span>
+                <InfoTooltip
+                  termId="primo_margine"
                   calculatedValues={`Primo Margine:\n- Consuntivo YTD: ${formatEuro(metrics.primoMargineTot)} (${formatPercent(metrics.primoMarginePercent)})\n- Proiezione 12m: ${formatEuro(metrics.proiezionePrimoMargine)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)})`}
                 />
               </div>
@@ -1255,11 +1252,17 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.primoMarginePercent)}</div>
-            <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.primoMargineTot)})</div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-indigo-200/50 text-[10px] text-indigo-700 font-bold">
-            Proiezione: {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)} ({formatEuro(metrics.proiezionePrimoMargine)})
+            {mainTableLens === 'reale' ? (
+              <>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.primoMarginePercent)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.primoMargineTot)})</div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">proiezione 12 mesi ({formatEuro(metrics.proiezionePrimoMargine)})</div>
+              </>
+            )}
           </div>
         </div>
  
@@ -1267,9 +1270,9 @@ const CEView: React.FC<CEViewProps> = ({
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">EBITDA %</span>
-                <InfoTooltip 
-                  termId="ebitda" 
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">EBITDA % {mainTableLens === 'proiezione' ? '(Proiezione)' : ''}</span>
+                <InfoTooltip
+                  termId="ebitda"
                   calculatedValues={`EBITDA %:\n- Consuntivo YTD: ${formatEuro(metrics.ebitdaTot)} (${formatPercent(metrics.ebitdaPercent)})\n- Proiezione 12m: ${formatEuro(metrics.proiezioneEbitda)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)})`}
                 />
               </div>
@@ -1280,11 +1283,17 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.ebitdaPercent)}</div>
-            <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.ebitdaTot)})</div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-emerald-200/50 text-[10px] text-emerald-700 font-bold">
-            Proiezione: {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)} ({formatEuro(metrics.proiezioneEbitda)})
+            {mainTableLens === 'reale' ? (
+              <>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.ebitdaPercent)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.ebitdaTot)})</div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">proiezione 12 mesi ({formatEuro(metrics.proiezioneEbitda)})</div>
+              </>
+            )}
           </div>
         </div>
  
@@ -1292,9 +1301,9 @@ const CEView: React.FC<CEViewProps> = ({
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider">EBIT %</span>
-                <InfoTooltip 
-                  termId="ebit" 
+                <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider">EBIT % {mainTableLens === 'proiezione' ? '(Proiezione)' : ''}</span>
+                <InfoTooltip
+                  termId="ebit"
                   calculatedValues={`EBIT %:\n- Consuntivo YTD: ${formatEuro(metrics.ebitTot)} (${formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)})\n- Proiezione 12m: ${formatEuro(metrics.proiezioneEbit)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)})`}
                 />
               </div>
@@ -1305,11 +1314,17 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}</div>
-            <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.ebitTot)})</div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-amber-200/50 text-[10px] text-amber-700 font-bold">
-            Proiezione: {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)} ({formatEuro(metrics.proiezioneEbit)})
+            {mainTableLens === 'reale' ? (
+              <>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.ebitTot)})</div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">proiezione 12 mesi ({formatEuro(metrics.proiezioneEbit)})</div>
+              </>
+            )}
           </div>
         </div>
  
@@ -1317,9 +1332,9 @@ const CEView: React.FC<CEViewProps> = ({
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Punto di Pareggio</span>
-                <InfoTooltip 
-                  termId="break_even" 
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Punto di Pareggio {mainTableLens === 'proiezione' ? '(Proiezione)' : ''}</span>
+                <InfoTooltip
+                  termId="break_even"
                   calculatedValues={`Punto di Pareggio:\n- Competenza YTD: ${formatEuro(metrics.breakEven)}\n- Cassa YTD: ${formatEuro(metrics.breakEvenCassa)}\n- Proiezione Competenza 12m: ${formatEuro(projBreakEven)}\n- Proiezione Cassa 12m: ${formatEuro(projBreakEvenCassa)}`}
                 />
               </div>
@@ -1330,11 +1345,17 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            <div className="text-2xl font-black">{formatEuro(metrics.breakEven)}</div>
-            <div className="text-[10px] text-slate-400 mt-1">reale YTD (cassa: {formatEuro(metrics.breakEvenCassa)})</div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-white/10 text-[10px] text-indigo-300 font-bold">
-            Proiezione: {formatEuro(projBreakEven)} (cassa: {formatEuro(projBreakEvenCassa)})
+            {mainTableLens === 'reale' ? (
+              <>
+                <div className="text-2xl font-black">{formatEuro(metrics.breakEven)}</div>
+                <div className="text-[10px] text-slate-400 mt-1">reale YTD (cassa: {formatEuro(metrics.breakEvenCassa)})</div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-black">{formatEuro(projBreakEven)}</div>
+                <div className="text-[10px] text-slate-400 mt-1">proiezione 12 mesi (cassa: {formatEuro(projBreakEvenCassa)})</div>
+              </>
+            )}
           </div>
         </div>
       </InfoTooltipWrapper>
