@@ -104,11 +104,15 @@ const CEView: React.FC<CEViewProps> = ({
   const [tipoRettifica, setTipoRettifica] = useState<'consuntivo' | 'proiezione'>('consuntivo');
 
   // Commesse ad acconto completate (saldate) per anno: nell'anno del saldo i loro incassi diventano ricavo.
-  // Qui sotto (drawer "Spiega", righe di proiezione/solo-previsionale del KPI) si mescolano
-  // transazioni reali e previsionali insieme, quindi si mantiene inclusiva (true) com'era prima —
-  // sono classificazioni di dettaglio/drill-down, non i totali del CE (quelli usano buildCEData,
-  // che dal 2026-09-11 usa correttamente il set NON inclusivo per i dati reali).
-  const commesseCompletate = useMemo(() => computeCommesseCompletate(transactions, projects, true), [transactions, projects]);
+  // Nel drawer "Spiega" servono DUE varianti, non una sola:
+  // - commesseCompletateReale (NON inclusiva): usata per classificare transazioni REALI/consuntive,
+  //   deve coincidere con quella usata da buildCEData per i totali reali (altrimenti l'elenco
+  //   transazioni del drawer non corrisponde più al numero mostrato in alto, come accadeva fino al
+  //   2026-09-11 — bug dei ~2.9M di ricavo fantasma).
+  // - commesseCompletatePrevisionale (inclusiva): usata per righe di proiezione/solo-previsionale,
+  //   dove si guarda avanti nel tempo e un saldo pianificato deve poter "completare" la commessa.
+  const commesseCompletateReale = useMemo(() => computeCommesseCompletate(transactions, projects, false), [transactions, projects]);
+  const commesseCompletatePrevisionale = useMemo(() => computeCommesseCompletate(transactions, projects, true), [transactions, projects]);
 
   const ceData = useMemo(() =>
     buildCEData(transactions, selectedYear, manualData[selectedYear.toString()], modalita, projects, initialData),
@@ -139,6 +143,26 @@ const CEView: React.FC<CEViewProps> = ({
   }, [modalita, rawMetrics, transactions, selectedYear, manualData, projects, initialData]);
 
   const rimanenzeAnno = rimanenze?.[selectedYear.toString()];
+  const rimanenzeAnnoPrecedente = rimanenze?.[(selectedYear - 1).toString()];
+
+  // Continuità anno-su-anno: il valore "a inizio anno" deve coincidere con la "fine anno" precedente
+  // (wipFine 2025 = wipInizio 2026, ecc.). Nessun vincolo automatico esisteva prima: un valore
+  // digitato a mano e dimenticato di aggiornare rompeva silenziosamente la catena. Qui la si segnala,
+  // senza bloccare nulla — l'utente resta libero di editare (es. rettifiche del commercialista).
+  type CampoNumericoRimanenze = 'wipInizio' | 'wipFine' | 'materialiInizio' | 'materialiFine' | 'terreniInizio' | 'terreniFine';
+  const discontinuitaRimanenze = useMemo(() => {
+    if (!rimanenzeAnnoPrecedente) return [];
+    const check = (label: string, field: CampoNumericoRimanenze, prevField: CampoNumericoRimanenze) => {
+      const atteso = rimanenzeAnnoPrecedente![prevField] || 0;
+      const attuale = rimanenzeAnno?.[field] || 0;
+      return Math.abs(atteso - attuale) > 0.5 ? { label, field, atteso, attuale } : null;
+    };
+    return [
+      check('WIP', 'wipInizio', 'wipFine'),
+      check('Materiali', 'materialiInizio', 'materialiFine'),
+      check('Terreni', 'terreniInizio', 'terreniFine'),
+    ].filter((c): c is { label: string; field: CampoNumericoRimanenze; atteso: number; attuale: number } => c !== null);
+  }, [rimanenzeAnno, rimanenzeAnnoPrecedente]);
 
   const varRim = useMemo(() => {
     if (!rimanenzeAnno) return 0;
@@ -289,15 +313,15 @@ const CEView: React.FC<CEViewProps> = ({
 
     const getPureForecastSum = (types: string[]): number => {
       const txs = transactions.filter(tx => {
-        const type = getDynamicCEType(tx, projects, commesseCompletate);
+        const type = getDynamicCEType(tx, projects, commesseCompletatePrevisionale);
         const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
-        return tx.isForecast && 
+        return tx.isForecast &&
           !isLinked &&
-          parseUTCDate((modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date).getUTCFullYear() === selectedYear && 
+          parseUTCDate((modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date).getUTCFullYear() === selectedYear &&
           type && types.includes(type);
       });
       const sum = txs.reduce((s, tx) => {
-        const type = getDynamicCEType(tx, projects, commesseCompletate);
+        const type = getDynamicCEType(tx, projects, commesseCompletatePrevisionale);
         const isIncome = type.startsWith('ricavo') || type === 'provento_finanziario' || (type === 'straordinario' && tx.type === 'INCOME');
         return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
       }, 0);
@@ -798,10 +822,10 @@ const CEView: React.FC<CEViewProps> = ({
         const d = new Date(selectedYear, month, 15);
         loans.forEach((l, idx) => {
           const hasActualForThisLoan = transactions.some(t => 
-            !t.isForecast && 
-            parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCFullYear() === selectedYear && 
+            !t.isForecast &&
+            parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCFullYear() === selectedYear &&
             parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCMonth() === month &&
-            getDynamicCEType(t, projects, commesseCompletate) === 'onere_finanziario' &&
+            getDynamicCEType(t, projects, commesseCompletateReale) === 'onere_finanziario' &&
             (t.loanSourceId === l.id || t.linkedForecastId === l.id || t.description.toLowerCase().trim().includes(l.name.toLowerCase().trim()))
           );
 
@@ -825,7 +849,7 @@ const CEView: React.FC<CEViewProps> = ({
     }
 
     const filteredProiezioneTxs = txAnnoProiezioniBase.filter(tx => {
-      const dType = getDynamicCEType(tx, projects, commesseCompletate);
+      const dType = getDynamicCEType(tx, projects, commesseCompletatePrevisionale);
       return cfg.ceTypes.includes(dType || '');
     });
 
@@ -872,10 +896,10 @@ const CEView: React.FC<CEViewProps> = ({
         const d = new Date(selectedYear, month, 15);
         loans.forEach((l, idx) => {
           const hasForecastForThisLoan = transactions.some(t => 
-            t.isForecast && 
-            parseUTCDate(t.date).getUTCFullYear() === selectedYear && 
+            t.isForecast &&
+            parseUTCDate(t.date).getUTCFullYear() === selectedYear &&
             parseUTCDate(t.date).getUTCMonth() === month &&
-            getDynamicCEType(t, projects, commesseCompletate) === 'onere_finanziario' &&
+            getDynamicCEType(t, projects, commesseCompletatePrevisionale) === 'onere_finanziario' &&
             (t.loanSourceId === l.id || t.linkedForecastId === l.id || t.description.toLowerCase().trim().includes(l.name.toLowerCase().trim()))
           );
 
@@ -899,7 +923,7 @@ const CEView: React.FC<CEViewProps> = ({
     }
 
     const filteredSoloPrevisionaleTxs = txAnnoSoloPrevisionaliBase.filter(tx => {
-      const dType = getDynamicCEType(tx, projects, commesseCompletate);
+      const dType = getDynamicCEType(tx, projects, commesseCompletatePrevisionale);
       return cfg.ceTypes.includes(dType || '');
     });
 
@@ -911,7 +935,7 @@ const CEView: React.FC<CEViewProps> = ({
       kpiPercentuale: cfg.percentuale,
       formulaSteps: cfg.steps,
       transazioniContribuenti: txAnnoContribuenti.filter(tx => {
-        const dType = getDynamicCEType(tx, projects, commesseCompletate);
+        const dType = getDynamicCEType(tx, projects, commesseCompletateReale);
         return cfg.ceTypes.includes(dType || '');
       }),
       anno: selectedYear,
@@ -1780,6 +1804,27 @@ const CEView: React.FC<CEViewProps> = ({
             </span>
           )}
         </div>
+
+        {discontinuitaRimanenze.length > 0 && (
+          <div className="mx-6 mt-6 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 space-y-2">
+            <p className="text-[11px] font-black text-amber-700 uppercase tracking-wide">
+              ⚠ Continuità con {selectedYear - 1} da verificare
+            </p>
+            {discontinuitaRimanenze.map(d => (
+              <div key={d.field} className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-amber-800">
+                  <strong>{d.label}</strong> a inizio {selectedYear} è {formatEuro(d.attuale)}, ma la fine {selectedYear - 1} era {formatEuro(d.atteso)}
+                </span>
+                <button
+                  onClick={() => handleRimanenzeField(d.field, d.atteso)}
+                  className="shrink-0 px-3 py-1 rounded-lg bg-amber-500 text-white font-bold hover:bg-amber-600 transition-all"
+                >
+                  Usa {formatEuro(d.atteso)}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
 

@@ -465,11 +465,13 @@ export const getDynamicLoansPrincipals = (
 
 export const getDynamicDepreciation = (
   transactions: Transaction[],
-  anno: number
+  anno: number,
+  includeForecast: boolean = false
 ): number[] => {
   const depreciation = Array(12).fill(0);
-  
+
   transactions.forEach(t => {
+    if (!includeForecast && t.isForecast) return;
     if (t.ceType === 'capex') {
       // Escludi categorie non ammortizzabili o di rimborso debito
       if (t.category === '[FINANZA] Quota Capitale Rate Finanziamenti' ||
@@ -535,8 +537,10 @@ export const buildCEData = (
     costiFissi:           manualOverrides?.costiFissi ?? agg['costo_fisso'].map(v => Math.abs(v)),
     costiStudio:          manualOverrides?.costiStudio ?? agg['costo_studio'].map(v => Math.abs(v)),
     // BUG-007 FIX: pre-compute depreciation ONCE instead of calling it 12 times inside .map()
+    // soloPrevisionale=true (vista Previsionale) include anche i capex pianificati/non ancora
+    // acquistati; in reale (false) solo i capex realmente sostenuti generano ammortamento.
     ammortamenti:         manualOverrides?.ammortamenti ?? (() => {
-      const dynamicDep = getDynamicDepreciation(transactions, anno);
+      const dynamicDep = getDynamicDepreciation(transactions, anno, soloPrevisionale);
       return agg['ammortamento'].map((v, i) => Math.abs(v) + dynamicDep[i]);
     })(),
     oneriFin:             manualOverrides?.oneriFin ?? agg['onere_finanziario'].map(v => Math.abs(v)),

@@ -329,7 +329,7 @@ const SPView: React.FC<SPViewProps> = ({
       }
     });
 
-    const deprArray = getDynamicDepreciation(transactions, targetYear);
+    const deprArray = getDynamicDepreciation(transactions, targetYear, false);
     const targetMonth = targetDateObj.getUTCMonth();
     const currentYearDepreciation = deprArray.slice(0, targetMonth + 1).reduce((sum, v) => sum + v, 0);
 
