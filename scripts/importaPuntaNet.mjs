@@ -215,10 +215,15 @@ console.log(`Movimenti bancari trovati: ${movimenti.length}`);
 const autoConsuntivo = [];
 let duplicatiPerContenutoConsuntivo = 0;
 const revisioneConsuntivo = [];
+// Popolate piu' sotto dal secondo loop (Documenti Scadenze) — dichiarate qui perche'
+// getResiduoPrevisione/trovaLinkedForecastId le referenziano gia' durante il primo loop.
+const autoScadenze = [];
+const revisioneScadenze = [];
 
 // Capienza residua di una previsione: totale meno quanto gia' collegato (sia nel file esistente
-// sia nei consuntivi appena aggiunti in questo stesso giro) — permette di riconoscere piu'
-// pagamenti/rate sulla stessa previsione nel tempo, invece di collegarne solo uno e basta.
+// sia nei consuntivi appena aggiunti in questo stesso giro, da entrambe le fonti — Conti
+// Movimenti e Documenti Scadenze) — permette di riconoscere piu' pagamenti/rate sulla stessa
+// previsione nel tempo, invece di collegarne solo uno e basta.
 function getResiduoPrevisione(f) {
   const totale = importoLordoTx(f);
   const coperturaEsistente = gvData.transactions
@@ -226,10 +231,27 @@ function getResiduoPrevisione(f) {
       t.linkedForecastId === f.id || (f.loanSourceId && t.loanSourceId === f.loanSourceId)
     ))
     .reduce((sum, t) => sum + importoLordoTx(t), 0);
-  const coperturaNuova = autoConsuntivo
+  const coperturaNuova = [...autoConsuntivo, ...autoScadenze]
     .filter(t => t.linkedForecastId === f.id)
     .reduce((sum, t) => sum + importoLordoTx(t), 0);
   return totale - coperturaEsistente - coperturaNuova;
+}
+
+// Cerca una previsione ESISTENTE (inserita a mano dall'utente, mai modificata) a cui collegare
+// una riga nuova — stesso progetto+categoria+tipo, con capienza residua sufficiente, preferendo
+// il residuo piu' vicino (miglior fit). Condivisa dal loop Conti Movimenti e dal loop Documenti
+// Scadenze: un pagamento gia' avvenuto E una fattura emessa-non-ancora-pagata sono entrambi dati
+// "certi" (consuntivo) che vanno accostati al piano previsionale dell'utente, mai sostituirlo.
+function trovaLinkedForecastId(tipo, cantiereApp, categoria, importo) {
+  if (!categoria) return undefined;
+  const txProj = cantiereApp || 'Generale';
+  const TOLLERANZA = 0.5; // arrotondamenti
+  const candidati = previsioniEsistenti
+    .filter(f => f.type === tipo && (f.project || 'Generale') === txProj && f.category === categoria)
+    .map(f => ({ f, residuo: getResiduoPrevisione(f) }))
+    .filter(c => c.residuo >= importo - TOLLERANZA)
+    .sort((a, b) => a.residuo - b.residuo);
+  return candidati.length > 0 ? candidati[0].f.id : undefined;
 }
 
 for (const mv of movimenti) {
@@ -286,20 +308,8 @@ for (const mv of movimenti) {
 
   // Collegamento a previsione ESISTENTE (solo lettura, mai modificata). Nessun vincolo di stesso
   // mese: un incasso puo' arrivare mesi dopo quello previsto. Una previsione puo' anche essere
-  // incassata in piu' pagamenti (rate/acconti): si collega alla previsione, nello stesso
-  // progetto+categoria, che ha ancora capienza residua sufficiente per questo importo,
-  // preferendo il residuo piu' vicino (miglior fit, minimizza il sovraccoperto).
-  let linkedForecastId = undefined;
-  if (categoria) {
-    const txProj = cantiereApp || 'Generale';
-    const TOLLERANZA = 0.5; // arrotondamenti
-    const candidati = previsioniEsistenti
-      .filter(f => f.type === tipo && (f.project || 'Generale') === txProj && f.category === categoria)
-      .map(f => ({ f, residuo: getResiduoPrevisione(f) }))
-      .filter(c => c.residuo >= importo - TOLLERANZA)
-      .sort((a, b) => a.residuo - b.residuo);
-    if (candidati.length > 0) linkedForecastId = candidati[0].f.id;
-  }
+  // incassata in piu' pagamenti (rate/acconti): si collega alla previsione con capienza residua.
+  const linkedForecastId = trovaLinkedForecastId(tipo, cantiereApp, categoria, importo);
 
   const grossAmount = importo;
   const amount = vatRate ? Math.round((grossAmount / (1 + vatRate / 100)) * 100) / 100 : grossAmount;
@@ -360,19 +370,27 @@ console.log(`  da rivedere in bozza: ${revisioneConsuntivo.length}`);
 console.log(`  con cantiere: ${[...autoConsuntivo, ...revisioneConsuntivo.map(b => ({ project: b.cantiereSuggerito }))].filter(t => t.project).length}`);
 console.log(`  collegato a previsione esistente: ${autoConsuntivo.filter(t => t.linkedForecastId).length}\n`);
 
-// ─── PREVISIONE: Documenti Scadenze non ancora pagate ────────────────────
+// ─── SCADENZE: Documenti Scadenze non ancora pagate ────────────────────
+// Fatture gia' emesse/ricevute ma non ancora incassate/pagate: sono un dato CERTO e documentato
+// (competenza), non un'ipotesi — vanno quindi scritte come CONSUNTIVO (isForecast: false), MAI
+// come previsionale. Le previsionali sono uno scenario costruito a mano dall'utente e l'import
+// da PuntaNet non deve mai aggiungerne di nuove ne' modificare quelle esistenti: puo' solo
+// collegare un nuovo consuntivo a una previsionale gia' presente (linkedForecastId), quando
+// categoria/progetto/importo coincidono, per permettere il confronto previsto-vs-reale in app.
+// (Corretto il 2026-09-11 dopo una scrittura errata: 176 righe erano finite come previsionali,
+// facendo scendere il "previsionale fine anno" di circa 103.000€ senza che l'utente avesse
+// toccato nulla — la previsionale e' un'area esclusivamente manuale, mai popolata da automazioni.)
+//
 // Tipo 0=FEA (entrata), 1=FEP (uscita), 2=nota di credito ATTIVA (storna una FEA), 3=nota di
 // credito PASSIVA (storna una FEP). Le note di credito vanno incluse col segno OPPOSTO alla
 // fattura che stornano — altrimenti una fattura sbagliata gia' corretta da una nota di credito
 // (stesso importo, stessa data) risulterebbe comunque "da pagare" per intero (bug verificato sui
 // dati reali: 3 fatture FKF Costruzioni azzerate da 3 note di credito identiche, tipo 3).
-console.log('--- Previsione (rate non ancora pagate) ---');
+console.log('--- Scadenze (fatture emesse, non ancora incassate/pagate) ---');
 const scadenzeAperte = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT d.IDDocumento, d.Tipo, ds.IDRata, ds.[Data Rata] AS DataRata, ds.[Importo Rata] AS ImportoRata, d.Imponibile, d.Imposte, d.Totale, cf.[Ragione Sociale] AS Controparte FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento LEFT JOIN [Clienti Fornitori] cf ON cf.IDCliFor = d.IDCliFor WHERE ds.Pagato = 0 AND d.Tipo IN (0,1,2,3) AND ds.[Data Rata] >= '${DATA_INIZIO}' FOR JSON PATH`);
 console.log(`Rate non pagate trovate: ${scadenzeAperte.length}`);
 
-const autoPrevisione = [];
-const revisionePrevisione = [];
-let duplicatiPerContenutoPrevisione = 0;
+let duplicatiPerContenutoScadenze = 0;
 for (const s of scadenzeAperte) {
   const key = `${s.IDDocumento}|${s.IDRata}`;
   if (esistentiKey.has(key)) continue;
@@ -415,11 +433,15 @@ for (const s of scadenzeAperte) {
   const amount = vatRate ? Math.round((grossAmount / (1 + vatRate / 100)) * 100) / 100 : grossAmount;
 
   const dupCheck = isDuplicato({ data: new Date(s.DataRata), descrizione, entity, importo: s.ImportoRata, tipo, flagConto: 'B', tipoMovimento }, gvData.transactions);
-  if (dupCheck.duplicato) { duplicatiPerContenutoPrevisione++; continue; }
+  if (dupCheck.duplicato) { duplicatiPerContenutoScadenze++; continue; }
 
   const dataISO = s.DataRata.slice(0, 10);
   const dataOk = dataPlausibile(dataISO);
   const alta = categoria && confidenza === 'alta' && (tipo === 'INCOME' || vatRate !== null) && dataOk;
+
+  // Collegamento a previsione ESISTENTE (solo lettura, mai modificata) — una fattura emessa e
+  // non ancora incassata/pagata puo' gia' corrispondere a qualcosa che l'utente ha pianificato.
+  const linkedForecastId = trovaLinkedForecastId(tipo, cantiereApp, categoria, s.ImportoRata);
 
   const base = {
     id: crypto.randomUUID(),
@@ -430,30 +452,32 @@ for (const s of scadenzeAperte) {
     description: descrizione,
     project: cantiereApp,
     ceType: ceType || 'solo_cashflow',
-    isForecast: true,
+    isForecast: false, // fattura gia' emessa/ricevuta = dato certo (consuntivo), mai previsionale
+    linkedForecastId,
     sourceRef: `Punta Net (automatico) - IDDocumento ${s.IDDocumento} / IDRata ${s.IDRata}`,
     puntaNetIDDocumento: s.IDDocumento,
     puntaNetIDRata: s.IDRata,
   };
 
   if (alta) {
-    autoPrevisione.push(base);
+    autoScadenze.push(base);
   } else {
-    revisionePrevisione.push(costruisciBozza({
+    revisioneScadenze.push(costruisciBozza({
       dataISO, descrizione, entity, importo: s.ImportoRata, tipo, tipoMovimento,
       categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate, vatRateNota: notaRevisione(dataOk),
       cantiereApp, idDocumento: s.IDDocumento, idRata: s.IDRata,
     }));
   }
 }
-console.log(`Nuova previsione (non ancora nel file per ID): ${autoPrevisione.length + revisionePrevisione.length + duplicatiPerContenutoPrevisione}`);
-console.log(`  gia' presenti per contenuto (data+importo+descrizione) — saltate: ${duplicatiPerContenutoPrevisione}`);
-console.log(`  auto-scrivibili (alta confidenza): ${autoPrevisione.length}`);
-console.log(`  da rivedere in bozza: ${revisionePrevisione.length}\n`);
+console.log(`Nuove scadenze (non ancora nel file per ID): ${autoScadenze.length + revisioneScadenze.length + duplicatiPerContenutoScadenze}`);
+console.log(`  gia' presenti per contenuto (data+importo+descrizione) — saltate: ${duplicatiPerContenutoScadenze}`);
+console.log(`  auto-scrivibili (alta confidenza): ${autoScadenze.length}`);
+console.log(`  collegate a previsione esistente: ${autoScadenze.filter(t => t.linkedForecastId).length}`);
+console.log(`  da rivedere in bozza: ${revisioneScadenze.length}\n`);
 
 // ─── Output report (sempre, sia dry-run che scrittura) ─────────────────────────────────
 fs.mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
-fs.writeFileSync(REPORT_PATH, JSON.stringify({ autoConsuntivo, revisioneConsuntivo, autoPrevisione, revisionePrevisione }, null, 2));
+fs.writeFileSync(REPORT_PATH, JSON.stringify({ autoConsuntivo, revisioneConsuntivo, autoScadenze, revisioneScadenze }, null, 2));
 console.log(`=== Report salvato in: ${REPORT_PATH} ===`);
 
 if (!SCRIVI) {
@@ -476,11 +500,11 @@ for (const b of (gvDataFresh.bozzaImportPuntaNet || [])) {
   if (b._puntaNetKey) bozzaKeyFresh.add(b._puntaNetKey);
 }
 
-const daScrivere = [...autoConsuntivo, ...autoPrevisione].filter(t => {
+const daScrivere = [...autoConsuntivo, ...autoScadenze].filter(t => {
   const k = `${t.puntaNetIDDocumento}|${t.puntaNetIDRata}`;
   return !esistentiKeyFresh.has(k);
 });
-const daMettereInBozza = [...revisioneConsuntivo, ...revisionePrevisione].filter(b => {
+const daMettereInBozza = [...revisioneConsuntivo, ...revisioneScadenze].filter(b => {
   if (!b._puntaNetKey) return true;
   return !esistentiKeyFresh.has(b._puntaNetKey) && !bozzaKeyFresh.has(b._puntaNetKey);
 });
