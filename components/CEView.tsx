@@ -1062,17 +1062,11 @@ const CEView: React.FC<CEViewProps> = ({
           </div>
 
           <div className="flex bg-slate-100 rounded-xl p-1">
-            <button 
-              onClick={() => setActiveTab('ytd')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'ytd' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+            <button
+              onClick={() => setActiveTab('previsionale')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'previsionale' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
             >
-              YTD Consuntivo
-            </button>
-            <button 
-              onClick={() => setActiveTab('monthly')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'monthly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
-            >
-              Mese per Mese
+              Previsionale
             </button>
             <button
               onClick={() => setActiveTab('projection')}
@@ -1081,10 +1075,16 @@ const CEView: React.FC<CEViewProps> = ({
               Proiezione Anno
             </button>
             <button
-              onClick={() => setActiveTab('previsionale')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'previsionale' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+              onClick={() => setActiveTab('ytd')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'ytd' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
             >
-              Previsionale
+              YTD Consuntivo
+            </button>
+            <button
+              onClick={() => setActiveTab('monthly')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'monthly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+            >
+              Mese per Mese
             </button>
             <button
               onClick={() => setActiveTab('scostamenti')}
@@ -1174,6 +1174,51 @@ const CEView: React.FC<CEViewProps> = ({
         </div>
       )}
 
+      {/* Spiegazione della vista attiva — sempre visibile subito sotto i tab, stessa posizione per
+          tutte e 5 le viste, così è chiaro SUBITO come sono calcolati i numeri prima di leggerli. */}
+      {activeTab === 'previsionale' && (
+        <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-2xl p-4">
+          <Info size={16} className="text-slate-500 shrink-0 mt-0.5" />
+          <div className="text-[11px] text-slate-800 leading-relaxed space-y-1">
+            <p>
+              <span className="font-black uppercase tracking-wide">Cos'è questa vista</span> —
+              solo il <span className="font-bold">piano</span>: tutti e 12 i mesi presi esclusivamente dalle transazioni
+              previsionali impostate nelle timeline, indipendentemente da quanto consuntivo hai già caricato.
+            </p>
+            <p>
+              <span className="font-black uppercase tracking-wide">Come si calcola</span> —
+              somma dei soli movimenti con <span className="font-mono">isForecast = true</span> datati nell'anno {selectedYear}, mese per mese.
+              Non cambia caricando i consuntivi: cambia solo quando modifichi tu i previsionali. È il dato disponibile fin da gennaio
+              per costruire lo scenario dell'anno.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'projection' && (
+        <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-2xl p-4">
+          <Info size={16} className="text-slate-500 shrink-0 mt-0.5" />
+          <div className="text-[11px] text-slate-800 leading-relaxed space-y-1">
+            <p>
+              <span className="font-black uppercase tracking-wide">Cos'è questa vista</span> —
+              un mix che si aggiorna da solo: mesi già passati presi dal <span className="font-bold">consuntivo reale</span>,
+              mesi mancanti stimati dal <span className="font-bold">previsionale</span>.
+            </p>
+            <p>
+              <span className="font-black uppercase tracking-wide">Come si calcola</span> —
+              consuntivo YTD (fino a oggi) + transazioni previsionali già inserite per i mesi restanti. Dove mancano previsionali,
+              il mese viene stimato per estrapolazione lineare: <span className="font-mono">(YTD ÷ mesi trascorsi) × 12</span>.
+              Man mano che l'anno avanza il consuntivo cresce e il previsionale si riduce, fino a coincidere a dicembre.
+            </p>
+            {metrics.mesiTrascorsi < 12 && (
+              <p className="text-slate-600 italic">
+                Basato su {metrics.mesiTrascorsi} {metrics.mesiTrascorsi === 1 ? 'mese' : 'mesi'} di consuntivo su 12.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {(activeTab === 'ytd' || activeTab === 'monthly') && (
         <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-2xl p-4">
           <Info size={16} className="text-slate-500 shrink-0 mt-0.5" />
@@ -1181,22 +1226,36 @@ const CEView: React.FC<CEViewProps> = ({
             <p>
               <span className="font-black uppercase tracking-wide">Cos'è questa vista</span> —
               solo dati <span className="font-bold">realmente accaduti</span>, fermi al mese fino a cui hai caricato i consuntivi
-              (nessun dato previsionale nei numeri principali). È il dato di riferimento per fisco, banche e bilancio.
+              (nessun dato previsionale). È il dato di riferimento per fisco, banche e bilancio.
             </p>
             <p>
-              <span className="font-black uppercase tracking-wide">KPI in cima</span> —
-              proiezione basata su consuntivo YTD + transazioni previsionali future inserite manualmente.
-            </p>
-            <p>
-              <span className="font-black uppercase tracking-wide">Colonna Proiezione nelle righe</span> — 
-              estrapolazione lineare: <span className="font-mono">(YTD ÷ mesi trascorsi) × 12</span>. 
-              Usata quando i previsionali non sono stati inseriti.
+              <span className="font-black uppercase tracking-wide">Come si calcola</span> —
+              somma dei soli movimenti con <span className="font-mono">isForecast = false</span> datati nell'anno {selectedYear}
+              {activeTab === 'monthly' ? ', ripartiti qui sotto mese per mese' : ''}.
             </p>
             {metrics.mesiTrascorsi < 12 && (
               <p className="text-slate-600 italic">
                 Basato su {metrics.mesiTrascorsi} {metrics.mesiTrascorsi === 1 ? 'mese' : 'mesi'} di consuntivo su 12.
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'scostamenti' && (
+        <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-2xl p-4">
+          <Info size={16} className="text-slate-500 shrink-0 mt-0.5" />
+          <div className="text-[11px] text-slate-800 leading-relaxed space-y-1">
+            <p>
+              <span className="font-black uppercase tracking-wide">Cos'è questa vista</span> —
+              confronto per ogni voce tra <span className="font-bold">Budget</span> (obiettivo fissato a inizio anno),
+              <span className="font-bold"> Previsionale</span> (piano attuale nelle timeline) e <span className="font-bold">Consuntivo</span> (dati realmente accaduti).
+            </p>
+            <p>
+              <span className="font-black uppercase tracking-wide">Come si calcola</span> —
+              scostamento = Consuntivo − riferimento (Budget o Previsionale), in valore e percentuale. Usa il selettore periodo
+              qui sotto per isolare un singolo mese invece dell'intero YTD.
+            </p>
           </div>
         </div>
       )}
@@ -1572,89 +1631,6 @@ const CEView: React.FC<CEViewProps> = ({
       </>
       )}
 
-      {activeTab === 'projection' && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider sticky left-0 bg-slate-50 z-20">
-                    Voce di Conto
-                  </th>
-                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">
-                    YTD Consuntivo
-                  </th>
-                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">
-                    Mesi
-                  </th>
-                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">
-                    Proiezione 12m
-                  </th>
-                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">
-                    % su Ricavi
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {(() => {
-                  const hasForecasts = txAnno.some(tx => tx.isForecast);
-                  const getProjVal = (forecastVal: number, linearVal: number) => hasForecasts ? forecastVal : linearVal;
-                  
-                  return [
-                    { label: 'Ricavi Totali', ytd: metrics.fatturato, proj: metrics.proiezioneFatturato, isBold: true },
-                    { label: 'Costi Variabili', ytd: metrics.totCostiVar.reduce((a,b)=>a+b,0), proj: getProjVal(metrics.proiezioneCostiVariabili, (metrics.totCostiVar.reduce((a,b)=>a+b,0) / metrics.mesiTrascorsi) * 12) },
-                    { label: 'Primo Margine', ytd: metrics.primoMargineTot, proj: getProjVal(metrics.proiezionePrimoMargine, (metrics.primoMargineTot / metrics.mesiTrascorsi) * 12), isBold: true, color: 'text-slate-900' },
-                    { label: 'Costi di Struttura', ytd: metrics.costiFissiTot, proj: getProjVal(metrics.proiezioneCostiFissi + metrics.proiezioneCostiStudio + metrics.proiezioneAmmortamenti, (metrics.costiFissiTot / metrics.mesiTrascorsi) * 12) },
-                    { label: 'EBITDA', ytd: metrics.ebitdaTot, proj: metrics.proiezioneEbitda, isBold: true, color: 'text-slate-900' },
-                    { label: 'EBIT', ytd: metrics.ebitTot, proj: getProjVal(metrics.proiezioneEbit, (metrics.ebitTot / metrics.mesiTrascorsi) * 12) },
-                    { label: 'Utile Netto', ytd: metrics.utileNettoTot, proj: metrics.proiezioneUtile, isBold: true, color: 'text-slate-900' },
-                  ].map((row, i) => (
-                    <tr key={row.label} className="hover:bg-slate-50/50 transition-colors">
-                      <td className={`py-4 px-4 text-xs ${row.isBold ? 'font-black uppercase' : 'font-medium text-slate-600'}`}>
-                        {row.label}
-                      </td>
-                      <td className="py-4 px-4 text-right text-xs font-mono text-slate-500">
-                        {formatEuro(row.ytd)}
-                      </td>
-                      <td className="py-4 px-4 text-right text-xs font-mono text-slate-400">
-                        {metrics.mesiTrascorsi} / 12
-                      </td>
-                      <td className={`py-4 px-4 text-right text-sm font-black font-mono ${row.color || 'text-slate-900'}`}>
-                        {formatEuro(row.proj)}
-                      </td>
-                      <td className="py-4 px-4 text-right text-xs font-mono text-slate-500">
-                        {formatPercent(metrics.proiezioneFatturato > 0 ? row.proj / metrics.proiezioneFatturato : 0)}
-                      </td>
-                    </tr>
-                  ));
-                })()}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Info Box */}
-          <div className="p-6 bg-slate-50 border-t border-slate-100">
-            <div className="flex items-start gap-4">
-              <div className="p-2 bg-slate-100 rounded-xl">
-                <Info size={20} className="text-slate-600" />
-              </div>
-              <div className="space-y-2">
-                <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">Cos'è questa vista</h4>
-                <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
-                  <span className="font-bold text-slate-700">Mix che si aggiorna da solo</span>: mesi già passati presi dal consuntivo reale,
-                  mesi mancanti stimati dal previsionale. Man mano che l'anno avanza il consuntivo cresce e il previsionale si riduce, fino a
-                  coincidere a dicembre. Se per un mese futuro non hai inserito previsionali, quel mese viene <span className="font-bold text-slate-700">stimato per estrapolazione lineare</span> (media dei mesi trascorsi).
-                </p>
-                <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest pt-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" />
-                  Dove mancano previsionali: (Valore YTD / {metrics.mesiTrascorsi}) × 12
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {activeTab === 'previsionale' && (
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="overflow-x-auto">
@@ -1696,24 +1672,6 @@ const CEView: React.FC<CEViewProps> = ({
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* Info Box */}
-          <div className="p-6 bg-slate-50 border-t border-slate-100">
-            <div className="flex items-start gap-4">
-              <div className="p-2 bg-slate-100 rounded-xl">
-                <Info size={20} className="text-slate-600" />
-              </div>
-              <div className="space-y-2">
-                <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">Cos'è questa vista</h4>
-                <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
-                  <span className="font-bold text-slate-700">Solo il piano</span>: tutti e 12 i mesi presi esclusivamente dalle
-                  transazioni previsionali che hai impostato nelle timeline, indipendentemente da quanto consuntivo hai già
-                  caricato. Non cambia man mano che carichi i consuntivi — cambia solo quando modifichi tu i previsionali.
-                  È il dato disponibile fin da gennaio per costruire lo scenario dell'anno.
-                </p>
-              </div>
-            </div>
           </div>
         </div>
       )}
