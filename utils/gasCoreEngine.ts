@@ -51,13 +51,21 @@ export const commessaDiIncasso = (tx: Transaction, projects?: Project[]): Projec
 // Insieme delle commesse COMPLETATE (saldate) in un dato anno, come chiavi `${nomeCommessa}||${anno}`.
 // Criterio OIC 23 della "commessa completata": una commessa ad acconto è completata nell'anno in cui riceve
 // un SALDO (categoria "[CANTIERE] Saldo Finale Commessa" oppure la parola "saldo" nella descrizione).
-// Include i forecast, perché la proiezione di fine anno deve riconoscere anche i saldi previsionali.
 // Nell'anno di completamento TUTTI gli incassi della commessa (di quell'anno E degli anni precedenti)
 // diventano ricavo (rilascio cumulativo a completamento); negli anni precedenti restano acconti/debito.
-export const computeCommesseCompletate = (transactions: Transaction[], projects?: Project[]): Set<string> => {
+//
+// `includeForecast` distingue DUE usi diversi, che vanno tenuti separati:
+// - false (default) — usato per i dati REALI (consuntivo/YTD): una commessa è completata solo se il
+//   saldo è stato DAVVERO incassato. Altrimenti anni di acconti reali verrebbero riconosciuti come
+//   ricavo di quest'anno solo perché un saldo è PIANIFICATO, non ancora avvenuto (bug corretto il
+//   2026-09-11: su dati reali causava ~2,9M€ di ricavo 2026 anticipato su commesse non ancora chiuse).
+// - true — usato SOLO per la vista Previsionale/Proiezione: lì è corretto anticipare il completamento
+//   anche sulla base di un saldo pianificato, perché si sta simulando il piano dell'anno.
+export const computeCommesseCompletate = (transactions: Transaction[], projects?: Project[], includeForecast: boolean = false): Set<string> => {
   const set = new Set<string>();
   for (const tx of transactions) {
     if (tx.type !== 'INCOME') continue;
+    if (!includeForecast && tx.isForecast) continue;
     const isSaldo = tx.category === '[CANTIERE] Saldo Finale Commessa' ||
                     /\bsaldo\b/i.test(tx.description || '');
     if (!isSaldo) continue;
@@ -116,7 +124,8 @@ export const aggregateByMonthAndType = (
   transactions: Transaction[],
   anno: number,
   modalita: 'cassa' | 'competenza' = 'cassa',
-  projects?: Project[]
+  projects?: Project[],
+  soloPrevisionale: boolean = false
 ): Record<string, number[]> => {
   // Inizializza 12 mesi a zero per ogni ceType
   const result: Record<string, number[]> = {};
@@ -129,10 +138,12 @@ export const aggregateByMonthAndType = (
   ceTypes.forEach(t => result[t] = Array(12).fill(0));
 
   // Commesse ad acconto completate (saldate) per anno: nell'anno del saldo i loro incassi diventano ricavo.
-  const commesseCompletate = computeCommesseCompletate(transactions, projects);
+  // In modalità reale (default) conta solo un saldo DAVVERO incassato; in modalità pura previsionale
+  // (soloPrevisionale) è corretto anticipare anche un saldo pianificato, perché si sta simulando il piano.
+  const commesseCompletate = computeCommesseCompletate(transactions, projects, soloPrevisionale);
 
   transactions
-    .filter(tx => tx.ceType && !tx.isForecast)
+    .filter(tx => tx.ceType && (soloPrevisionale ? !!tx.isForecast : !tx.isForecast))
     .forEach(tx => {
       const type = getDynamicCEType(tx, projects, commesseCompletate);
       if (!type) return;
@@ -159,14 +170,18 @@ export const aggregateByMonthAndType = (
       }
     });
 
-  // Rilascio CUMULATIVO a completamento: per ogni commessa ad acconto COMPLETATA (saldata) in `anno`,
-  // porta a ricavo in `anno` anche gli incassi degli ANNI PRECEDENTI (attribuiti per link o per testo),
-  // che nei loro anni erano anticipi/debito (solo_cashflow). Gli incassi dell'anno corrente sono già a
-  // ricavo (gestiti sopra da getDynamicCEType). L'importo rilasciato è collocato nel mese del saldo.
+  // Rilascio CUMULATIVO a completamento: per ogni commessa ad acconto COMPLETATA (saldata, o pianificata
+  // se soloPrevisionale) in `anno`, porta a ricavo in `anno` anche gli incassi degli ANNI PRECEDENTI
+  // (attribuiti per link o per testo), che nei loro anni erano anticipi/debito (solo_cashflow). Gli
+  // incassi dell'anno corrente sono già a ricavo (gestiti sopra da getDynamicCEType). L'importo
+  // rilasciato è collocato nel mese del saldo (reale o previsionale, coerente con soloPrevisionale).
+  // Gli incassi degli anni PRECEDENTI rilasciati sono SEMPRE quelli realmente incassati: un anno già
+  // trascorso è un fatto storico, non ha senso "prevederlo" neppure nella vista pura previsionale.
   if (projects) {
     const meseSaldo = new Map<string, number>();
     transactions.forEach(tx => {
       if (tx.type !== 'INCOME') return;
+      if (soloPrevisionale ? !tx.isForecast : !!tx.isForecast) return;
       const isSaldo = tx.category === '[CANTIERE] Saldo Finale Commessa' || /\bsaldo\b/i.test(tx.description || '');
       if (!isSaldo) return;
       const nome = commessaDiIncasso(tx, projects)?.name || tx.project;
@@ -177,6 +192,7 @@ export const aggregateByMonthAndType = (
     });
     transactions.forEach(tx => {
       if (tx.type !== 'INCOME') return;
+      if (tx.isForecast) return; // gli incassi di anni precedenti rilasciati sono sempre quelli reali
       const proj = commessaDiIncasso(tx, projects);
       if (!proj || proj.metodoPagamento !== 'acconto') return;
       if (!commesseCompletate.has(`${proj.name}||${anno}`)) return;
@@ -505,9 +521,10 @@ export const buildCEData = (
   manualOverrides?: Partial<CEData>,
   modalita: 'cassa' | 'competenza' = 'cassa',
   projects?: Project[],
-  initialData?: InitialBalanceBreakdown
+  initialData?: InitialBalanceBreakdown,
+  soloPrevisionale: boolean = false
 ): CEData => {
-  const agg = aggregateByMonthAndType(transactions, anno, modalita, projects);
+  const agg = aggregateByMonthAndType(transactions, anno, modalita, projects, soloPrevisionale);
 
   return {
     anno,
@@ -531,11 +548,25 @@ export const buildCEData = (
   };
 };
 
+// Vista "Previsionale puro": SOLO le transazioni previsionali, su tutti e 12 i mesi dell'anno,
+// indipendentemente da cosa è già stato caricato come consuntivo. È il piano dell'anno così come
+// impostato dall'utente nelle timeline — disponibile fin da gennaio, non si "consuma" col passare
+// dei mesi (a differenza della Proiezione/YTD, che man mano sostituisce previsionale con reale).
+// Non riceve manualOverrides (quelli sono dati di rettifica del CONSUNTIVO, non hanno senso qui).
+export const buildCEDataPrevisionale = (
+  transactions: Transaction[],
+  anno: number,
+  projects?: Project[]
+): CEData => buildCEData(transactions, anno, undefined, 'cassa', projects, undefined, true);
+
 // ─── CALCOLI CE DERIVATI ─────────────────────────────────────────
 
 export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], projects?: Project[], initialData?: InitialBalanceBreakdown, rimanenze?: RimanenzeAnno) => {
-  // Commesse ad acconto completate (saldate) per anno: incassi dell'anno del saldo = ricavo (anche forecast).
-  const commesseCompletate = computeCommesseCompletate(transactions, projects);
+  // Commesse ad acconto completate (saldate) per anno: usato SOLO qui sotto per la proiezione sui mesi
+  // futuri (getForecastSum) — lì è corretto includere anche i saldi previsionali (si sta stimando il
+  // piano). I dati "reali" in `ce` sono già stati costruiti a monte da buildCEData con il set NON
+  // inclusivo (solo saldi davvero incassati) e non vanno ricalcolati qui.
+  const commesseCompletate = computeCommesseCompletate(transactions, projects, true);
   const sum12 = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
   const add12 = (a: number[], b: number[]) => a.map((v, i) => Number((v + b[i]).toFixed(2)));
   const sub12 = (a: number[], b: number[]) => a.map((v, i) => Number((v - b[i]).toFixed(2)));

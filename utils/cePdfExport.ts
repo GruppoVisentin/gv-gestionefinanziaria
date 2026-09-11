@@ -7,7 +7,7 @@ interface CEPdfOptions {
   modalita: 'cassa' | 'competenza';
   metrics: any;
   ceData: CEData;
-  activeTab: 'ytd' | 'projection' | 'monthly' | 'scostamenti';
+  activeTab: 'ytd' | 'projection' | 'monthly' | 'scostamenti' | 'previsionale';
   scostamenti?: any[];
 }
 
@@ -49,9 +49,10 @@ export const exportCEPDF = ({
   pdf.text(`Metodo: ${modalita.toUpperCase()} — Generato il: ${new Date().toLocaleDateString('it-IT')}`, 15, 33);
 
   // Badge Periodo
-  const periodText = activeTab === 'ytd' ? 'CONSUNTIVO YTD' : 
+  const periodText = activeTab === 'ytd' ? 'CONSUNTIVO YTD' :
                     activeTab === 'projection' ? 'PROIEZIONE FINE ANNO' :
-                    activeTab === 'monthly' ? 'ANALISI MENSILE' : 'ANALISI SCOSTAMENTI';
+                    activeTab === 'monthly' ? 'ANALISI MENSILE' :
+                    activeTab === 'previsionale' ? 'PREVISIONALE ANNO (SOLO PIANO)' : 'ANALISI SCOSTAMENTI';
   
   pdf.setFillColor(51, 65, 85); // slate-700
   pdf.roundedRect(pdfW - 65, 12, 50, 10, 2, 2, 'F');
@@ -91,7 +92,7 @@ export const exportCEPDF = ({
   currentY += 30;
 
   // --- MAIN TABLE ---
-  if (activeTab === 'ytd' || activeTab === 'projection' || activeTab === 'monthly') {
+  if (activeTab === 'ytd' || activeTab === 'projection' || activeTab === 'monthly' || activeTab === 'previsionale') {
     const tableBody: any[] = [];
     
     const addRow = (label: string, data: number[], isBold = false, isKPI = false, projOverride?: number) => {

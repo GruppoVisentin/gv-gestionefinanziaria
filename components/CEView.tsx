@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, CEData, CERow, BudgetData, RimanenzeAnno, RimanenzeData, AppView, Project, InitialBalanceBreakdown } from '../types';
-import { buildCEData, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, computeCommesseCompletate, getDynamicLoansInterests, calculateRepayment, parseUTCDate, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
+import { buildCEData, buildCEDataPrevisionale, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, computeCommesseCompletate, getDynamicLoansInterests, calculateRepayment, parseUTCDate, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
 import { exportCEPDF } from '../utils/cePdfExport';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import CalcoloDrawer, { FormulaStep } from './CalcoloDrawer';
@@ -96,7 +96,7 @@ const CEView: React.FC<CEViewProps> = ({
   aliquotaIRAP = 3.9,
 }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [activeTab, setActiveTab] = useState<'ytd' | 'projection' | 'monthly' | 'scostamenti'>('ytd');
+  const [activeTab, setActiveTab] = useState<'ytd' | 'projection' | 'monthly' | 'scostamenti' | 'previsionale'>('ytd');
   const [meseScostamento, setMeseScostamento] = useState<number | null>(null); // null = YTD
   const [modalita, setModalita] = useState<'cassa' | 'competenza'>('cassa');
   const [showHelp, setShowHelp] = useState(false);
@@ -104,12 +104,24 @@ const CEView: React.FC<CEViewProps> = ({
   const [tipoRettifica, setTipoRettifica] = useState<'consuntivo' | 'proiezione'>('consuntivo');
 
   // Commesse ad acconto completate (saldate) per anno: nell'anno del saldo i loro incassi diventano ricavo.
-  // Stesso set usato dal motore, così le classificazioni proprie di CEView restano coerenti con il CE.
-  const commesseCompletate = useMemo(() => computeCommesseCompletate(transactions, projects), [transactions, projects]);
+  // Qui sotto (drawer "Spiega", righe di proiezione/solo-previsionale del KPI) si mescolano
+  // transazioni reali e previsionali insieme, quindi si mantiene inclusiva (true) com'era prima —
+  // sono classificazioni di dettaglio/drill-down, non i totali del CE (quelli usano buildCEData,
+  // che dal 2026-09-11 usa correttamente il set NON inclusivo per i dati reali).
+  const commesseCompletate = useMemo(() => computeCommesseCompletate(transactions, projects, true), [transactions, projects]);
 
   const ceData = useMemo(() =>
-    buildCEData(transactions, selectedYear, manualData[selectedYear.toString()], modalita, projects, initialData), 
+    buildCEData(transactions, selectedYear, manualData[selectedYear.toString()], modalita, projects, initialData),
     [transactions, selectedYear, manualData, modalita, projects, initialData]
+  );
+
+  const cePrevisionale = useMemo(() =>
+    buildCEDataPrevisionale(transactions, selectedYear, projects),
+    [transactions, selectedYear, projects]
+  );
+  const metricsPrevisionale = useMemo(() =>
+    calcCEMetrics(cePrevisionale, transactions, projects, initialData, undefined),
+    [cePrevisionale, transactions, projects, initialData]
   );
 
   // La variazione rimanenze (competenza) viene incorporata da calcCEMetrics SOLO in modalità competenza.
@@ -1031,6 +1043,12 @@ const CEView: React.FC<CEViewProps> = ({
               Proiezione Anno
             </button>
             <button
+              onClick={() => setActiveTab('previsionale')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'previsionale' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+            >
+              Previsionale
+            </button>
+            <button
               onClick={() => setActiveTab('scostamenti')}
               className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'scostamenti' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
             >
@@ -1038,36 +1056,38 @@ const CEView: React.FC<CEViewProps> = ({
             </button>
           </div>
 
-          {/* Toggle modalità */}
-          <div className="flex items-center bg-slate-100 rounded-xl p-1">
-            <button
-              onClick={() => setModalita('cassa')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                modalita === 'cassa'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Per cassa
-            </button>
-            <button
-              onClick={() => setModalita('competenza')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                modalita === 'competenza'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Per competenza
-            </button>
-          </div>
+          {/* Toggle modalità — non si applica alla vista Previsionale (nessuna rimanenza pianificata da applicare) */}
+          {activeTab !== 'previsionale' && (
+            <div className="flex items-center bg-slate-100 rounded-xl p-1">
+              <button
+                onClick={() => setModalita('cassa')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                  modalita === 'cassa'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Per cassa
+              </button>
+              <button
+                onClick={() => setModalita('competenza')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                  modalita === 'competenza'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Per competenza
+              </button>
+            </div>
+          )}
 
           <button
             onClick={() => exportCEPDF({
               selectedYear,
               modalita,
-              metrics,
-              ceData,
+              metrics: activeTab === 'previsionale' ? metricsPrevisionale : metrics,
+              ceData: activeTab === 'previsionale' ? cePrevisionale : ceData,
               activeTab,
               scostamenti
             })}
@@ -1121,7 +1141,12 @@ const CEView: React.FC<CEViewProps> = ({
           <Info size={16} className="text-slate-500 shrink-0 mt-0.5" />
           <div className="text-[11px] text-slate-800 leading-relaxed space-y-1">
             <p>
-              <span className="font-black uppercase tracking-wide">KPI in cima</span> — 
+              <span className="font-black uppercase tracking-wide">Cos'è questa vista</span> —
+              solo dati <span className="font-bold">realmente accaduti</span>, fermi al mese fino a cui hai caricato i consuntivi
+              (nessun dato previsionale nei numeri principali). È il dato di riferimento per fisco, banche e bilancio.
+            </p>
+            <p>
+              <span className="font-black uppercase tracking-wide">KPI in cima</span> —
               proiezione basata su consuntivo YTD + transazioni previsionali future inserite manualmente.
             </p>
             <p>
@@ -1146,6 +1171,8 @@ const CEView: React.FC<CEViewProps> = ({
         </div>
 
 
+      {activeTab !== 'previsionale' && (
+      <>
       {/* KPI Summary Cards */}
       <InfoTooltipWrapper className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
@@ -1428,6 +1455,8 @@ const CEView: React.FC<CEViewProps> = ({
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {activeTab === 'projection' && (
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1496,16 +1525,79 @@ const CEView: React.FC<CEViewProps> = ({
                 <Info size={20} className="text-slate-600" />
               </div>
               <div className="space-y-2">
-                <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">Nota sulla Proiezione</h4>
+                <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">Cos'è questa vista</h4>
                 <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
-                  Questa proiezione è <span className="font-bold text-slate-700">puramente lineare</span> e basata sulla media dei mesi trascorsi ({metrics.mesiTrascorsi}). 
-                  Non tiene conto di stagionalità specifiche o di ordini già acquisiti ma non ancora fatturati, a meno che non siano stati inseriti come 
-                  <span className="font-bold text-slate-700"> Previsionali</span> nel modulo transazioni.
+                  <span className="font-bold text-slate-700">Mix che si aggiorna da solo</span>: mesi già passati presi dal consuntivo reale,
+                  mesi mancanti stimati dal previsionale. Man mano che l'anno avanza il consuntivo cresce e il previsionale si riduce, fino a
+                  coincidere a dicembre. Se per un mese futuro non hai inserito previsionali, quel mese viene <span className="font-bold text-slate-700">stimato per estrapolazione lineare</span> (media dei mesi trascorsi).
                 </p>
                 <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest pt-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" />
-                  Calcolo: (Valore YTD / {metrics.mesiTrascorsi}) × 12
+                  Dove mancano previsionali: (Valore YTD / {metrics.mesiTrascorsi}) × 12
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'previsionale' && (
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider sticky left-0 bg-slate-50 z-20">
+                    Voce di Conto
+                  </th>
+                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">
+                    Previsionale {selectedYear} (12 mesi)
+                  </th>
+                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">
+                    % su Ricavi
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {[
+                  { label: 'Ricavi Totali', val: metricsPrevisionale.fatturato, isBold: true },
+                  { label: 'Costi Variabili', val: metricsPrevisionale.totCostiVar.reduce((a: number, b: number) => a + b, 0) },
+                  { label: 'Primo Margine', val: metricsPrevisionale.primoMargineTot, isBold: true, color: 'text-slate-900' },
+                  { label: 'Costi di Struttura', val: metricsPrevisionale.costiFissiTot },
+                  { label: 'EBITDA', val: metricsPrevisionale.ebitdaTot, isBold: true, color: 'text-slate-900' },
+                  { label: 'EBIT', val: metricsPrevisionale.ebitTot },
+                  { label: 'Utile Netto', val: metricsPrevisionale.utileNettoTot, isBold: true, color: 'text-slate-900' },
+                ].map(row => (
+                  <tr key={row.label} className="hover:bg-slate-50/50 transition-colors">
+                    <td className={`py-4 px-4 text-xs ${row.isBold ? 'font-black uppercase' : 'font-medium text-slate-600'}`}>
+                      {row.label}
+                    </td>
+                    <td className={`py-4 px-4 text-right text-sm font-black font-mono ${row.color || 'text-slate-900'}`}>
+                      {formatEuro(row.val)}
+                    </td>
+                    <td className="py-4 px-4 text-right text-xs font-mono text-slate-500">
+                      {formatPercent(metricsPrevisionale.fatturato > 0 ? row.val / metricsPrevisionale.fatturato : 0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Info Box */}
+          <div className="p-6 bg-slate-50 border-t border-slate-100">
+            <div className="flex items-start gap-4">
+              <div className="p-2 bg-slate-100 rounded-xl">
+                <Info size={20} className="text-slate-600" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">Cos'è questa vista</h4>
+                <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+                  <span className="font-bold text-slate-700">Solo il piano</span>: tutti e 12 i mesi presi esclusivamente dalle
+                  transazioni previsionali che hai impostato nelle timeline, indipendentemente da quanto consuntivo hai già
+                  caricato. Non cambia man mano che carichi i consuntivi — cambia solo quando modifichi tu i previsionali.
+                  È il dato disponibile fin da gennaio per costruire lo scenario dell'anno.
+                </p>
               </div>
             </div>
           </div>
