@@ -1261,7 +1261,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                             return (
                                 <React.Fragment key={`${category}-${mIdx}`}>
                                     {/* Forecast Cell */}
-                                    <td className={`px-1 py-2 text-center border-r border-slate-200 align-top relative group min-h-[50px] ${COL_SUB_WIDTH}`}>
+                                    <td className={`px-1 py-2 text-center border-r border-slate-200 align-top relative group min-h-[50px] bg-slate-50 ${COL_SUB_WIDTH}`}>
                                         <div className="flex flex-col gap-1 items-center w-full">
                                             {totalAutoEstimate > 0 && (
                                                 <div 
@@ -1475,7 +1475,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                         </div>
                                     </td>
                                     {/* Actual Cell */}
-                                    <td className={`px-1 py-2 text-center border-r border-slate-200 bg-white align-top relative group ${COL_SUB_WIDTH}`}>
+                                    <td className={`px-1 py-2 text-center border-r border-slate-200 bg-slate-200 align-top relative group ${COL_SUB_WIDTH}`}>
                                         <div className="flex flex-col items-center justify-between h-full w-full">
                                             {actualSum > 0 ? (
                                                 <div className="flex flex-col items-center w-full gap-0.5">
@@ -1587,7 +1587,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                              return (
                                  <React.Fragment key={`${category}-${mIdx}`}>
                                      {/* Forecast */}
-                                     <td className={`px-1 py-2 text-center border-r border-slate-200 align-top relative group min-h-[50px] ${COL_SUB_WIDTH}`}>
+                                     <td className={`px-1 py-2 text-center border-r border-slate-200 align-top relative group min-h-[50px] bg-slate-50 ${COL_SUB_WIDTH}`}>
                                          <div className="flex flex-col gap-1 items-center w-full">
                                              {totalAutoVariabile > 0 && (
                                                  <div 
@@ -1672,7 +1672,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                         </div>
                                     </td>
                                     {/* Actual */}
-                                    <td className={`px-1 py-2 text-center border-r border-slate-200 bg-white align-top relative group ${COL_SUB_WIDTH}`}>
+                                    <td className={`px-1 py-2 text-center border-r border-slate-200 bg-slate-200 align-top relative group ${COL_SUB_WIDTH}`}>
                                         <div className="flex flex-col items-center justify-between h-full w-full">
                                             {actualSum > 0 ? (
                                                 <div className="flex flex-col items-center w-full gap-0.5">
@@ -1753,8 +1753,8 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                 const totalActual = getMonthlyTotal(mIdx, false);
                 return (
                   <React.Fragment key={`total-${mIdx}`}>
-                    <td className={`px-1 py-4 text-center border-r border-rose-200 text-rose-500 font-mono text-[11px] bg-rose-50 backdrop-blur-sm ${COL_SUB_WIDTH}`}>{totalForecast > 0 ? CURRENCY_FORMATTER.format(totalForecast) : ''}</td>
-                    <td className={`px-1 py-4 text-center border-r border-rose-300 text-rose-700 font-mono text-[11px] bg-rose-100 backdrop-blur-sm ${COL_SUB_WIDTH}`}>{totalActual > 0 ? CURRENCY_FORMATTER.format(totalActual) : ''}</td>
+                    <td className={`px-1 py-4 text-center border-r border-rose-200 text-slate-600 font-mono text-[11px] bg-slate-50 backdrop-blur-sm ${COL_SUB_WIDTH}`}>{totalForecast > 0 ? CURRENCY_FORMATTER.format(totalForecast) : ''}</td>
+                    <td className={`px-1 py-4 text-center border-r border-rose-300 text-slate-800 font-mono text-[11px] bg-slate-200 backdrop-blur-sm ${COL_SUB_WIDTH}`}>{totalActual > 0 ? CURRENCY_FORMATTER.format(totalActual) : ''}</td>
                   </React.Fragment>
                 );
               })}
