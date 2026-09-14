@@ -1737,7 +1737,12 @@ const App: React.FC = () => {
     // 1. Calcola i nuovi stati usando i valori correnti
     const newSessions = importSessions.map(s => s.id === sessionId ? { ...s, annullata: true } : s);
     
-    const storicoTxs = transactions.filter(t => (t.importSessionId === sessionId) || (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")));
+    // Solo le transazioni DAVVERO rimosse da questa operazione: stesso sessionId, oppure (per lo
+    // storico legacy senza importSessionId) righe "Storico Excel" non taggate con NESSUNA sessione.
+    // Prima includeva qui TUTTE le transazioni "Storico Excel" di QUALSIASI sessione, quindi
+    // annullare un import poteva cancellare previsionali collegati a un'ALTRA sessione storico
+    // ancora valida, solo perche' la descrizione coincideva (bug trovato in audit il 2026-09-14).
+    const storicoTxs = transactions.filter(t => (t.importSessionId === sessionId) || (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel") && !t.importSessionId));
     const storicoDescSet = new Set(storicoTxs.map(t => t.description?.trim().toLowerCase()).filter(Boolean));
 
     const newTxs = transactions.filter(t => {
