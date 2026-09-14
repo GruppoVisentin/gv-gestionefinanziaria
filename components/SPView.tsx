@@ -755,12 +755,26 @@ const SPView: React.FC<SPViewProps> = ({
                       </button>
                     )}
                   </div>
-                  <ManualInput 
-                    label="Crediti Tributari" 
-                    value={currentSnap.creditiTributari} 
-                    onChange={v => setCurrentSnap(s => ({...s, creditiTributari: v}))} 
-                    isManual={true} 
+                  <ManualInput
+                    label="Crediti Tributari"
+                    value={currentSnap.creditiTributari}
+                    onChange={v => setCurrentSnap(s => ({...s, creditiTributari: v}))}
+                    isManual={true}
                     tooltipText="Crediti vantati nei confronti dell'Erario o di altri enti impositori. Comprende l'eccedenza IVA a credito compensabile o a rimborso, crediti d'imposta per investimenti."
+                  />
+                  <ManualInput
+                    label="Crediti Finanziari"
+                    value={currentSnap.creditiFinanziari || 0}
+                    onChange={v => setCurrentSnap(s => ({...s, creditiFinanziari: v}))}
+                    isManual={true}
+                    tooltipText="Crediti finanziari e finanziamenti concessi (es. a società collegate), diversi dai crediti commerciali verso clienti."
+                  />
+                  <ManualInput
+                    label="Investimenti a Breve Termine"
+                    value={currentSnap.investimentiBT || 0}
+                    onChange={v => setCurrentSnap(s => ({...s, investimentiBT: v}))}
+                    isManual={true}
+                    tooltipText="Titoli e altri investimenti finanziari a breve termine, prontamente liquidabili."
                   />
                   <div className="space-y-2">
                     <ManualInput 
