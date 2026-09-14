@@ -75,9 +75,9 @@ const RatingView: React.FC<RatingViewProps> = ({
 
   const ceMetrics = useMemo(() => calcCEMetrics(ceData, transactions, projects, initialData, rimanenze ? rimanenze[ratingYear] : undefined), [ceData, transactions, projects, initialData, rimanenze, ratingYear]);
 
-  const spMetrics = useMemo(() => 
-    activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions) : null,
-    [activeSP, ceMetrics, transactions]
+  const spMetrics = useMemo(() =>
+    activeSP ? calcSPMetrics(activeSP, ceMetrics, transactions, projects) : null,
+    [activeSP, ceMetrics, transactions, projects]
   );
 
   const rollingDSODPO = useMemo(() =>

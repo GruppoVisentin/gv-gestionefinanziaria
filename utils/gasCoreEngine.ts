@@ -137,6 +137,21 @@ export const computeCommesseCompletate = (transactions: Transaction[], projects?
   return set;
 };
 
+// Categorie che rappresentano un VERO pagamento del cliente sulla commessa (SAL, saldo, anticipi,
+// caparra, vendita immobiliare). Un incasso collegato a un cantiere ad acconto per un motivo diverso
+// (es. un rimborso assicurativo tracciato su quel cantiere) NON deve entrare nella logica di
+// completamento OIC 23 — non è un acconto del cliente, va semplicemente nel suo ceType di categoria.
+// Bug trovato dall'utente 2026-09-14: un accredito UNIPOL di €3.500 collegato a Condominio Spin 2
+// (per tracciarlo) spariva dal CE perché trattato come acconto cliente non ancora completato.
+const CATEGORIE_PAGAMENTO_COMMESSA = new Set([
+  '[CANTIERE] SAL — Stato Avanzamento Lavori',
+  '[CANTIERE] Saldo Finale Commessa',
+  '[CANTIERE] Manutenzioni e Piccoli Lavori',
+  '[CANTIERE] Anticipi da Clienti su Commessa',
+  '[CANTIERE] Caparra Confirmatoria',
+  '[IMMOBILIARE] Vendita Immobili e Terreni',
+]);
+
 export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesseCompletate?: Set<string>, annoContesto?: number): string => {
   let type = tx.ceType || '';
   if (tx.category) {
@@ -157,7 +172,7 @@ export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesse
       // - Nell'anno in cui la commessa viene SALDATA (è in commesseCompletate) è considerata COMPLETATA:
       //   TUTTI i suoi incassi di quell'anno diventano RICAVO (rilascio a completamento). Vale sia per il
       //   consuntivo sia per la proiezione (i saldi previsionali sono inclusi nel set).
-      if (proj.metodoPagamento === 'acconto' && tx.type === 'INCOME') {
+      if (proj.metodoPagamento === 'acconto' && tx.type === 'INCOME' && tx.category && CATEGORIE_PAGAMENTO_COMMESSA.has(tx.category)) {
         const anno = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
         // Se il chiamante sta costruendo il CE per un anno diverso da quello "naturale" (di fattura)
         // di questa transazione — capita in modalità cassa quando la data di incasso attesa cade in un
@@ -1240,9 +1255,9 @@ export const calcPrevisioneFiscale = (
 
 // ─── CALCOLI SP DERIVATI ─────────────────────────────────────────
 
-export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcCEMetrics>, transactions: Transaction[] = []) => {
+export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcCEMetrics>, transactions: Transaction[] = [], projects?: Project[]) => {
   const getVal = (v: any) => typeof v === 'number' ? v : parseFloat(v) || 0;
-  
+
   const totAttivoImm  = getVal(sp.immImmateriali) + getVal(sp.immMateriali) + getVal(sp.immobiliTerreni) + getVal(sp.partecipazioni);
   const totAttivoCirc = getVal(sp.rimanenze) + getVal(sp.creditiClienti) + getVal(sp.creditiTributari) + getVal(sp.creditiFinanziari) + getVal(sp.investimentiBT) + getVal(sp.liquidita);
   const totAttivo     = totAttivoImm + totAttivoCirc;
@@ -1257,14 +1272,17 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
   const annoSnap = dataSnapObj.getUTCFullYear();
   const mesiTrascorsiSnap = dataSnapObj.getUTCMonth() + 1;
 
+  // Riclassificazione dinamica (come nel CE): il tx.ceType statico non riflette un metodoPagamento
+  // cambiato DOPO che le transazioni esistevano già. commesseCompletate in modalità reale (no forecast),
+  // coerente con l'uso qui di soli dati consuntivi (!tx.isForecast).
+  const commesseCompletateSnap = computeCommesseCompletate(transactions, projects, false);
+
   const fatturatoPeriodo = transactions
     .filter(tx => {
       const d = parseUTCDate(tx.date);
-      return d.getUTCFullYear() === annoSnap && 
-             d <= dataSnapObj &&
-             !tx.isForecast &&
-             tx.ceType &&
-             (tx.ceType === 'ricavo_core' || tx.ceType === 'ricavo_altro' || tx.ceType === 'ricavo_immobiliare');
+      if (!(d.getUTCFullYear() === annoSnap && d <= dataSnapObj && !tx.isForecast)) return false;
+      const tipo = getDynamicCEType(tx, projects, commesseCompletateSnap, annoSnap);
+      return tipo === 'ricavo_core' || tipo === 'ricavo_altro' || tipo === 'ricavo_immobiliare';
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
@@ -1274,11 +1292,10 @@ export const calcSPMetrics = (sp: SPSnapshot, ceMetrics: ReturnType<typeof calcC
   const acquistiFornitoriPeriodo = transactions
     .filter(tx => {
       const d = parseUTCDate(tx.date);
-      return d.getUTCFullYear() === annoSnap &&
-             d <= dataSnapObj &&
-             !tx.isForecast &&
-             (tx.ceType === 'costo_variabile' || tx.ceType === 'costo_fisso' || tx.ceType === 'costo_studio') &&
-             !(tx.category?.startsWith('[PERSONALE]'));
+      if (!(d.getUTCFullYear() === annoSnap && d <= dataSnapObj && !tx.isForecast)) return false;
+      if (tx.category?.startsWith('[PERSONALE]')) return false;
+      const tipo = getDynamicCEType(tx, projects, commesseCompletateSnap, annoSnap);
+      return tipo === 'costo_variabile' || tipo === 'costo_fisso' || tipo === 'costo_studio';
     })
     .reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
@@ -1316,15 +1333,22 @@ export const calcScostamenti = (
   anno: number,
   mese: number | null,  // null = YTD (tutti i mesi), 0-11 = mese specifico
   budgetData?: BudgetData,
-  manualOverrides?: Partial<CEData>
+  manualOverrides?: Partial<CEData>,
+  projects?: Project[]
 ): ScostamentoRiga[] => {
+
+  // Riclassificazione dinamica (come nel CE): il tx.ceType statico non riflette un metodoPagamento
+  // cambiato DOPO che le transazioni esistevano già. Due set separati perché il completamento di una
+  // commessa ad acconto è valutato diversamente sul consuntivo (solo saldi già incassati) rispetto al
+  // previsionale (anche saldi pianificati) — stessa distinzione usata dal resto del motore.
+  const commesseCompletateReale = computeCommesseCompletate(transactions, projects, false);
+  const commesseCompletatePrevisionale = computeCommesseCompletate(transactions, projects, true);
 
   const filtra = (tx: Transaction, isForecast: boolean) => {
     const d = parseUTCDate(tx.date);
     if (d.getUTCFullYear() !== anno) return false;
     if (mese !== null && d.getUTCMonth() !== mese) return false;
     if (!!tx.isForecast !== isForecast) return false;
-    if (!tx.ceType) return false;
     // N11 fix: esclude forecast già liquidati (linkedForecastId) per non gonfiare il previsionale
     if (isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id)) return false;
     return true;
@@ -1332,11 +1356,17 @@ export const calcScostamenti = (
 
   const sommaPerTipo = (isForecast: boolean, types: string[]) =>
     transactions
-      .filter(tx => filtra(tx, isForecast) && types.includes(tx.ceType!))
+      .filter(tx => filtra(tx, isForecast))
       .reduce((s, tx) => {
-        const isIncome = tx.ceType!.startsWith('ricavo') ||
-          tx.ceType === 'provento_finanziario' ||
-          (tx.ceType === 'straordinario' && tx.type === 'INCOME');
+        const tipo = getDynamicCEType(tx, projects, isForecast ? commesseCompletatePrevisionale : commesseCompletateReale, anno);
+        if (!tipo || !types.includes(tipo)) return s;
+        // Il segno segue la DIREZIONE REALE del movimento (INCOME = +, EXPENSE = −), non il tipo di
+        // voce — stessa regola di aggregateByMonthAndType. Cosi' una nota di credito o un rimborso
+        // (INCOME su un ceType di costo) riduce il costo invece di gonfiarlo, e uno storno (EXPENSE su
+        // un ceType di ricavo) riduce il ricavo invece di trattarlo come un costo. Bug trovato
+        // 2026-09-14: un rimborso assicurativo di €3.500 (INCOME su costo_fisso) veniva sommato come
+        // se fosse un ulteriore costo invece di nettare quello esistente.
+        const isIncome = tx.type === 'INCOME';
         return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
       }, 0);
 

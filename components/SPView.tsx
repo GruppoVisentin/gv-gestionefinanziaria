@@ -405,7 +405,7 @@ const SPView: React.FC<SPViewProps> = ({
     return { lt: totOutstanding, bt: totShortTerm };
   }, [initialData, transactions, targetDateObj]);
 
-  const metrics = useMemo(() => calcSPMetrics(currentSnap, ceMetrics, transactions), [currentSnap, ceMetrics, transactions]);
+  const metrics = useMemo(() => calcSPMetrics(currentSnap, ceMetrics, transactions, projects), [currentSnap, ceMetrics, transactions, projects]);
 
   const handleSave = () => {
     const exists = snapshots.find(s => s.dataRiferimento === currentSnap.dataRiferimento);
@@ -1093,7 +1093,7 @@ const SPView: React.FC<SPViewProps> = ({
                 </thead>
                 <tbody>
                   {snapshots.map(s => {
-                    const sMetrics = calcSPMetrics(s, ceMetrics, transactions);
+                    const sMetrics = calcSPMetrics(s, ceMetrics, transactions, projects);
                     return (
                       <tr key={s.dataRiferimento} className="border-t border-slate-100 hover:bg-slate-50 transition-colors group">
                         <td className="py-4 px-6 text-sm font-black text-slate-900">

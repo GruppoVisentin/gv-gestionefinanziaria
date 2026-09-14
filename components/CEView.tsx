@@ -241,9 +241,10 @@ const CEView: React.FC<CEViewProps> = ({
       selectedYear,
       meseScostamento,
       budgetData?.[selectedYear.toString()],
-      manualData[selectedYear.toString()]
+      manualData[selectedYear.toString()],
+      projects
     );
-  }, [transactions, selectedYear, meseScostamento, budgetData, manualData]);
+  }, [transactions, selectedYear, meseScostamento, budgetData, manualData, projects]);
 
   const effettoRimanenze = useMemo(() => {
     if (!rimanenzeAnno) return null;
