@@ -1744,19 +1744,45 @@ const App: React.FC = () => {
   };
 
   // --- CROSS-APP SYNC (registro condiviso cantieri/commesse con DirettoreCantiere) ---
+  // Ogni commessa ha una "chiave di registro": per una creata qui è la propria
+  // coppia (gestione_finanziaria, id); per una importata da un'altra app è la
+  // coppia (externalSource, externalId) di quella app. Nome, data inizio e
+  // stato restano sincronizzati in continuo su quella chiave, in entrambi i
+  // sensi — non solo all'importazione iniziale.
   const syncFromRegistry = useCallback(async () => {
     try {
       const rows = await fetchSharedCantieri();
       setProjects(prev => {
+        let changed = false;
+
+        const reconciled = prev.map(p => {
+          const key = p.externalSource
+            ? { source: p.externalSource, sourceId: p.externalId! }
+            : { source: 'gestione_finanziaria' as const, sourceId: p.id };
+          const row = rows.find(r => r.source === key.source && r.sourceId === key.sourceId);
+          if (!row) return p;
+
+          const newName = row.nome;
+          const newStart = row.dataInizio || p.startDate;
+          const newStatus = row.source === 'direttore_cantiere'
+            ? (row.stato === 'completed' ? 'COMPLETED' : row.stato === 'active' ? 'ACTIVE' : p.status)
+            : (row.stato as Project['status']);
+
+          if (newName !== p.name || newStart !== p.startDate || newStatus !== p.status) {
+            changed = true;
+            return { ...p, name: newName, startDate: newStart, status: newStatus };
+          }
+          return p;
+        });
+
         const existingExternalIds = new Set(
-          prev.filter(p => p.externalSource === 'direttore_cantiere').map(p => p.externalId)
+          reconciled.filter(p => p.externalSource === 'direttore_cantiere').map(p => p.externalId)
         );
         const toImport = rows.filter(r =>
           r.source === 'direttore_cantiere' &&
           (r.stato === 'active' || r.stato === 'completed') &&
           !existingExternalIds.has(r.sourceId)
         );
-        if (toImport.length === 0) return prev;
         const imported: Project[] = toImport.map(r => ({
           id: crypto.randomUUID(),
           name: r.nome,
@@ -1768,14 +1794,17 @@ const App: React.FC = () => {
           externalSource: 'direttore_cantiere',
           externalId: r.sourceId,
         }));
-        return [...imported, ...prev];
+
+        if (!changed && imported.length === 0) return prev;
+        return [...imported, ...reconciled];
       });
     } catch (e) {
       console.error('Sincronizzazione registro cantieri fallita', e);
     }
   }, []);
 
-  // Import iniziale + polling periodico per intercettare cantieri attivati su DirettoreCantiere
+  // Import iniziale + polling periodico per intercettare cantieri attivati o
+  // modificati su DirettoreCantiere
   useEffect(() => {
     if (appState !== 'ready') return;
     syncFromRegistry();
@@ -1783,23 +1812,31 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [appState, syncFromRegistry]);
 
-  // Pubblica sul registro condiviso le commesse create/gestite qui (non quelle importate da altre app)
+  // Pubblica sul registro condiviso nome/data inizio/stato di ogni commessa,
+  // sia quelle create qui sia quelle importate (le modifiche fatte qui a una
+  // commessa importata tornano indietro all'app di origine).
   useEffect(() => {
     if (appState !== 'ready') return;
     const timer = setTimeout(() => {
-      projects
-        .filter(p => !p.externalSource)
-        .forEach(p => {
-          pushSharedCantiere({
-            source: 'gestione_finanziaria',
-            sourceId: p.id,
-            nome: p.name,
-            cliente: p.client || null,
-            luogo: p.location || null,
-            dataInizio: p.startDate,
-            stato: p.status,
-          }).catch(e => console.error('Pubblicazione commessa sul registro fallita', e));
-        });
+      projects.forEach(p => {
+        const key = p.externalSource
+          ? { source: p.externalSource, sourceId: p.externalId! }
+          : { source: 'gestione_finanziaria' as const, sourceId: p.id };
+        // Le righe di proprietà di DirettoreCantiere usano il suo vocabolario
+        // active/completed, indipendentemente da quale app sta scrivendo.
+        const stato = key.source === 'direttore_cantiere'
+          ? (p.status === 'COMPLETED' ? 'completed' : 'active')
+          : p.status;
+        pushSharedCantiere({
+          source: key.source,
+          sourceId: key.sourceId,
+          nome: p.name,
+          cliente: p.client || null,
+          luogo: p.location || null,
+          dataInizio: p.startDate,
+          stato,
+        }).catch(e => console.error('Pubblicazione commessa sul registro fallita', e));
+      });
     }, 1500);
     return () => clearTimeout(timer);
   }, [projects, appState]);
