@@ -1768,9 +1768,20 @@ export const calcRollingDSODPO = (
 
   // ── DSO ─────────────────────────────────────────────────────────
   // N1 fix: aggiunto 'ricavo_immobiliare' per includere vendite immobiliari nel calcolo DSO
+  // Bug corretto 2026-09-14: filtrare per ceType='ricavo_*' confondeva "e' gia' riconosciuto come
+  // ricavo" (una questione di competenza OIC23) con "e' un incasso da cliente" (una questione di
+  // cassa, l'unica che conta per il DSO). Un acconto su una commessa non ancora completata resta
+  // ceType='solo_cashflow' finche' il cantiere non e' saldato, quindi spariva DEL TUTTO da questo
+  // calcolo anche se e' l'incasso vero da un cliente vero — lasciando dentro solo le commesse a SAL
+  // (le uniche gia' "ricavo" da subito). Verificato sui dati reali: solo 4 transazioni (tutte a SAL)
+  // qualificavano, dando un DSO di 11gg completamente non rappresentativo del vero business (che e'
+  // in gran parte ad acconto: Bonan, Residence Hop, Raguso, ecc. — tutti esclusi prima di questo fix).
+  // Il criterio giusto e' "e' un pagamento del cliente sulla commessa" (stessa whitelist di categoria
+  // gia' usata in getDynamicCEType per lo stesso motivo), indipendentemente dal fatto che sia gia'
+  // diventato ricavo o sia ancora un acconto/debito in attesa di completamento.
   const incassiClienti = txRolling.filter(tx =>
     tx.type === 'INCOME' &&
-    (tx.ceType === 'ricavo_core' || tx.ceType === 'ricavo_altro' || tx.ceType === 'ricavo_immobiliare')
+    ((tx.category && CATEGORIE_PAGAMENTO_COMMESSA.has(tx.category)) || tx.ceType === 'ricavo_altro')
   );
 
   const incassiConInvoiceDate = incassiClienti.filter(tx => tx.invoiceDate);
