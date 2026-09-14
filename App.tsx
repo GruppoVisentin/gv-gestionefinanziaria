@@ -19,7 +19,8 @@ import {
   BankAccount,
   ImportSession,
   Client,
-  Fornitore
+  Fornitore,
+  CEType
 } from './types';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
@@ -695,6 +696,19 @@ const App: React.FC = () => {
 
   const [incomeCategories, setIncomeCategories] = useState<string[]>([...INCOME_CATEGORIES]);
 
+  // ceType delle categorie personalizzate create dall'utente (non presenti nella mappa statica
+  // CATEGORY_TO_CE_TYPE): senza questo cadevano sempre su 'solo_cashflow' e sparivano dal Conto
+  // Economico (bug trovato in audit il 2026-09-14). Viene unito a CATEGORY_TO_CE_TYPE (oggetto
+  // mutabile condiviso) cosi' ogni punto dell'app che gia' legge CATEGORY_TO_CE_TYPE[categoria]
+  // vede automaticamente la mappatura corretta, senza dover toccare ogni singolo punto di lettura.
+  const [customCategoryCeTypes, setCustomCategoryCeTypes] = useState<Record<string, CEType>>({});
+  useEffect(() => {
+    Object.assign(CATEGORY_TO_CE_TYPE, customCategoryCeTypes);
+  }, [customCategoryCeTypes]);
+  const handleSetCategoryCeType = useCallback((category: string, ceType: CEType) => {
+    setCustomCategoryCeTypes(prev => ({ ...prev, [category]: ceType }));
+  }, []);
+
   // Dynamic Supplier Presets
   const [supplierPresets, setSupplierPresets] = useState<Record<string, string[]>>({...SUPPLIER_PRESETS});
 
@@ -883,12 +897,13 @@ const App: React.FC = () => {
     saldiApertiPuntaNet,
     clients,
     fornitori,
+    customCategoryCeTypes,
   }), [
     transactions, projects, fixedCategories, variableCategories, incomeCategories,
     supplierPresets, initialData, responsiblesList, ceManualData, spSnapshots,
     budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze,
     regolePuntaNet, mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
-    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet, clients, fornitori
+    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet, clients, fornitori, customCategoryCeTypes
   ]);
 
   // Ref che mantiene sempre l'ultima versione di buildBackupData
@@ -997,6 +1012,7 @@ const App: React.FC = () => {
     if (data.storicoCantierePuntaNet) setStoricoCantierePuntaNet(data.storicoCantierePuntaNet);
     if (data.clients) setClients(data.clients);
     if (data.fornitori) setFornitori(data.fornitori);
+    if (data.customCategoryCeTypes) setCustomCategoryCeTypes(data.customCategoryCeTypes);
     if (data.aliquoteFiscali) {
       setAliquotaIRES(data.aliquoteFiscali.ires);
       setAliquotaIRAP(data.aliquoteFiscali.irap);
@@ -2755,7 +2771,13 @@ const App: React.FC = () => {
                     transactions={transactions}
                     onRenameCategory={(oldName, newName) => {
                       setTransactions(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
+                      setCustomCategoryCeTypes(prev => {
+                        if (!(oldName in prev)) return prev;
+                        const { [oldName]: ceType, ...rest } = prev;
+                        return { ...rest, [newName]: ceType };
+                      });
                     }}
+                    onSetCategoryCeType={handleSetCategoryCeType}
                 />
             </div>
         );
