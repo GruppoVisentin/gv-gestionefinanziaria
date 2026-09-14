@@ -1780,7 +1780,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Margine dopo costi diretti',
                   status: 'emerald',
                   icon: Target,
-                  proj: formatPercent(metrics.primoMarginePercent),
+                  proj: formatPercent(proiezionePrimoMarginePercent),
                   calculatedValues: `Primo Margine:\n- Consuntivo YTD: ${formatEuro(metrics.primoMargineTot)} (${formatPercent(metrics.primoMarginePercent)})\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.primoMargine)} (${formatPercent(metricsPrevPuro.primoMarginePercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneFatturato - metrics.proiezioneCostiVariabili)} (${formatPercent(proiezionePrimoMarginePercent)})`,
                   soglie: {
                     valore: metrics.primoMarginePercent,
@@ -1825,7 +1825,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Margine operativo lordo',
                   status: 'indigo',
                   icon: TrendingUp,
-                  proj: formatPercent(metrics.ebitdaPercent),
+                  proj: formatPercent(proiezioneEbitdaPercent),
                   calculatedValues: `EBITDA:\n- Consuntivo YTD: ${formatEuro(metrics.ebitdaTot)} (${formatPercent(metrics.ebitdaPercent)})\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.ebitda)} (${formatPercent(metricsPrevPuro.ebitdaPercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneEbitda)} (${formatPercent(proiezioneEbitdaPercent)})`,
                   soglie: {
                     valore: metrics.ebitdaPercent,
@@ -1870,7 +1870,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Utile dopo tasse e ammortamenti',
                   status: 'violet',
                   icon: Zap,
-                  proj: formatPercent(metrics.utileNettoPercent),
+                  proj: formatPercent(proiezioneUtileNettoPercent),
                   calculatedValues: `Utile Netto:\n- Consuntivo YTD: ${formatEuro(metrics.utileNettoTot)} (${formatPercent(metrics.utileNettoPercent)})\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.utileNetto)} (${formatPercent(metricsPrevPuro.utileNettoPercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneUtile)} (${formatPercent(proiezioneUtileNettoPercent)})`,
                   soglie: {
                     valore: metrics.utileNettoPercent,
@@ -1913,7 +1913,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Fatturato minimo per pareggio',
                   status: 'rose',
                   icon: AlertCircle,
-                  proj: formatEuro(metrics.breakEven),
+                  proj: formatEuro(projBreakEven),
                   extra: formatEuro(metrics.breakEvenCassa),
                   extraLabel: 'Di cassa',
                   prevExtra: formatEuro(metricsPrevPuro.breakEvenCassa),
@@ -1962,7 +1962,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Costo tecnici su fatturato',
                   status: 'sky',
                   icon: Calculator,
-                  proj: formatPercent(rates.incidenzaStudioFatturato),
+                  proj: formatPercent(incidenzeProiezione.incidenzaStudioFatturato),
                   calculatedValues: `Incidenza Studio sul Fatturato:\n- Consuntivo: Costi Studio ${formatEuro(rates.totaleCostiStudio)} / Fatturato ${formatEuro(rates.fatturato)} = ${formatPercent(rates.incidenzaStudioFatturato)}\n- Previsionale: Costi Studio Target ${formatEuro(rates.totaleCostiStudioPrev)} / Fatturato Target ${formatEuro(rates.fatturatoPrev)} = ${formatPercent(rates.incidenzaStudioFatturatoPrev)}\n- Proiezione a fine anno: ${formatPercent(incidenzeProiezione.incidenzaStudioFatturato)}`,
                   soglie: {
                     valore: rates.incidenzaStudioFatturato,
@@ -2007,7 +2007,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Costi struttura su fatturato',
                   status: 'amber',
                   icon: BarChart2,
-                  proj: formatPercent(rates.incidenzaFissiFatturato),
+                  proj: formatPercent(incidenzeProiezione.incidenzaFissiFatturato),
                   calculatedValues: `Incidenza Costi Fissi (escl. Studio):\n- Consuntivo: Costi Fissi Puri ${formatEuro(rates.totaleOverheadPuro)} / Fatturato ${formatEuro(rates.fatturato)} = ${formatPercent(rates.incidenzaFissiFatturato)}\n- Previsionale: Costi Fissi Target ${formatEuro(rates.totaleOverheadPuroPrev)} / Fatturato Target ${formatEuro(rates.fatturatoPrev)} = ${formatPercent(rates.incidenzaFissiFatturatoPrev)}\n- Proiezione a fine anno: ${formatPercent(incidenzeProiezione.incidenzaFissiFatturato)}`,
                   soglie: {
                     valore: rates.incidenzaFissiFatturato,
