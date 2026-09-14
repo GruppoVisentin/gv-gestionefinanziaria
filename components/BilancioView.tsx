@@ -51,6 +51,7 @@ interface BilancioViewProps {
   onChangeAliquotaIRAP: (v: number) => void;
   initialTab?: 'summary' | 'pl' | 'sp' | 'budget' | 'rating' | 'analisi' | 'iva';
   projects?: Project[];
+  saldiApertiPuntaNet?: { data: string; creditiClienti: number; debitiFornitori: number } | null;
 }
 
 const BilancioView: React.FC<BilancioViewProps> = (props) => {
@@ -219,6 +220,7 @@ const BilancioView: React.FC<BilancioViewProps> = (props) => {
             projects={props.projects}
             aliquotaIRES={props.aliquotaIRES}
             aliquotaIRAP={props.aliquotaIRAP}
+            saldiApertiPuntaNet={props.saldiApertiPuntaNet}
           />
         )}
         {activeTab === 'budget' && (

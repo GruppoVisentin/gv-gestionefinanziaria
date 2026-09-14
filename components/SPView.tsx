@@ -40,6 +40,7 @@ interface SPViewProps {
   projects?: Project[];
   aliquotaIRES?: number;
   aliquotaIRAP?: number;
+  saldiApertiPuntaNet?: { data: string; creditiClienti: number; debitiFornitori: number } | null;
 }
 
 const formatEuro = (val: number) => 
@@ -177,7 +178,8 @@ const SPView: React.FC<SPViewProps> = ({
   rimanenze, 
   projects = [],
   aliquotaIRES = 24,
-  aliquotaIRAP = 3.9
+  aliquotaIRAP = 3.9,
+  saldiApertiPuntaNet = null
 }) => {
   const [currentSnap, setCurrentSnap] = useState<SPSnapshot>(snapshots[0] || EMPTY_SNAPSHOT);
   const [isEditing, setIsEditing] = useState(false);
@@ -406,6 +408,16 @@ const SPView: React.FC<SPViewProps> = ({
   }, [initialData, transactions, targetDateObj]);
 
   const metrics = useMemo(() => calcSPMetrics(currentSnap, ceMetrics, transactions, projects), [currentSnap, ceMetrics, transactions, projects]);
+
+  // Suggerimento Crediti Clienti/Debiti Fornitori da PuntaNet: e' una fotografia di "oggi" (fatture
+  // con rata non ancora pagata, sommate da SQL), quindi ha senso proporla solo quando la data dello
+  // snapshot e' vicina alla data della fotografia — altrimenti sarebbe un dato "di oggi" applicato a
+  // un bilancio di un'altra data. Non si applica mai da sola: solo un pulsante, come gli altri suggerimenti.
+  const saldiApertiRilevante = useMemo(() => {
+    if (!saldiApertiPuntaNet) return null;
+    const giorni = Math.abs((parseUTCDate(currentSnap.dataRiferimento).getTime() - parseUTCDate(saldiApertiPuntaNet.data).getTime()) / 86400000);
+    return giorni <= 10 ? saldiApertiPuntaNet : null;
+  }, [saldiApertiPuntaNet, currentSnap.dataRiferimento]);
 
   // Metriche per l'Archivio Snapshot: ogni riga deve usare l'EBITDA/oneri finanziari del PROPRIO anno,
   // non quello dello snapshot attualmente aperto nella scheda "Bilancio Riclassificato" (ceMetrics sopra
@@ -719,13 +731,23 @@ const SPView: React.FC<SPViewProps> = ({
                       </button>
                     )}
                   </div>
-                  <ManualInput 
-                    label="Crediti Clienti" 
-                    value={currentSnap.creditiClienti} 
-                    onChange={v => setCurrentSnap(s => ({...s, creditiClienti: v}))} 
-                    isManual={true} 
-                    termId="dso"
-                  />
+                  <div className="space-y-1">
+                    <ManualInput
+                      label="Crediti Clienti"
+                      value={currentSnap.creditiClienti}
+                      onChange={v => setCurrentSnap(s => ({...s, creditiClienti: v}))}
+                      isManual={true}
+                      termId="dso"
+                    />
+                    {saldiApertiRilevante && currentSnap.creditiClienti !== saldiApertiRilevante.creditiClienti && (
+                      <button
+                        onClick={() => setCurrentSnap(s => ({...s, creditiClienti: saldiApertiRilevante.creditiClienti}))}
+                        className="text-[10px] text-blue-600 font-bold hover:underline block w-full text-right"
+                      >
+                        💡 Carica da PuntaNet, fatture aperte al {new Date(saldiApertiRilevante.data).toLocaleDateString('it-IT')} ({formatEuro(saldiApertiRilevante.creditiClienti)})
+                      </button>
+                    )}
+                  </div>
                   <ManualInput 
                     label="Crediti Tributari" 
                     value={currentSnap.creditiTributari} 
@@ -860,13 +882,23 @@ const SPView: React.FC<SPViewProps> = ({
                     isManual={true} 
                     tooltipText="Finanziamenti bancari a breve termine ed elasticità di cassa. Include gli scoperti di conto corrente attivi e l'utilizzo di fidi."
                   />
-                  <ManualInput 
-                    label="Debiti Fornitori" 
-                    value={currentSnap.debitiFornitori} 
-                    onChange={v => setCurrentSnap(s => ({...s, debitiFornitori: v}))} 
-                    isManual={true} 
-                    termId="dpo"
-                  />
+                  <div className="space-y-1">
+                    <ManualInput
+                      label="Debiti Fornitori"
+                      value={currentSnap.debitiFornitori}
+                      onChange={v => setCurrentSnap(s => ({...s, debitiFornitori: v}))}
+                      isManual={true}
+                      termId="dpo"
+                    />
+                    {saldiApertiRilevante && currentSnap.debitiFornitori !== saldiApertiRilevante.debitiFornitori && (
+                      <button
+                        onClick={() => setCurrentSnap(s => ({...s, debitiFornitori: saldiApertiRilevante.debitiFornitori}))}
+                        className="text-[10px] text-blue-600 font-bold hover:underline block w-full text-right"
+                      >
+                        💡 Carica da PuntaNet, fatture aperte al {new Date(saldiApertiRilevante.data).toLocaleDateString('it-IT')} ({formatEuro(saldiApertiRilevante.debitiFornitori)})
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-1">
                     <ManualInput 
                       label="Debiti Tributari/Previdenziali" 

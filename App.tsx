@@ -726,6 +726,9 @@ const App: React.FC = () => {
   // apertura" qui sotto — l'app non ha altro modo di sapere cosa e' successo tra un'apertura e l'altra,
   // perche' ha accesso solo al singolo file .gvcf, non alla cartella AUTO con i log testuali.
   const [logImportAutomatico, setLogImportAutomatico] = useState<{ timestamp: string; autoScritti: number; daRivedere: number }[]>([]);
+  // Fotografia giornaliera di Crediti Clienti/Debiti Fornitori aperti, calcolata da PuntaNet dallo
+  // stesso script automatico — usata in Stato Patrimoniale come suggerimento (mai applicata da sola).
+  const [saldiApertiPuntaNet, setSaldiApertiPuntaNet] = useState<{ data: string; creditiClienti: number; debitiFornitori: number } | null>(null);
   const [importSessions, setImportSessions] = useState<import('./types').ImportSession[]>([]);
   const [storicoCantierePuntaNet, setStoricoCantierePuntaNet] = useState<Transaction[]>([]);
   const [fileBanca, setFileBanca] = useState<File | null>(null);
@@ -863,12 +866,13 @@ const App: React.FC = () => {
     aliquoteFiscali: { ires: aliquotaIRES, irap: aliquotaIRAP },
     storicoCantierePuntaNet,
     logImportAutomatico,
+    saldiApertiPuntaNet,
   }), [
     transactions, projects, fixedCategories, variableCategories, incomeCategories,
     supplierPresets, initialData, responsiblesList, ceManualData, spSnapshots,
     budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze,
     regolePuntaNet, mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
-    storicoCantierePuntaNet, logImportAutomatico
+    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet
   ]);
 
   // Ref che mantiene sempre l'ultima versione di buildBackupData
@@ -972,6 +976,7 @@ const App: React.FC = () => {
       setImportSessions(data.importSessions);
     }
     if (data.logImportAutomatico) setLogImportAutomatico(data.logImportAutomatico);
+    if (data.saldiApertiPuntaNet) setSaldiApertiPuntaNet(data.saldiApertiPuntaNet);
     if (data.storicoExcelImportato) setStoricoImportato(data.storicoExcelImportato);
     if (data.storicoCantierePuntaNet) setStoricoCantierePuntaNet(data.storicoCantierePuntaNet);
     if (data.aliquoteFiscali) {
@@ -1062,6 +1067,7 @@ const App: React.FC = () => {
         },
         storicoCantierePuntaNet,
         logImportAutomatico,
+        saldiApertiPuntaNet,
       };
 
       await writeFile(fileHandle, data);
@@ -2580,6 +2586,7 @@ const App: React.FC = () => {
             onChangeAliquotaIRES={handleAliquotaIRESChange}
             onChangeAliquotaIRAP={handleAliquotaIRAPChange}
             projects={projects}
+            saldiApertiPuntaNet={saldiApertiPuntaNet}
             initialTab={
               view === AppView.CE_RICLASSIFICATO ? 'pl' :
               view === AppView.STATO_PATRIMONIALE ? 'sp' :

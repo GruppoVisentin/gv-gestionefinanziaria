@@ -322,6 +322,7 @@ export interface BackupData {
   aliquoteFiscali?: { ires: number; irap: number };
   storicoCantierePuntaNet?: Transaction[]; // ← NUOVO — storico completo per cantiere da PuntaNet (sola lettura, solo Vista Cantiere)
   logImportAutomatico?: { timestamp: string; autoScritti: number; daRivedere: number }[]; // ← NUOVO — log esecuzioni scripts/importaPuntaNet.mjs --scrivi, per il banner "N movimenti importati dall'ultima apertura"
+  saldiApertiPuntaNet?: { data: string; creditiClienti: number; debitiFornitori: number }; // ← NUOVO — fotografia giornaliera di Crediti Clienti/Debiti Fornitori aperti da PuntaNet, per il suggerimento in Stato Patrimoniale
 }
 
 export enum AppView {

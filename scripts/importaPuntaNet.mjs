@@ -518,8 +518,36 @@ const daMettereInBozza = [...revisioneConsuntivo, ...revisioneScadenze].filter(b
   return !esistentiKeyFresh.has(b._puntaNetKey) && !bozzaKeyFresh.has(b._puntaNetKey);
 });
 
-if (daScrivere.length === 0 && daMettereInBozza.length === 0) {
+const nessunMovimentoNuovo = daScrivere.length === 0 && daMettereInBozza.length === 0;
+if (nessunMovimentoNuovo) {
   console.log('\nNessun movimento nuovo da scrivere (tutto gia\' presente nel file — probabile doppia esecuzione nella stessa giornata).');
+}
+
+// ─── Saldi aperti (Crediti Clienti / Debiti Fornitori) per lo Stato Patrimoniale ──────────
+// A differenza della query "scadenzeAperte" sopra (limitata a ds.[Data Rata] >= DATA_INIZIO, perche'
+// serve solo a decidere cosa importare come consuntivo da quest'anno in poi), qui serve il totale
+// REALMENTE aperto OGGI su tutta la storia — nessun filtro di data sulla scadenza, solo Pagato = 0.
+// Tipo 0=FEA (fattura cliente), 1=FEP (fattura fornitore), 2=nota di credito attiva (riduce il
+// credito), 3=nota di credito passiva (riduce il debito) — stessa convenzione della query sopra.
+// Calcolato SEMPRE in modalita' scrittura (anche senza nuovi movimenti da importare, per non saltare
+// l'aggiornamento giornaliero quando tutto il resto e' gia' presente): e' una "fotografia di oggi",
+// va rinfrescata ogni esecuzione. L'app la propone come suggerimento (mai applicata in automatico)
+// nella scheda Stato Patrimoniale, solo quando la data dello snapshot e' vicina a `data` qui sotto.
+console.log('--- Saldi aperti PuntaNet (per Stato Patrimoniale) ---');
+const saldiAperti = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT d.Tipo, SUM(ds.[Importo Rata]) AS Totale FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento WHERE ds.Pagato = 0 AND d.Tipo IN (0,1,2,3) GROUP BY d.Tipo FOR JSON PATH`);
+const perTipo = Object.fromEntries(saldiAperti.map(r => [r.Tipo, r.Totale || 0]));
+const creditiClientiAperti = Math.round(((perTipo[0] || 0) - (perTipo[2] || 0)) * 100) / 100;
+const debitiFornitoriAperti = Math.round(((perTipo[1] || 0) - (perTipo[3] || 0)) * 100) / 100;
+console.log(`Crediti Clienti aperti (FEA - note credito attive): €${creditiClientiAperti.toFixed(2)}`);
+console.log(`Debiti Fornitori aperti (FEP - note credito passive): €${debitiFornitoriAperti.toFixed(2)}\n`);
+
+const saldiApertiInvariati = gvDataFresh.saldiApertiPuntaNet
+  && gvDataFresh.saldiApertiPuntaNet.data === new Date().toISOString().slice(0, 10)
+  && gvDataFresh.saldiApertiPuntaNet.creditiClienti === creditiClientiAperti
+  && gvDataFresh.saldiApertiPuntaNet.debitiFornitori === debitiFornitoriAperti;
+
+if (nessunMovimentoNuovo && saldiApertiInvariati) {
+  console.log('Saldi aperti invariati rispetto a oggi — nessuna scrittura necessaria.');
   process.exit(0);
 }
 
@@ -531,6 +559,11 @@ fs.copyFileSync(GVCF_PATH, backupPath);
 gvDataFresh.transactions = [...gvDataFresh.transactions, ...daScrivere];
 gvDataFresh.bozzaImportPuntaNet = [...(gvDataFresh.bozzaImportPuntaNet || []), ...daMettereInBozza];
 gvDataFresh.timestamp = new Date().toISOString();
+gvDataFresh.saldiApertiPuntaNet = {
+  data: new Date().toISOString().slice(0, 10),
+  creditiClienti: creditiClientiAperti,
+  debitiFornitori: debitiFornitoriAperti,
+};
 
 // Log delle esecuzioni con scrittura reale, per il banner "N movimenti importati automaticamente
 // dall'ultima apertura" in app — senza questo, l'app (accesso solo al singolo file .gvcf, non alla
