@@ -1,16 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, CEData, CERow, BudgetData, RimanenzeAnno, RimanenzeData, AppView, Project, InitialBalanceBreakdown } from '../types';
-import { buildCEData, buildCEDataPrevisionale, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, computeCommesseCompletate, getDynamicLoansInterests, calculateRepayment, parseUTCDate, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
+import { buildCEData, buildCEDataPrevisionale, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, computeCommesseCompletate, commessaDiIncasso, matchIntestatario, getDynamicLoansInterests, calculateRepayment, parseUTCDate, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
 import { exportCEPDF } from '../utils/cePdfExport';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import CalcoloDrawer, { FormulaStep } from './CalcoloDrawer';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  TrendingUp, 
-  PieChart, 
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  TrendingUp,
+  PieChart,
   Target,
   AlertCircle,
   CheckCircle2,
@@ -101,6 +102,7 @@ const CEView: React.FC<CEViewProps> = ({
   const [modalita, setModalita] = useState<'cassa' | 'competenza'>('cassa');
   const [showHelp, setShowHelp] = useState(false);
   const [drawerKpi, setDrawerKpi] = useState<string | null>(null);
+  const [breakdownEspanso, setBreakdownEspanso] = useState<'ricavo_core' | 'ricavo_immobiliare' | null>(null);
 
   // Commesse ad acconto completate (saldate) per anno: nell'anno del saldo i loro incassi diventano ricavo.
   // Nel drawer "Spiega" servono DUE varianti, non una sola:
@@ -312,7 +314,7 @@ const CEView: React.FC<CEViewProps> = ({
 
     const getPureForecastSum = (types: string[]): number => {
       const txs = transactions.filter(tx => {
-        const type = getDynamicCEType(tx, projects, commesseCompletatePrevisionale);
+        const type = getDynamicCEType(tx, projects, commesseCompletatePrevisionale, selectedYear);
         const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
         return tx.isForecast &&
           !isLinked &&
@@ -320,7 +322,7 @@ const CEView: React.FC<CEViewProps> = ({
           type && types.includes(type);
       });
       const sum = txs.reduce((s, tx) => {
-        const type = getDynamicCEType(tx, projects, commesseCompletatePrevisionale);
+        const type = getDynamicCEType(tx, projects, commesseCompletatePrevisionale, selectedYear);
         const isIncome = type.startsWith('ricavo') || type === 'provento_finanziario' || (type === 'straordinario' && tx.type === 'INCOME');
         return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
       }, 0);
@@ -369,7 +371,7 @@ const CEView: React.FC<CEViewProps> = ({
         percentuale: 1,
         steps: [
           { label: 'Ricavi Core (SAL, saldi, vendite)', valore: s12(ceData.ricaviCore), isPositivo: true },
-          { label: 'Vendite Immobiliari', valore: s12(ceData.ricaviImmobiliare), isPositivo: true, indent: true },
+          { label: 'Acconti su Immobiliare/Terzi', valore: s12(ceData.ricaviImmobiliare), isPositivo: true, indent: true },
           { label: 'Altri Ricavi', valore: s12(ceData.ricaviAltro), isPositivo: true, indent: true },
           { label: 'Fatturato Totale', valore: fat, isPositivo: true, isRisultato: true, percentualeSu: fat },
         ],
@@ -411,11 +413,11 @@ const CEView: React.FC<CEViewProps> = ({
         ]
       },
       ricavo_immobiliare: {
-        nome: 'Vendite Immobiliari',
+        nome: 'Acconti su Immobiliare/Terzi',
         valore: s12(ceData.ricaviImmobiliare),
         percentuale: fat > 0 ? s12(ceData.ricaviImmobiliare) / fat : 0,
         steps: [
-          { label: 'Vendite Immobiliari (commesse immobiliari/acconti)', valore: s12(ceData.ricaviImmobiliare), isPositivo: true, isRisultato: true, percentualeSu: fat }
+          { label: 'Acconti su Immobiliare/Terzi (commesse immobiliari)', valore: s12(ceData.ricaviImmobiliare), isPositivo: true, isRisultato: true, percentualeSu: fat }
         ],
         ceTypes: ['ricavo_immobiliare'],
         proiezioneValore: metrics.proiezioneRicaviImmobiliare,
@@ -824,7 +826,7 @@ const CEView: React.FC<CEViewProps> = ({
             !t.isForecast &&
             parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCFullYear() === selectedYear &&
             parseUTCDate((modalita === 'competenza' && t.invoiceDate) ? t.invoiceDate : t.date).getUTCMonth() === month &&
-            getDynamicCEType(t, projects, commesseCompletateReale) === 'onere_finanziario' &&
+            getDynamicCEType(t, projects, commesseCompletateReale, selectedYear) === 'onere_finanziario' &&
             (t.loanSourceId === l.id || t.linkedForecastId === l.id || t.description.toLowerCase().trim().includes(l.name.toLowerCase().trim()))
           );
 
@@ -848,7 +850,7 @@ const CEView: React.FC<CEViewProps> = ({
     }
 
     const filteredProiezioneTxs = txAnnoProiezioniBase.filter(tx => {
-      const dType = getDynamicCEType(tx, projects, commesseCompletatePrevisionale);
+      const dType = getDynamicCEType(tx, projects, commesseCompletatePrevisionale, selectedYear);
       return cfg.ceTypes.includes(dType || '');
     });
 
@@ -898,7 +900,7 @@ const CEView: React.FC<CEViewProps> = ({
             t.isForecast &&
             parseUTCDate(t.date).getUTCFullYear() === selectedYear &&
             parseUTCDate(t.date).getUTCMonth() === month &&
-            getDynamicCEType(t, projects, commesseCompletatePrevisionale) === 'onere_finanziario' &&
+            getDynamicCEType(t, projects, commesseCompletatePrevisionale, selectedYear) === 'onere_finanziario' &&
             (t.loanSourceId === l.id || t.linkedForecastId === l.id || t.description.toLowerCase().trim().includes(l.name.toLowerCase().trim()))
           );
 
@@ -922,7 +924,7 @@ const CEView: React.FC<CEViewProps> = ({
     }
 
     const filteredSoloPrevisionaleTxs = txAnnoSoloPrevisionaliBase.filter(tx => {
-      const dType = getDynamicCEType(tx, projects, commesseCompletatePrevisionale);
+      const dType = getDynamicCEType(tx, projects, commesseCompletatePrevisionale, selectedYear);
       return cfg.ceTypes.includes(dType || '');
     });
 
@@ -934,7 +936,7 @@ const CEView: React.FC<CEViewProps> = ({
       kpiPercentuale: cfg.percentuale,
       formulaSteps: cfg.steps,
       transazioniContribuenti: txAnnoContribuenti.filter(tx => {
-        const dType = getDynamicCEType(tx, projects, commesseCompletateReale);
+        const dType = getDynamicCEType(tx, projects, commesseCompletateReale, selectedYear);
         return cfg.ceTypes.includes(dType || '');
       }),
       anno: selectedYear,
@@ -966,6 +968,139 @@ const CEView: React.FC<CEViewProps> = ({
   const activeCeData = mainTableLens === 'previsionale' ? cePrevisionale : ceData;
   const activeMetrics = mainTableLens === 'previsionale' ? metricsPrevisionale : metrics;
 
+  // Set di completamento coerente con la lente attiva: 'reale' usa solo saldi davvero incassati,
+  // 'previsionale'/'proiezione' includono anche i saldi pianificati (si guarda avanti sul piano).
+  const commesseCompletateAttivo = mainTableLens === 'reale' ? commesseCompletateReale : commesseCompletatePrevisionale;
+
+  // Riepilogo cantiere × anno per Ricavi Core / Acconti Immobiliare — richiesto dall'utente 2026-09-17
+  // per poter controllare A VISTA, non solo a parole, che il motore stia includendo nel fatturato
+  // dell'anno selezionato esattamente ciò che deve: per i SAL solo l'anno corrente (non si "riprende"
+  // mai lo storico di anni passati, che è già stato ricavo nel loro anno), per gli ACCONTI anche tutto
+  // l'accumulato di anni precedenti MA solo se quella specifica commessa/intestatario risulta
+  // completata (saldata, reale o previsionale) nell'anno selezionato — altrimenti resta cassa, non
+  // ricavo. Ogni riga (cantiere, anno) viene colorata in base allo stesso criterio che userebbe
+  // davvero il motore (getDynamicCEType per l'anno corrente, stessa condizione del loop di rilascio
+  // cumulativo per gli anni precedenti), non una semplificazione a parte — se il motore ha un bug
+  // qui si vedrebbe comunque nello stesso identico modo, non è un doppio calcolo indipendente.
+  type RigaAnnoBreakdown = { verde: number; nero: number };
+  type RigaCantiereBreakdown = { cantiere: string; metodoPagamento?: 'sal' | 'acconto'; perAnno: Map<number, RigaAnnoBreakdown> };
+
+  const buildBreakdownCantieri = (bucket: 'ricavo_core' | 'ricavo_immobiliare'): RigaCantiereBreakdown[] => {
+    const perCantiere = new Map<string, RigaCantiereBreakdown>();
+    const includiPrevisionaleAnnoCorrente = mainTableLens !== 'reale';
+
+    transactions.forEach(tx => {
+      if (tx.type !== 'INCOME') return;
+      const project = commessaDiIncasso(tx, projects);
+      if (!project) return;
+      const isImmobiliare = project.jobType === 'Immobiliare';
+      if (bucket === 'ricavo_immobiliare' && !isImmobiliare) return;
+      if (bucket === 'ricavo_core' && isImmobiliare) return;
+
+      const anno = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
+      const isAnnoSelezionato = anno === selectedYear;
+
+      // Filtro reale/previsionale identico a quello usato dal motore per costruire l'anno selezionato:
+      // gli anni PRECEDENTI contano solo se realmente incassati (mai "previsti"), l'anno selezionato
+      // segue la lente attiva.
+      if (isAnnoSelezionato) {
+        if (tx.isForecast && !includiPrevisionaleAnnoCorrente) return;
+        if (!tx.isForecast && mainTableLens === 'previsionale') return;
+      } else if (tx.isForecast) {
+        return;
+      }
+
+      let contaComeRicavo: boolean;
+      if (isAnnoSelezionato) {
+        const tipo = getDynamicCEType(tx, projects, commesseCompletateAttivo, selectedYear);
+        contaComeRicavo = tipo === 'ricavo_core' || tipo === 'ricavo_immobiliare';
+      } else {
+        // Anno precedente: rilasciato nell'anno selezionato solo se e' un acconto e la commessa
+        // (per questo specifico intestatario) risulta completata nell'anno selezionato — stessa
+        // condizione del loop di rilascio cumulativo in gasCoreEngine.ts.
+        const chiave = `${project.name}||${matchIntestatario(tx, project) ?? '*'}||${selectedYear}`;
+        contaComeRicavo = project.metodoPagamento === 'acconto' && commesseCompletateAttivo.has(chiave);
+      }
+
+      if (!perCantiere.has(project.name)) {
+        perCantiere.set(project.name, { cantiere: project.name, metodoPagamento: project.metodoPagamento, perAnno: new Map() });
+      }
+      const riga = perCantiere.get(project.name)!;
+      if (!riga.perAnno.has(anno)) riga.perAnno.set(anno, { verde: 0, nero: 0 });
+      const cella = riga.perAnno.get(anno)!;
+      if (contaComeRicavo) cella.verde += Math.abs(tx.amount);
+      else cella.nero += Math.abs(tx.amount);
+    });
+
+    return Array.from(perCantiere.values()).sort((a, b) => {
+      const totA = Array.from(a.perAnno.values()).reduce((s, c) => s + c.verde + c.nero, 0);
+      const totB = Array.from(b.perAnno.values()).reduce((s, c) => s + c.verde + c.nero, 0);
+      return totB - totA;
+    });
+  };
+
+  const renderBreakdownCantieri = (bucket: 'ricavo_core' | 'ricavo_immobiliare') => {
+    const righe = buildBreakdownCantieri(bucket);
+    const anniSet = new Set<number>();
+    righe.forEach(r => r.perAnno.forEach((_, anno) => anniSet.add(anno)));
+    const anni = Array.from(anniSet).sort((a, b) => a - b);
+
+    return (
+      <tr>
+        <td colSpan={colSpanSezione} className="bg-slate-50/70 p-0 border-b border-slate-200">
+          {righe.length === 0 ? (
+            <div className="px-6 py-4 text-[11px] text-slate-400 italic">
+              Nessuna transazione trovata per questa voce nell'anno {selectedYear} o negli anni precedenti.
+            </div>
+          ) : (
+            <div className="p-4 overflow-x-auto">
+              <div className="flex flex-wrap items-center gap-4 mb-3 text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded bg-emerald-500" /> Conta come ricavo {selectedYear}</span>
+                <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded bg-slate-300" /> Resta cassa (non ancora ricavo)</span>
+                <span className="text-slate-400 normal-case font-medium">
+                  SAL: verde solo sull'anno {selectedYear}. Acconto: verde anche su anni precedenti se la commessa risulta saldata nel {selectedYear}.
+                </span>
+              </div>
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="py-2 pr-4 text-[10px] font-black text-slate-500 uppercase">Cantiere</th>
+                    <th className="py-2 pr-4 text-[10px] font-black text-slate-500 uppercase">Tipo</th>
+                    {anni.map(a => (
+                      <th key={a} className={`py-2 px-3 text-[10px] font-black uppercase text-right ${a === selectedYear ? 'text-slate-800' : 'text-slate-400'}`}>
+                        {a}{a === selectedYear ? ' (attuale)' : ''}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {righe.map(riga => (
+                    <tr key={riga.cantiere}>
+                      <td className="py-2 pr-4 text-xs font-bold text-slate-700 whitespace-nowrap">{riga.cantiere}</td>
+                      <td className="py-2 pr-4 text-[10px] font-bold uppercase text-slate-400">{riga.metodoPagamento || '—'}</td>
+                      {anni.map(a => {
+                        const cella = riga.perAnno.get(a);
+                        if (!cella || (cella.verde === 0 && cella.nero === 0)) {
+                          return <td key={a} className="py-2 px-3 text-right text-[11px] text-slate-300">—</td>;
+                        }
+                        return (
+                          <td key={a} className="py-2 px-3 text-right text-[11px] font-mono space-y-0.5">
+                            {cella.verde > 0 && <div className="text-emerald-600 font-bold">{formatEuro(cella.verde)}</div>}
+                            {cella.nero > 0 && <div className="text-slate-400">{formatEuro(cella.nero)}</div>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </td>
+      </tr>
+    );
+  };
+
   const renderRow = (label: string, data: number[], type: 'auto' | 'manual' | 'calc' | 'kpi', field?: keyof CEData, projOverride?: number, customKpiId?: string) => {
     const sum = data.reduce((a, b) => a + b, 0);
     const pct = activeMetrics.fatturato > 0 ? sum / activeMetrics.fatturato : 0;
@@ -982,7 +1117,7 @@ const CEView: React.FC<CEViewProps> = ({
     let kpiId = customKpiId;
     if (!kpiId) {
       if (label.includes('Ricavi Core')) kpiId = 'ricavo_core';
-      else if (label.includes('Vendite Immobiliari')) kpiId = 'ricavo_immobiliare';
+      else if (label.includes('Immobiliare')) kpiId = 'ricavo_immobiliare';
       else if (label.includes('Altri Ricavi')) kpiId = 'ricavo_altro';
       else if (label.includes('Costi Variabili')) kpiId = 'costo_variabile';
       else if (label.includes('Costi Studio')) kpiId = 'costo_studio';
@@ -995,9 +1130,14 @@ const CEView: React.FC<CEViewProps> = ({
       else if (label.includes('Prelievo Utile')) kpiId = 'distribuzione_utile';
     }
 
+    // Riepilogo cantiere × anno disponibile solo per Ricavi Core e Acconti Immobiliare — sono le due
+    // voci dove la distinzione SAL/acconto-completato governa cosa diventa ricavo (richiesta utente).
+    const breakdownKey = (kpiId === 'ricavo_core' || kpiId === 'ricavo_immobiliare') ? kpiId : null;
+
     return (
+      <React.Fragment key={label}>
       <tr className="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-        <td 
+        <td
           onClick={() => kpiId && setDrawerKpi(kpiId)}
           className={`py-3 px-4 text-xs font-bold text-slate-700 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${kpiId ? 'cursor-pointer hover:text-indigo-600 hover:bg-slate-50 transition-all' : ''}`}
         >
@@ -1006,6 +1146,16 @@ const CEView: React.FC<CEViewProps> = ({
             {type === 'manual' && <div className="w-2 h-2 rounded-full bg-amber-500" title="Manuale" />}
             {type === 'calc' && <div className="w-2 h-2 rounded-full bg-emerald-500" title="Calcolato" />}
             {label}
+            {breakdownKey && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setBreakdownEspanso(prev => prev === breakdownKey ? null : breakdownKey); }}
+                className="flex items-center gap-0.5 text-[9px] font-black text-indigo-500 hover:text-indigo-700 uppercase tracking-widest transition-colors no-print"
+                title="Mostra il dettaglio per cantiere e anno"
+              >
+                <ChevronDown size={11} className={`transition-transform ${breakdownEspanso === breakdownKey ? 'rotate-180' : ''}`} />
+                Per cantiere
+              </button>
+            )}
             {kpiId && <span className="text-[9px] text-slate-300 font-normal ml-auto no-print">🔍 Spiega</span>}
           </div>
         </td>
@@ -1034,6 +1184,8 @@ const CEView: React.FC<CEViewProps> = ({
           </>
         )}
       </tr>
+      {breakdownKey && breakdownEspanso === breakdownKey && renderBreakdownCantieri(breakdownKey)}
+      </React.Fragment>
     );
   };
 
@@ -1466,7 +1618,7 @@ const CEView: React.FC<CEViewProps> = ({
               {/* RICAVI */}
               <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">① Ricavi di Struttura</td></tr>
               {renderRow('Ricavi Core (SAL/Commesse)', activeCeData.ricaviCore, 'auto', undefined, metrics.proiezioneRicaviCore)}
-              {renderRow('Vendite Immobiliari', activeCeData.ricaviImmobiliare, 'auto', undefined, metrics.proiezioneRicaviImmobiliare)}
+              {renderRow('Acconti su Immobiliare/Terzi', activeCeData.ricaviImmobiliare, 'auto', undefined, metrics.proiezioneRicaviImmobiliare)}
               {renderRow('Altri Ricavi (Affitti/Sviluppo)', activeCeData.ricaviAltro, 'auto', undefined, metrics.proiezioneRicaviAltro)}
               <tr className="bg-slate-100 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALE RICAVI (A)</td>
