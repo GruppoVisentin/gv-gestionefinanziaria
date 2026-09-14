@@ -28,7 +28,50 @@ interface BudgetViewProps {
   projects?: Project[];
 }
 
-const formatEuro = (val: number) => 
+// Separatore delle migliaia mentre non si sta scrivendo (stesso meccanismo di ManualInput su Stato
+// Patrimoniale/ManualCell sul CE): valore grezzo editabile a fuoco attivo, formattato altrimenti.
+// Estratto in un componente a parte (non inline dentro il .map() della tabella) perche' serve uno
+// stato di focus indipendente per ogni riga - un hook non puo' vivere dentro un callback di map().
+const BudgetAnnuoInput = ({ value, onChange }: { value: number; onChange: (v: number) => void }) => {
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [inputValue, setInputValue] = React.useState(value ? String(value) : '');
+
+  React.useEffect(() => {
+    if (!isFocused) setInputValue(value ? String(value) : '');
+  }, [value, isFocused]);
+
+  const displayValue = isFocused
+    ? inputValue
+    : value ? new Intl.NumberFormat('it-IT', { maximumFractionDigits: 0 }).format(value) : '';
+
+  const handleInputChange = (val: string) => {
+    setInputValue(val);
+    let clean = val.trim();
+    if (clean.includes('.') && clean.includes(',')) {
+      clean = clean.replace(/\./g, '').replace(',', '.');
+    } else if (clean.includes(',')) {
+      clean = clean.replace(',', '.');
+    } else if (clean.includes('.')) {
+      const parts = clean.split('.');
+      if (parts[parts.length - 1].length === 3) clean = clean.replace(/\./g, '');
+    }
+    onChange(parseFloat(clean.replace(/[^0-9.-]/g, '')) || 0);
+  };
+
+  return (
+    <input
+      type="text"
+      value={displayValue}
+      placeholder="0"
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onChange={e => handleInputChange(e.target.value)}
+      className="w-24 bg-transparent text-right text-sm font-black text-amber-900 outline-none"
+    />
+  );
+};
+
+const formatEuro = (val: number) =>
   new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(val);
 
 const formatPercent = (val: number) => 
@@ -225,16 +268,38 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
         </div>
 
       {/* Summary Dashboard */}
+      {/* La prima card si chiama "Fatturato" (vedi termId 'fatturato' sotto) ma prendeva SOLO la riga
+          ricavo_core, escludendo Vendite Immobiliari e Altri Ricavi dal budget/consuntivo mostrato —
+          per un'azienda dove l'immobiliare e' spesso la voce di ricavo piu' grande, il "Fatturato"
+          qui sopra poteva risultare molto sottostimato rispetto al vero totale. Ora somma le tre voci
+          di ricavo, Costi Variabili e Costi Fissi restano invariati (gia' righe singole corrette).
+      */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {currentBudget.righe.filter(r => ['ricavo_core', 'costo_variabile', 'costo_fisso'].includes(r.ceType)).map(r => {
-          const actualTotal = Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0));
+        {(() => {
+          const ricaviTypes = ['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro'];
+          const righeRicavo = currentBudget.righe.filter(r => ricaviTypes.includes(r.ceType));
+          const fatturatoRow = {
+            categoria: 'Fatturato',
+            ceType: 'ricavo_core', // solo per calculateScostamento (isIncome = startsWith('ricavo'))
+            budgetAnnuo: righeRicavo.reduce((s, r) => s + r.budgetAnnuo, 0),
+            actualTotal: righeRicavo.reduce((s, r) => s + Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0)), 0),
+            termId: 'fatturato' as const,
+          };
+          const altreRighe = currentBudget.righe
+            .filter(r => ['costo_variabile', 'costo_fisso'].includes(r.ceType))
+            .map(r => ({
+              categoria: r.categoria,
+              ceType: r.ceType,
+              budgetAnnuo: r.budgetAnnuo,
+              actualTotal: Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0)),
+              termId: r.ceType === 'costo_variabile' ? 'primo_margine' as const : 'ebitda' as const,
+            }));
+          return [fatturatoRow, ...altreRighe];
+        })().map(r => {
+          const actualTotal = r.actualTotal;
           const { diff, isPositive } = calculateScostamento(actualTotal, r.budgetAnnuo, r.ceType);
           const pct = r.budgetAnnuo > 0 ? (actualTotal / r.budgetAnnuo) : 0;
-
-          // Map category to glossary term if possible
-          const termId = r.ceType === 'ricavo_core' ? 'fatturato' : 
-                         r.ceType === 'costo_variabile' ? 'primo_margine' : 
-                         r.ceType === 'costo_fisso' ? 'ebitda' : undefined;
+          const termId = r.termId;
 
           return (
             <div key={r.ceType} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -330,13 +395,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
                   <td className="py-4 px-6">
                     <div className="flex items-center justify-end bg-amber-50 border border-amber-200 border-dashed rounded-xl px-3 py-2">
                       <span className="text-amber-400 mr-2 text-xs">✏️</span>
-                      <input
-                        type="number"
-                        value={r.budgetAnnuo || ''}
-                        placeholder="0"
-                        onChange={(e) => handleBudgetChange(i, parseFloat(e.target.value) || 0)}
-                        className="w-24 bg-transparent text-right text-sm font-black text-amber-900 outline-none"
-                      />
+                      <BudgetAnnuoInput value={r.budgetAnnuo} onChange={(v) => handleBudgetChange(i, v)} />
                     </div>
                     {previsionaleAnnuo[r.ceType] && Math.round(previsionaleAnnuo[r.ceType].totale) !== r.budgetAnnuo && (
                       <button
