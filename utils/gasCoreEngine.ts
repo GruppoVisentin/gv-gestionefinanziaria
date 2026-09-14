@@ -1401,7 +1401,8 @@ export const calcScostamenti = (
   mese: number | null,  // null = YTD (tutti i mesi), 0-11 = mese specifico
   budgetData?: BudgetData,
   manualOverrides?: Partial<CEData>,
-  projects?: Project[]
+  projects?: Project[],
+  modalita: 'cassa' | 'competenza' = 'cassa'
 ): ScostamentoRiga[] => {
 
   // Riclassificazione dinamica (come nel CE): il tx.ceType statico non riflette un metodoPagamento
@@ -1412,8 +1413,14 @@ export const calcScostamenti = (
   const commesseCompletatePrevisionale = computeCommesseCompletate(transactions, projects, true);
   const oggi = new Date();
 
+  // Stessa base di aggregateByMonthAndType (usata da BudgetView, sempre in modalita' competenza):
+  // in competenza si usa invoiceDate quando disponibile - prima calcScostamenti usava sempre
+  // tx.date, quindi Budget e Scostamenti potevano mostrare un totale annuo diverso per fatture a
+  // cavallo di fine anno con invoiceDate in un anno diverso da tx.date (bug trovato in audit il
+  // 2026-09-14).
   const filtra = (tx: Transaction, isForecast: boolean) => {
-    const d = parseUTCDate(tx.date);
+    const dataRiferimento = (modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date;
+    const d = parseUTCDate(dataRiferimento);
     if (d.getUTCFullYear() !== anno) return false;
     if (mese !== null && d.getUTCMonth() !== mese) return false;
     if (!!tx.isForecast !== isForecast) return false;
