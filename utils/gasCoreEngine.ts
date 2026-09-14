@@ -13,7 +13,16 @@ export const parseUTCDate = (dateStr: any): Date => {
     const y = parseInt(parts[0], 10);
     const m = parseInt(parts[1], 10) - 1; // 0-indexed
     const d = parseInt(parts[2], 10);
-    return new Date(Date.UTC(y, m, d));
+    const result = new Date(Date.UTC(y, m, d));
+    // JS normalizza silenziosamente una data impossibile (es. 29 febbraio su anno non bisestile,
+    // o giorno 31 su un mese che non arriva a 31) spostandola al giorno successivo, senza errore.
+    // Il valore restituito resta invariato (per non rischiare regressioni sui moltissimi punti
+    // dell'app che si aspettano sempre una Date valida), ma viene segnalato in console per non
+    // restare invisibile - rischio puramente teorico, mai osservato nei dati reali (audit 2026-09-14).
+    if (result.getUTCFullYear() !== y || result.getUTCMonth() !== m || result.getUTCDate() !== d) {
+      console.warn(`parseUTCDate: data non valida "${dateStr}" normalizzata silenziosamente a ${result.toISOString().slice(0, 10)}`);
+    }
+    return result;
   }
   return new Date(dateStr);
 };
