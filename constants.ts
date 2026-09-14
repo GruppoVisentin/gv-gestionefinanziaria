@@ -338,6 +338,29 @@ export const CATEGORY_MIGRATION_MAP: Record<string, string> = {
   "[CANTIERE] Oneri Comunali":             "[CANTIERE] Oneri Comunali, Abaco e Occupazioni",
 };
 
+// Tassonomia standard edilizia per l'Anagrafica Fornitori: macro categoria di
+// lavorazione (Grezzo/Finiture) e sottocategorie tematiche. Le etichette sono
+// liberamente rinominabili/estendibili dalla UI — questo e' solo il default.
+export const FORNITORI_TAXONOMY: Record<'grezzo' | 'finiture', string[]> = {
+  grezzo: [
+    'Scavi e Movimento Terra',
+    'Strutture in C.A. e Carpenteria',
+    'Murature e Tramezzature',
+    'Impermeabilizzazioni e Coibentazioni',
+    'Impianti a Grezzo (predisposizioni)',
+  ],
+  finiture: [
+    'Intonaci e Rasature',
+    'Pavimenti e Rivestimenti',
+    'Serramenti e Infissi',
+    'Impianti Elettrici',
+    'Impianti Idraulici e Termici',
+    'Pitture e Decorazioni',
+    'Cartongesso e Controsoffitti',
+    'Arredi e Complementi',
+  ],
+};
+
 // Mapping Category -> Suppliers/Subcategories
 export const SUPPLIER_PRESETS: Record<string, string[]> = {
   '[MEZZI] Riparazioni Macchinari Programmate': [

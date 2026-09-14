@@ -18,7 +18,8 @@ import {
   SaldoInizialeCashFlow,
   BankAccount,
   ImportSession,
-  Client
+  Client,
+  Fornitore
 } from './types';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
@@ -63,6 +64,7 @@ import {
   CantiereWizard
 } from './components/Wizards';
 import { ClientiManager } from './components/ClientiManager';
+import { FornitoriTab } from './components/FornitoriTab';
 import { 
   LayoutDashboard, 
   LayoutGrid,
@@ -81,6 +83,7 @@ import {
   TrendingUp,
   Building2,
   Contact,
+  HardHat,
   Target,
   ShieldCheck,
   BookOpen,
@@ -682,6 +685,9 @@ const App: React.FC = () => {
   // Anagrafica clienti condivisa con l'ecosistema GV
   const [clients, setClients] = useState<Client[]>([]);
 
+  // Anagrafica fornitori per macro/sotto categoria di lavorazione
+  const [fornitori, setFornitori] = useState<Fornitore[]>([]);
+
   // Categories State (Dynamic)
   const [fixedCategories, setFixedCategories] = useState<string[]>([...FIXED_COST_CATEGORIES]);
 
@@ -876,12 +882,13 @@ const App: React.FC = () => {
     logImportAutomatico,
     saldiApertiPuntaNet,
     clients,
+    fornitori,
   }), [
     transactions, projects, fixedCategories, variableCategories, incomeCategories,
     supplierPresets, initialData, responsiblesList, ceManualData, spSnapshots,
     budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze,
     regolePuntaNet, mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
-    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet, clients
+    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet, clients, fornitori
   ]);
 
   // Ref che mantiene sempre l'ultima versione di buildBackupData
@@ -989,6 +996,7 @@ const App: React.FC = () => {
     if (data.storicoExcelImportato) setStoricoImportato(data.storicoExcelImportato);
     if (data.storicoCantierePuntaNet) setStoricoCantierePuntaNet(data.storicoCantierePuntaNet);
     if (data.clients) setClients(data.clients);
+    if (data.fornitori) setFornitori(data.fornitori);
     if (data.aliquoteFiscali) {
       setAliquotaIRES(data.aliquoteFiscali.ires);
       setAliquotaIRAP(data.aliquoteFiscali.irap);
@@ -2008,6 +2016,22 @@ const App: React.FC = () => {
     });
   }, []);
 
+  const handleAddFornitore = useCallback((data: Omit<Fornitore, 'id'>) => {
+    setFornitori(prev => [...prev, { ...data, id: crypto.randomUUID() }]);
+  }, []);
+
+  const handleUpdateFornitore = useCallback((id: string, data: Omit<Fornitore, 'id'>) => {
+    setFornitori(prev => prev.map(f => f.id === id ? { ...data, id } : f));
+  }, []);
+
+  const handleDeleteFornitore = useCallback((id: string) => {
+    setFornitori(prev => prev.filter(f => f.id !== id));
+  }, []);
+
+  const handleImportFornitoriBatch = useCallback((data: Omit<Fornitore, 'id'>[]) => {
+    setFornitori(prev => [...prev, ...data.map(d => ({ ...d, id: crypto.randomUUID() }))]);
+  }, []);
+
   // SV-B Handlers
   const handleSaveTipologia = (t: TipologiaCantiere) => {
     setTipologieCantiere(prev => {
@@ -2599,6 +2623,16 @@ const App: React.FC = () => {
             storicoCantierePuntaNet={storicoCantierePuntaNet}
           />
         );
+      case AppView.FORNITORI:
+        return (
+          <FornitoriTab
+            fornitori={fornitori}
+            onAddFornitore={handleAddFornitore}
+            onUpdateFornitore={handleUpdateFornitore}
+            onDeleteFornitore={handleDeleteFornitore}
+            onImportBatch={handleImportFornitoriBatch}
+          />
+        );
       case AppView.SETTINGS:
         return (
             <div className="space-y-8 animate-in fade-in duration-500">
@@ -2815,6 +2849,7 @@ const App: React.FC = () => {
     { view: AppView.TIMELINE, label: 'Cash Flow', icon: CalendarClock },
     { view: AppView.BILANCIO_RIEPILOGO, label: 'Bilancio', icon: Building2 },
     { view: AppView.PROJECTS, label: 'Commesse', icon: Briefcase },
+    { view: AppView.FORNITORI, label: 'Fornitori', icon: HardHat },
     { view: AppView.GUIDA_KPI, label: 'Guida', icon: BookOpen },
     { view: AppView.SETTINGS, label: 'Config.', icon: Settings },
   ];

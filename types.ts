@@ -114,6 +114,27 @@ export interface Client {
   externalId?: string;
 }
 
+// Anagrafica fornitori, divisa per macro categoria di lavorazione (Grezzo/Finiture)
+// e sottocategoria tematica. Puo' essere popolata a mano o importata (con revisione
+// manuale) dal report generato da scripts/importaFornitoriPuntaNet.mjs.
+export type FornitoreMacroCategoria = 'grezzo' | 'finiture' | 'non_categorizzato';
+
+export interface Fornitore {
+  id: string;
+  ragioneSociale: string;
+  macroCategoria: FornitoreMacroCategoria;
+  sottoCategoria?: string; // vedi FORNITORI_TAXONOMY in constants.ts
+  pIvaCf?: string;
+  indirizzo?: string;
+  telefono?: string;
+  email?: string;
+  pec?: string;
+  note?: string;
+  // Presenti solo se importato dal report PuntaNet (Clienti Fornitori), per
+  // riconciliare re-importazioni successive senza creare doppioni.
+  puntaNetIdCliFor?: number;
+}
+
 export interface BankAccount {
   id: string;
   name: string;
@@ -334,6 +355,7 @@ export interface BackupData {
   logImportAutomatico?: { timestamp: string; autoScritti: number; daRivedere: number }[]; // ← NUOVO — log esecuzioni scripts/importaPuntaNet.mjs --scrivi, per il banner "N movimenti importati dall'ultima apertura"
   saldiApertiPuntaNet?: { data: string; creditiClienti: number; debitiFornitori: number }; // ← NUOVO — fotografia giornaliera di Crediti Clienti/Debiti Fornitori aperti da PuntaNet, per il suggerimento in Stato Patrimoniale
   clients?: Client[]; // ← NUOVO — anagrafica clienti condivisa con l'ecosistema GV
+  fornitori?: Fornitore[]; // ← NUOVO — anagrafica fornitori per macro/sotto categoria di lavorazione
 }
 
 export enum AppView {
@@ -357,4 +379,5 @@ export enum AppView {
   ANALISI_INDICI = 'ANALISI_INDICI',
   GUIDA_KPI = 'GUIDA_KPI',
   IVA_POSIZIONE = 'IVA_POSIZIONE',
+  FORNITORI = 'FORNITORI',
 }

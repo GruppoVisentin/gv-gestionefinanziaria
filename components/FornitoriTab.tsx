@@ -1,0 +1,336 @@
+import React, { useMemo, useState } from 'react';
+import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox } from 'lucide-react';
+import { Fornitore, FornitoreMacroCategoria } from '../types';
+import { FORNITORI_TAXONOMY } from '../constants';
+
+interface FornitoriTabProps {
+  fornitori: Fornitore[];
+  onAddFornitore: (data: Omit<Fornitore, 'id'>) => void;
+  onUpdateFornitore: (id: string, data: Omit<Fornitore, 'id'>) => void;
+  onDeleteFornitore: (id: string) => void;
+  onImportBatch: (data: Omit<Fornitore, 'id'>[]) => void;
+}
+
+type FormState = {
+  ragioneSociale: string;
+  macroCategoria: FornitoreMacroCategoria;
+  sottoCategoria: string;
+  pIvaCf: string;
+  indirizzo: string;
+  telefono: string;
+  email: string;
+  pec: string;
+  note: string;
+};
+
+const EMPTY_FORM: FormState = {
+  ragioneSociale: '', macroCategoria: 'grezzo', sottoCategoria: '',
+  pIvaCf: '', indirizzo: '', telefono: '', email: '', pec: '', note: '',
+};
+
+const MACRO_LABEL: Record<FornitoreMacroCategoria, string> = {
+  grezzo: 'Grezzo',
+  finiture: 'Finiture',
+  non_categorizzato: 'Da Categorizzare',
+};
+
+function toFornitoreInput(f: FormState): Omit<Fornitore, 'id'> {
+  return {
+    ragioneSociale: f.ragioneSociale.trim(),
+    macroCategoria: f.macroCategoria,
+    sottoCategoria: f.sottoCategoria.trim() || undefined,
+    pIvaCf: f.pIvaCf.trim() || undefined,
+    indirizzo: f.indirizzo.trim() || undefined,
+    telefono: f.telefono.trim() || undefined,
+    email: f.email.trim() || undefined,
+    pec: f.pec.trim() || undefined,
+    note: f.note.trim() || undefined,
+  };
+}
+
+function fromFornitore(f: Fornitore): FormState {
+  return {
+    ragioneSociale: f.ragioneSociale,
+    macroCategoria: f.macroCategoria,
+    sottoCategoria: f.sottoCategoria || '',
+    pIvaCf: f.pIvaCf || '',
+    indirizzo: f.indirizzo || '',
+    telefono: f.telefono || '',
+    email: f.email || '',
+    pec: f.pec || '',
+    note: f.note || '',
+  };
+}
+
+function FornitoreForm({ value, onChange }: { value: FormState; onChange: (v: FormState) => void }) {
+  const subOptions = value.macroCategoria === 'grezzo' || value.macroCategoria === 'finiture'
+    ? FORNITORI_TAXONOMY[value.macroCategoria]
+    : [];
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <input
+        autoFocus
+        value={value.ragioneSociale}
+        onChange={e => onChange({ ...value, ragioneSociale: e.target.value })}
+        placeholder="Ragione sociale"
+        className="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-200 text-sm"
+      />
+      <select
+        value={value.macroCategoria}
+        onChange={e => onChange({ ...value, macroCategoria: e.target.value as FornitoreMacroCategoria, sottoCategoria: '' })}
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white"
+      >
+        <option value="grezzo">Grezzo</option>
+        <option value="finiture">Finiture</option>
+        <option value="non_categorizzato">Da Categorizzare</option>
+      </select>
+      <input
+        list="sottocategoria-options"
+        value={value.sottoCategoria}
+        onChange={e => onChange({ ...value, sottoCategoria: e.target.value })}
+        placeholder="Sottocategoria tematica"
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+      />
+      <datalist id="sottocategoria-options">
+        {subOptions.map(s => <option key={s} value={s} />)}
+      </datalist>
+      <input
+        value={value.pIvaCf}
+        onChange={e => onChange({ ...value, pIvaCf: e.target.value })}
+        placeholder="P.IVA / Codice Fiscale"
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+      />
+      <input
+        value={value.telefono}
+        onChange={e => onChange({ ...value, telefono: e.target.value })}
+        placeholder="Telefono"
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+      />
+      <input
+        value={value.email}
+        onChange={e => onChange({ ...value, email: e.target.value })}
+        placeholder="Email"
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+      />
+      <input
+        value={value.pec}
+        onChange={e => onChange({ ...value, pec: e.target.value })}
+        placeholder="PEC"
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+      />
+      <input
+        value={value.indirizzo}
+        onChange={e => onChange({ ...value, indirizzo: e.target.value })}
+        placeholder="Indirizzo"
+        className="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-200 text-sm"
+      />
+      <textarea
+        value={value.note}
+        onChange={e => onChange({ ...value, note: e.target.value })}
+        placeholder="Note"
+        rows={2}
+        className="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-200 text-sm resize-none"
+      />
+    </div>
+  );
+}
+
+export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onDeleteFornitore, onImportBatch }: FornitoriTabProps) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [importPreview, setImportPreview] = useState<Omit<Fornitore, 'id'>[] | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const grouped = useMemo(() => {
+    const groups: Record<FornitoreMacroCategoria, Record<string, Fornitore[]>> = {
+      grezzo: {}, finiture: {}, non_categorizzato: {},
+    };
+    for (const f of fornitori) {
+      const sub = f.sottoCategoria || '(senza sottocategoria)';
+      const macro = groups[f.macroCategoria] || groups.non_categorizzato;
+      if (!macro[sub]) macro[sub] = [];
+      macro[sub].push(f);
+    }
+    return groups;
+  }, [fornitori]);
+
+  const startAdd = () => { setIsAdding(true); setEditingId(null); setForm(EMPTY_FORM); };
+  const startEdit = (f: Fornitore) => { setEditingId(f.id); setIsAdding(false); setForm(fromFornitore(f)); };
+  const cancel = () => { setIsAdding(false); setEditingId(null); };
+
+  const save = () => {
+    if (!form.ragioneSociale.trim()) return;
+    if (editingId) {
+      onUpdateFornitore(editingId, toFornitoreInput(form));
+    } else {
+      onAddFornitore(toFornitoreInput(form));
+    }
+    setIsAdding(false);
+    setEditingId(null);
+  };
+
+  const toggleGroup = (key: string) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const handleImportFile = (file: File) => {
+    setImportError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        const rows = Array.isArray(parsed) ? parsed : parsed.fornitori;
+        if (!Array.isArray(rows)) throw new Error('Formato non riconosciuto: atteso un array di fornitori');
+        const existingIds = new Set(fornitori.map(f => f.puntaNetIdCliFor).filter(Boolean));
+        const existingNames = new Set(fornitori.map(f => f.ragioneSociale.toLowerCase().trim()));
+        const toImport: Omit<Fornitore, 'id'>[] = rows
+          .filter((r: any) => r.ragioneSociale && !existingIds.has(r.puntaNetIdCliFor) && !existingNames.has(String(r.ragioneSociale).toLowerCase().trim()))
+          .map((r: any) => ({
+            ragioneSociale: r.ragioneSociale,
+            macroCategoria: 'non_categorizzato' as const,
+            pIvaCf: r.pIvaCf || undefined,
+            indirizzo: r.indirizzo || undefined,
+            telefono: r.telefono || undefined,
+            email: r.email || undefined,
+            pec: r.pec || undefined,
+            puntaNetIdCliFor: r.puntaNetIdCliFor || undefined,
+          }));
+        setImportPreview(toImport);
+      } catch (e: any) {
+        setImportError(e.message || 'File non valido');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmImport = () => {
+    if (importPreview && importPreview.length > 0) onImportBatch(importPreview);
+    setImportPreview(null);
+  };
+
+  const macroOrder: FornitoreMacroCategoria[] = ['grezzo', 'finiture', 'non_categorizzato'];
+  const macroIcon: Record<FornitoreMacroCategoria, React.ReactNode> = {
+    grezzo: <HardHat size={16} />,
+    finiture: <Paintbrush size={16} />,
+    non_categorizzato: <Inbox size={16} />,
+  };
+  const macroStyle: Record<FornitoreMacroCategoria, string> = {
+    grezzo: 'bg-stone-50 text-stone-700 border-stone-200',
+    finiture: 'bg-sky-50 text-sky-700 border-sky-200',
+    non_categorizzato: 'bg-slate-50 text-slate-500 border-slate-200',
+  };
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Anagrafica Fornitori</h2>
+          <p className="text-xs text-slate-500 mt-1">Divisa per macro categoria di lavorazione (Grezzo / Finiture) e sottocategoria tematica.</p>
+        </div>
+        <div className="flex gap-2">
+          <label className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer">
+            <Upload size={14} /> Importa report PuntaNet
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = ''; }}
+            />
+          </label>
+          {!isAdding && (
+            <button onClick={startAdd} className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all">
+              <Plus size={14} /> Nuovo Fornitore
+            </button>
+          )}
+        </div>
+      </div>
+
+      {importError && (
+        <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-xl">{importError}</div>
+      )}
+
+      {importPreview && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold text-amber-800">
+              {importPreview.length === 0
+                ? 'Nessun fornitore nuovo da importare (gia\' tutti presenti).'
+                : `${importPreview.length} fornitori pronti da importare, categoria "Da Categorizzare" — assegna Grezzo/Finiture dopo.`}
+            </p>
+            <div className="flex gap-2 shrink-0">
+              {importPreview.length > 0 && (
+                <button onClick={confirmImport} className="p-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600"><Check size={16} /></button>
+              )}
+              <button onClick={() => setImportPreview(null)} className="p-2 bg-slate-200 text-slate-600 rounded-xl hover:bg-slate-300"><X size={16} /></button>
+            </div>
+          </div>
+          {importPreview.length > 0 && (
+            <ul className="text-xs text-amber-700 max-h-32 overflow-y-auto list-disc list-inside">
+              {importPreview.map((f, i) => <li key={i}>{f.ragioneSociale}{f.pIvaCf ? ` — ${f.pIvaCf}` : ''}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {(isAdding || editingId) && (
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+          <FornitoreForm value={form} onChange={setForm} />
+          <div className="flex gap-2 justify-end">
+            <button onClick={save} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600"><Check size={14} /> Salva</button>
+            <button onClick={cancel} className="flex items-center gap-1.5 px-4 py-2 bg-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-300"><X size={14} /> Annulla</button>
+          </div>
+        </div>
+      )}
+
+      {fornitori.length === 0 && !isAdding && (
+        <div className="p-10 text-center text-sm text-slate-400 bg-white border border-slate-200 rounded-2xl">Nessun fornitore registrato.</div>
+      )}
+
+      <div className="space-y-6">
+        {macroOrder.filter(macro => Object.keys(grouped[macro]).length > 0).map(macro => (
+          <div key={macro} className="space-y-3">
+            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-black uppercase tracking-wider ${macroStyle[macro]}`}>
+              {macroIcon[macro]} {MACRO_LABEL[macro]}
+            </div>
+            {Object.entries(grouped[macro]).sort(([a], [b]) => a.localeCompare(b)).map(([sub, list]) => {
+              const key = `${macro}::${sub}`;
+              const isCollapsed = collapsed[key];
+              return (
+                <div key={key} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+                  <button
+                    onClick={() => toggleGroup(key)}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-all"
+                  >
+                    <span className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                      {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                      {sub}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">{list.length} fornitori</span>
+                  </button>
+                  {!isCollapsed && (
+                    <div className="divide-y divide-slate-100 border-t border-slate-100">
+                      {list.map(f => (
+                        <div key={f.id} className="flex items-center gap-3 px-4 py-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-sm text-slate-800 truncate">{f.ragioneSociale}</div>
+                            <div className="flex flex-wrap gap-x-3 text-[11px] text-slate-400">
+                              {f.pIvaCf && <span>{f.pIvaCf}</span>}
+                              {f.telefono && <span>{f.telefono}</span>}
+                              {f.email && <span>{f.email}</span>}
+                            </div>
+                          </div>
+                          <button onClick={() => startEdit(f)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all"><Edit2 size={14} /></button>
+                          <button onClick={() => onDeleteFornitore(f.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={14} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
