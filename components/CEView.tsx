@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, TransactionType, CEData, CERow, BudgetData, RimanenzeAnno, RimanenzeData, AppView, Project, InitialBalanceBreakdown } from '../types';
 import { buildCEData, buildCEDataPrevisionale, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, computeCommesseCompletate, commessaDiIncasso, matchIntestatario, getDynamicLoansInterests, calculateRepayment, parseUTCDate, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
 import { exportCEPDF } from '../utils/cePdfExport';
@@ -100,6 +100,15 @@ const CEView: React.FC<CEViewProps> = ({
   const [activeTab, setActiveTab] = useState<'ytd' | 'projection' | 'monthly' | 'scostamenti' | 'previsionale'>('ytd');
   const [meseScostamento, setMeseScostamento] = useState<number | null>(null); // null = YTD
   const [modalita, setModalita] = useState<'cassa' | 'competenza'>('cassa');
+
+  // Proiezione Anno stima l'utile di fine anno: quello che conta per utile/tasse è il valore di
+  // competenza (rimanenze incluse), non il timing di incasso — su questo tab "per cassa" non è mai la
+  // scelta giusta, quindi il toggle è nascosto e si forza qui "competenza" ogni volta che si entra.
+  // modalita è condivisa con YTD Consuntivo/Mese per Mese: uscendo da questo tab resta su 'competenza'
+  // finché l'utente non la cambia lì a mano (scelta consapevole — vedi discussione con l'utente).
+  useEffect(() => {
+    if (activeTab === 'projection') setModalita('competenza');
+  }, [activeTab]);
   const [showHelp, setShowHelp] = useState(false);
   const [drawerKpi, setDrawerKpi] = useState<string | null>(null);
   const [breakdownEspanso, setBreakdownEspanso] = useState<'ricavo_core' | 'ricavo_immobiliare' | null>(null);
@@ -1283,8 +1292,11 @@ const CEView: React.FC<CEViewProps> = ({
             </button>
           </div>
 
-          {/* Toggle modalità — non si applica alla vista Previsionale (nessuna rimanenza pianificata da applicare) */}
-          {activeTab !== 'previsionale' && (
+          {/* Toggle modalità — non si applica a Previsionale (nessuna rimanenza pianificata da applicare) né a
+              Proiezione Anno (qui conta solo il valore di competenza: è quello che alimenta utile e tasse
+              dell'anno, non il timing di cassa — vedi effetto useEffect qui sotto che blocca modalita su
+              'competenza' quando si entra su questo tab). */}
+          {activeTab !== 'previsionale' && activeTab !== 'projection' && (
             <div className="flex items-center bg-slate-100 rounded-xl p-1">
               <button
                 onClick={() => setModalita('cassa')}
