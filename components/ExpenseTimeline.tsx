@@ -1190,7 +1190,7 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                   <div className="flex items-center justify-center gap-2">
                     {month}
                     <button
-                      onClick={() => exportMonthlyReportPDF({ monthIndex, year: currentYear, transactions })}
+                      onClick={() => exportMonthlyReportPDF({ monthIndex, year: currentYear, transactions, projects })}
                       className="p-1 rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-900 transition-colors"
                       title={`Esporta Report Mensile ${month}`}
                     >

@@ -1806,7 +1806,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                           {month}
                         </span>
                         <button
-                          onClick={() => exportMonthlyReportPDF({ monthIndex, year: currentYear, transactions })}
+                          onClick={() => exportMonthlyReportPDF({ monthIndex, year: currentYear, transactions, projects })}
                           className="p-1 rounded-md hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
                           title={`Esporta Report Mensile ${month}`}
                         >
