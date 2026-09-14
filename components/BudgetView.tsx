@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, BudgetData, BudgetRow, AppView, Project } from '../types';
-import { aggregateByMonthAndType } from '../utils/gasCoreEngine';
+import { aggregateByMonthAndType, getDynamicCEType, computeCommesseCompletate, parseUTCDate } from '../utils/gasCoreEngine';
 import { exportBudgetPDF } from '../utils/budgetPdfExport';
 import PDFExportButton from './PDFExportButton';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
@@ -50,7 +50,12 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
   const [isEditing, setIsEditing] = useState(false);
   const [showCopyBanner, setShowCopyBanner] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [modalita, setModalita] = useState<'cassa' | 'competenza'>('cassa');
+  // Il confronto Budget/Scostamenti e' un target di conto economico (ricavi/costi riconosciuti),
+  // non un target di cassa — stessa scelta gia' fatta su Previsionale e Proiezione Anno nel CE: solo
+  // Costi Variabili mostrava una differenza non trascurabile tra le due modalita' (~11% sui dati
+  // reali, per via della data fattura vs data cassa), i Ricavi nessuna. Toggle rimosso, fisso su
+  // competenza.
+  const modalita = 'competenza' as const;
 
   const currentBudget = useMemo(() => 
     budgetData[selectedYear.toString()] || { anno: selectedYear, righe: DEFAULT_BUDGET_ROWS }, 
@@ -95,10 +100,31 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
     }
   };
 
-  const actuals = useMemo(() => 
-    aggregateByMonthAndType(transactions, selectedYear, modalita, projects), 
+  const actuals = useMemo(() =>
+    aggregateByMonthAndType(transactions, selectedYear, modalita, projects),
     [transactions, selectedYear, modalita, projects]
   );
+
+  // Candidato "Budget Annuo" da caricare dal previsionale gia' impostato in Cash Flow: somma di TUTTE
+  // le transazioni previsionali dell'anno per ciascuna voce, con la loro VERA distribuzione mensile
+  // (non un /12 piatto come fa la digitazione manuale) — cosi' il budget mensile riflette quando i
+  // soldi sono davvero attesi (es. più SAL concentrati in certi mesi), non una media artificiale.
+  const previsionaleAnnuo = useMemo(() => {
+    const commesseCompletate = computeCommesseCompletate(transactions, projects, true);
+    const perTipo: Record<string, { totale: number; perMese: number[] }> = {};
+    for (const tx of transactions) {
+      if (!tx.isForecast) continue;
+      const d = parseUTCDate(tx.date);
+      if (d.getUTCFullYear() !== selectedYear) continue;
+      const tipo = getDynamicCEType(tx, projects, commesseCompletate, selectedYear);
+      if (!tipo) continue;
+      if (!perTipo[tipo]) perTipo[tipo] = { totale: 0, perMese: Array(12).fill(0) };
+      const importo = Math.abs(tx.amount);
+      perTipo[tipo].totale += importo;
+      perTipo[tipo].perMese[d.getUTCMonth()] += importo;
+    }
+    return perTipo;
+  }, [transactions, selectedYear, projects]);
 
   const totalBudgetRevenues = useMemo(() => currentBudget.righe.filter(r => r.ceType.startsWith('ricavo')).reduce((sum, r) => sum + r.budgetAnnuo, 0), [currentBudget]);
   const totalActualRevenues = useMemo(() => currentBudget.righe.filter(r => r.ceType.startsWith('ricavo')).reduce((sum, r) => sum + Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0)), 0), [currentBudget, actuals]);
@@ -111,6 +137,18 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
       ...newRighe[index], 
       budgetAnnuo: value,
       budgetMensile: Array(12).fill(value / 12) // Distribuzione uniforme di default
+    };
+    onBudgetChange(selectedYear, { ...currentBudget, righe: newRighe });
+  };
+
+  const handleBudgetChangeFromPrevisionale = (index: number, ceType: string) => {
+    const prev = previsionaleAnnuo[ceType];
+    if (!prev) return;
+    const newRighe = [...currentBudget.righe];
+    newRighe[index] = {
+      ...newRighe[index],
+      budgetAnnuo: Math.round(prev.totale),
+      budgetMensile: prev.perMese.map(v => Math.round(v)), // distribuzione mensile VERA, non /12
     };
     onBudgetChange(selectedYear, { ...currentBudget, righe: newRighe });
   };
@@ -149,30 +187,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
 
           <div className="flex items-center gap-4">
             <HelpButton onClick={() => setShowHelp(true)} />
-
-            {/* Toggle modalità */}
-            <div className="flex items-center bg-slate-100 rounded-xl p-1 no-print">
-              <button
-                onClick={() => setModalita('cassa')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  modalita === 'cassa'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Per cassa
-              </button>
-              <button
-                onClick={() => setModalita('competenza')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  modalita === 'competenza'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Per competenza
-              </button>
-            </div>
 
             <div className="flex items-center bg-slate-100 rounded-xl p-1 no-print">
               <button 
@@ -316,7 +330,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
                   <td className="py-4 px-6">
                     <div className="flex items-center justify-end bg-amber-50 border border-amber-200 border-dashed rounded-xl px-3 py-2">
                       <span className="text-amber-400 mr-2 text-xs">✏️</span>
-                      <input 
+                      <input
                         type="number"
                         value={r.budgetAnnuo || ''}
                         placeholder="0"
@@ -324,6 +338,15 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
                         className="w-24 bg-transparent text-right text-sm font-black text-amber-900 outline-none"
                       />
                     </div>
+                    {previsionaleAnnuo[r.ceType] && Math.round(previsionaleAnnuo[r.ceType].totale) !== r.budgetAnnuo && (
+                      <button
+                        onClick={() => handleBudgetChangeFromPrevisionale(i, r.ceType)}
+                        className="text-[10px] text-blue-600 font-bold hover:underline block w-full text-right mt-1"
+                        title="Usa il totale (e la distribuzione mensile reale) del previsionale gia' impostato in Cash Flow"
+                      >
+                        💡 Carica da Previsionale ({formatEuro(previsionaleAnnuo[r.ceType].totale)})
+                      </button>
+                    )}
                   </td>
                   <td className="py-4 px-6 text-right">
                     <div className="bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 text-sm font-black text-sky-900 inline-block min-w-[120px]">
