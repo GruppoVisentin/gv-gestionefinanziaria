@@ -17,7 +17,8 @@ import {
   RimanenzeData,
   SaldoInizialeCashFlow,
   BankAccount,
-  ImportSession
+  ImportSession,
+  Client
 } from './types';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
@@ -56,11 +57,12 @@ import {
   CATEGORY_MIGRATION_MAP,
   CATEGORY_TO_CE_TYPE
 } from './constants';
-import { 
-  YearStartWizard, 
-  TipologiaManager, 
-  CantiereWizard 
+import {
+  YearStartWizard,
+  TipologiaManager,
+  CantiereWizard
 } from './components/Wizards';
+import { ClientiManager } from './components/ClientiManager';
 import { 
   LayoutDashboard, 
   LayoutGrid,
@@ -78,6 +80,7 @@ import {
   Download,
   TrendingUp,
   Building2,
+  Contact,
   Target,
   ShieldCheck,
   BookOpen,
@@ -110,6 +113,7 @@ import {
   writeRulesFile
 } from './services/fileStorage';
 import { fetchSharedCantieri, pushSharedCantiere, deleteSharedCantiere } from './services/cantieriSync';
+import { fetchSharedClienti, pushSharedCliente, deleteSharedCliente } from './services/clientiSync';
 
 interface WelcomeScreenProps {
   pendingHandleFromIDB: FileSystemFileHandle | null;
@@ -675,6 +679,9 @@ const App: React.FC = () => {
   // Projects State
   const [projects, setProjects] = useState<Project[]>([]);
 
+  // Anagrafica clienti condivisa con l'ecosistema GV
+  const [clients, setClients] = useState<Client[]>([]);
+
   // Categories State (Dynamic)
   const [fixedCategories, setFixedCategories] = useState<string[]>([...FIXED_COST_CATEGORIES]);
 
@@ -785,6 +792,7 @@ const App: React.FC = () => {
   // Wizards Visibility
   const [showYearStartWizard, setShowYearStartWizard] = useState(false);
   const [showCantiereWizard, setShowCantiereWizard] = useState(false);
+  const [showClientiManager, setShowClientiManager] = useState(false);
 
   // Scroll Synchronization Refs
   const incomeScrollRef = useRef<HTMLDivElement>(null);
@@ -867,12 +875,13 @@ const App: React.FC = () => {
     storicoCantierePuntaNet,
     logImportAutomatico,
     saldiApertiPuntaNet,
+    clients,
   }), [
     transactions, projects, fixedCategories, variableCategories, incomeCategories,
     supplierPresets, initialData, responsiblesList, ceManualData, spSnapshots,
     budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze,
     regolePuntaNet, mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
-    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet
+    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet, clients
   ]);
 
   // Ref che mantiene sempre l'ultima versione di buildBackupData
@@ -979,6 +988,7 @@ const App: React.FC = () => {
     if (data.saldiApertiPuntaNet) setSaldiApertiPuntaNet(data.saldiApertiPuntaNet);
     if (data.storicoExcelImportato) setStoricoImportato(data.storicoExcelImportato);
     if (data.storicoCantierePuntaNet) setStoricoCantierePuntaNet(data.storicoCantierePuntaNet);
+    if (data.clients) setClients(data.clients);
     if (data.aliquoteFiscali) {
       setAliquotaIRES(data.aliquoteFiscali.ires);
       setAliquotaIRAP(data.aliquoteFiscali.irap);
@@ -1900,6 +1910,104 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [projects, appState]);
 
+  // --- ANAGRAFICA CLIENTI CONDIVISA (stesso registro condiviso dei cantieri) ---
+  // Stessa logica di chiave/riconciliazione delle commesse: un cliente creato
+  // qui usa (gestione_finanziaria, id), uno importato usa (externalSource,
+  // externalId). Nome e P.IVA/CF restano sincronizzati in entrambi i sensi.
+  const syncClientiFromRegistry = useCallback(async () => {
+    try {
+      const rows = await fetchSharedClienti();
+      setClients(prev => {
+        let changed = false;
+
+        const reconciled = prev.flatMap(c => {
+          const key = c.externalSource
+            ? { source: c.externalSource, sourceId: c.externalId! }
+            : { source: 'gestione_finanziaria' as const, sourceId: c.id };
+          const row = rows.find(r => r.source === key.source && r.sourceId === key.sourceId);
+          if (!row) {
+            if (c.externalSource) {
+              changed = true;
+              return [];
+            }
+            return [c];
+          }
+          const newNome = row.nome;
+          const newPIva = row.pIvaCf || undefined;
+          if (newNome !== c.nome || newPIva !== c.pIva) {
+            changed = true;
+            return [{ ...c, nome: newNome, pIva: newPIva }];
+          }
+          return [c];
+        });
+
+        const existingExternalIds = new Set(
+          reconciled.filter(c => c.externalSource === 'direttore_cantiere').map(c => c.externalId)
+        );
+        const toImport = rows.filter(r =>
+          r.source === 'direttore_cantiere' && !existingExternalIds.has(r.sourceId)
+        );
+        const imported: Client[] = toImport.map(r => ({
+          id: crypto.randomUUID(),
+          nome: r.nome,
+          pIva: r.pIvaCf || undefined,
+          externalSource: 'direttore_cantiere',
+          externalId: r.sourceId,
+        }));
+
+        if (!changed && imported.length === 0) return prev;
+        return [...reconciled, ...imported];
+      });
+    } catch (e) {
+      console.error('Sincronizzazione anagrafica clienti fallita', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (appState !== 'ready') return;
+    syncClientiFromRegistry();
+    const interval = setInterval(syncClientiFromRegistry, 120000);
+    return () => clearInterval(interval);
+  }, [appState, syncClientiFromRegistry]);
+
+  useEffect(() => {
+    if (appState !== 'ready') return;
+    const timer = setTimeout(() => {
+      clients.forEach(c => {
+        const key = c.externalSource
+          ? { source: c.externalSource, sourceId: c.externalId! }
+          : { source: 'gestione_finanziaria' as const, sourceId: c.id };
+        pushSharedCliente({
+          source: key.source,
+          sourceId: key.sourceId,
+          nome: c.nome,
+          pIvaCf: c.pIva || null,
+        }).catch(e => console.error('Pubblicazione cliente sul registro fallita', e));
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [clients, appState]);
+
+  const handleAddClient = useCallback((nome: string, pIva?: string) => {
+    setClients(prev => [...prev, { id: crypto.randomUUID(), nome, pIva: pIva || undefined }]);
+  }, []);
+
+  const handleUpdateClient = useCallback((id: string, nome: string, pIva?: string) => {
+    setClients(prev => prev.map(c => c.id === id ? { ...c, nome, pIva: pIva || undefined } : c));
+  }, []);
+
+  const handleDeleteClient = useCallback((id: string) => {
+    setClients(prev => {
+      const client = prev.find(c => c.id === id);
+      if (client && !client.externalSource) {
+        deleteSharedCliente('gestione_finanziaria', client.id).catch(e =>
+          console.error('Cancellazione cliente dal registro condiviso fallita', e)
+        );
+      }
+      return prev.filter(c => c.id !== id);
+    });
+  }, []);
+
   // SV-B Handlers
   const handleSaveTipologia = (t: TipologiaCantiere) => {
     setTipologieCantiere(prev => {
@@ -2532,11 +2640,33 @@ const App: React.FC = () => {
                         Definisci tipologie di cantiere e genera flussi di cassa previsionali basati su regole 
                         di distribuzione temporale dei costi.
                       </p>
-                      <button 
+                      <button
                         onClick={() => setShowCantiereWizard(true)}
                         className="w-full bg-slate-900 text-white py-3 rounded-xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
                       >
                         Pianifica Nuovi Cantieri
+                      </button>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600">
+                          <Contact size={20} />
+                        </div>
+                        <div>
+                          <h3 className="font-black text-slate-900">Anagrafica Clienti</h3>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase">Registro Condiviso Ecosistema GV</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-600 mb-6 leading-relaxed">
+                        Gestisci nome e P.IVA/Codice Fiscale dei clienti, visibili anche dalle altre app della suite
+                        (es. DirettoreCantiere).
+                      </p>
+                      <button
+                        onClick={() => setShowClientiManager(true)}
+                        className="w-full bg-slate-900 text-white py-3 rounded-xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                      >
+                        Gestisci Clienti ({clients.length})
                       </button>
                     </div>
                   </div>
@@ -2994,7 +3124,7 @@ const App: React.FC = () => {
         )}
 
         {showCantiereWizard && (
-          <CantiereWizard 
+          <CantiereWizard
             tipologie={tipologieCantiere}
             cantieriPrev={cantieriPrev}
             projects={projects}
@@ -3003,6 +3133,16 @@ const App: React.FC = () => {
             onGenerateTransactions={handleGenerateCantiereTransactions}
             onDeleteGenerated={handleDeleteCantiereGenerated}
             onClose={() => setShowCantiereWizard(false)}
+          />
+        )}
+
+        {showClientiManager && (
+          <ClientiManager
+            clients={clients}
+            onAddClient={handleAddClient}
+            onUpdateClient={handleUpdateClient}
+            onDeleteClient={handleDeleteClient}
+            onClose={() => setShowClientiManager(false)}
           />
         )}
 

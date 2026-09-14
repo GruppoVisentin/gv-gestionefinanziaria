@@ -104,6 +104,16 @@ export interface Project {
   externalId?: string; // id di questo cantiere nell'app di origine
 }
 
+// Anagrafica cliente, condivisa con le altre app della suite tramite il
+// registro condiviso (stessa chiave source/sourceId usata per Project).
+export interface Client {
+  id: string;
+  nome: string;
+  pIva?: string;
+  externalSource?: 'direttore_cantiere';
+  externalId?: string;
+}
+
 export interface BankAccount {
   id: string;
   name: string;
@@ -323,6 +333,7 @@ export interface BackupData {
   storicoCantierePuntaNet?: Transaction[]; // ← NUOVO — storico completo per cantiere da PuntaNet (sola lettura, solo Vista Cantiere)
   logImportAutomatico?: { timestamp: string; autoScritti: number; daRivedere: number }[]; // ← NUOVO — log esecuzioni scripts/importaPuntaNet.mjs --scrivi, per il banner "N movimenti importati dall'ultima apertura"
   saldiApertiPuntaNet?: { data: string; creditiClienti: number; debitiFornitori: number }; // ← NUOVO — fotografia giornaliera di Crediti Clienti/Debiti Fornitori aperti da PuntaNet, per il suggerimento in Stato Patrimoniale
+  clients?: Client[]; // ← NUOVO — anagrafica clienti condivisa con l'ecosistema GV
 }
 
 export enum AppView {
