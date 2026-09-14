@@ -270,10 +270,16 @@ const CEView: React.FC<CEViewProps> = ({
     };
   }, [rawMetrics, previsioneFiscale.totaleImposteStimate, varRim, modalita, rimanenzeAnno]);
 
-  const txAnno = useMemo(() => 
+  const txAnno = useMemo(() =>
     (transactions || []).filter(tx => parseUTCDate((modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date).getUTCFullYear() === selectedYear),
     [transactions, selectedYear, modalita]
   );
+
+  // Calcolato una sola volta (e' lo stesso per ogni riga: "esiste almeno una previsione
+  // nell'anno selezionato") - usato sia da renderRow sia dall'export PDF, cosi' i due restano
+  // sempre allineati invece di ricalcolare la condizione con logiche diverse (bug trovato in
+  // audit il 2026-09-14: il PDF usava un'euristica diversa e piu' debole).
+  const hasForecastsAnno = useMemo(() => txAnno.some(tx => tx.isForecast), [txAnno]);
 
   const scostamenti = useMemo(() => {
     return calcScostamenti(
@@ -1179,8 +1185,7 @@ const CEView: React.FC<CEViewProps> = ({
     const sum = data.reduce((a, b) => a + b, 0);
     const pct = activeMetrics.fatturato > 0 ? sum / activeMetrics.fatturato : 0;
     
-    // Check if there are forecasts in the current year
-    const hasForecasts = txAnno.some(tx => tx.isForecast);
+    const hasForecasts = hasForecastsAnno;
     const projection = (hasForecasts && projOverride !== undefined)
       ? projOverride
       : (metrics.mesiTrascorsi > 0 ? (sum / metrics.mesiTrascorsi) * 12 : 0);
@@ -1362,7 +1367,8 @@ const CEView: React.FC<CEViewProps> = ({
               metrics: activeTab === 'previsionale' ? metricsPrevisionale : metrics,
               ceData: activeTab === 'previsionale' ? cePrevisionale : ceData,
               activeTab,
-              scostamenti
+              scostamenti,
+              hasForecasts: hasForecastsAnno
             })}
             className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-all shadow-sm"
           >
