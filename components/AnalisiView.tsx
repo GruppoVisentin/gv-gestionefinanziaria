@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, CEData, AppView, RimanenzeData, InitialBalanceBreakdown, Project } from '../types';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, parseUTCDate, getDynamicCEType, computeCommesseCompletate } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, parseUTCDate, getDynamicCEType, computeCommesseCompletate, getDynamicLoansPrincipals } from '../utils/gasCoreEngine';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 const getCeType = (tx: Transaction): string => {
@@ -443,9 +443,15 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     const pctCostiVar = fatturato > 0 ? costiVariabili / fatturato : 0;
     const breakEven = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + ammortamenti) / (1 - pctCostiVar) : 0;
 
+    // Oltre alle transazioni previsionali esplicite, il motore CE reale (calcCEMetrics) somma anche
+    // la quota capitale simulata dal piano di ammortamento dei mutui esistenti - senza questa il
+    // "Di cassa" qui sotto risultava sottostimato ogni volta che nessuna transazione previsionale
+    // esplicita di quota capitale era presente (bug trovato in audit il 2026-09-14: verificato sui
+    // dati reali 2026, sottostima di 162.181 euro).
     const costiCapitaleRate = txPrev
       .filter(tx => getCeType(tx) === 'capex' && tx.category?.includes('[FINANZA] Quota Capitale Rate Finanziamenti'))
-      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+      + getDynamicLoansPrincipals(transactions, anno, initialData).reduce((s, v) => s + v, 0);
     const breakEvenCassa = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + costiCapitaleRate) / (1 - pctCostiVar) : 0;
 
     return {
@@ -459,7 +465,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
       breakEven,
       breakEvenCassa
     };
-  }, [transactions, anno]);
+  }, [transactions, anno, initialData]);
 
   // Versione "pura" (tutto l'anno, senza esclusione dei previsionali gia' realizzati) per la card
   // "Previsionale" dei 7+1 Numeri Sacri: rappresenta il piano/budget impostato a inizio anno, stessa
@@ -517,9 +523,12 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     const pctCostiVar = fatturato > 0 ? costiVariabili / fatturato : 0;
     const breakEven = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + ammortamenti) / (1 - pctCostiVar) : 0;
 
+    // Vedi nota identica in metricsPrev sopra: la quota capitale simulata dal piano di
+    // ammortamento dei mutui va sommata anche qui, coerente col motore CE reale.
     const costiCapitaleRate = txPrev
       .filter(tx => getCeType(tx) === 'capex' && tx.category?.includes('[FINANZA] Quota Capitale Rate Finanziamenti'))
-      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+      + getDynamicLoansPrincipals(transactions, anno, initialData).reduce((s, v) => s + v, 0);
     const breakEvenCassa = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + costiCapitaleRate) / (1 - pctCostiVar) : 0;
 
     return {
@@ -533,7 +542,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
       breakEven,
       breakEvenCassa
     };
-  }, [transactions, anno, projects, commesseCompletatePrevisionaleAnalisi]);
+  }, [transactions, anno, projects, commesseCompletatePrevisionaleAnalisi, initialData]);
 
   const rimanenzeAnno = rimanenze?.[anno.toString()];
 
