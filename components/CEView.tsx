@@ -1369,6 +1369,22 @@ const CEView: React.FC<CEViewProps> = ({
         </div>
       </div>
 
+      {modalita === 'competenza' && !rimanenzeAnno && txAnno.some(tx => !tx.isForecast) && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+          <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-600" />
+          <div className="text-[11px] leading-relaxed text-amber-900 space-y-1">
+            <p>
+              <span className="font-black uppercase tracking-wide">Rimanenze {selectedYear} non inserite</span> —
+              EBITDA, EBIT e Utile Netto qui sotto NON includono la variazione delle rimanenze
+              (lavori in corso, materiali, terreni edificabili) perché per il {selectedYear} non è stato
+              inserito nessun valore in "Rettifiche di Fine Anno — Rimanenze" più in basso. Restano calcolati
+              per pura cassa, anche se la modalità selezionata è "Per competenza": possono discostarsi in
+              modo rilevante dal bilancio ufficiale.
+            </p>
+          </div>
+        </div>
+      )}
+
       {modalita === 'competenza' && (
         <div className={`flex items-start gap-3 rounded-2xl border p-4 ${
           metrics.coperturainvoiceDate < 0.5
