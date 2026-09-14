@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Project, IntestatarioFattura } from '../types';
 import {
   Briefcase, MapPin, User, Calendar, HardHat, Plus,
-  Trash2, X, Save, Wallet, Shield, Pencil, Building, UserCheck, ChevronDown
+  Trash2, X, Save, Wallet, Shield, Pencil, Building, UserCheck, ChevronDown, Clock
 } from 'lucide-react';
 import { DATE_FORMATTER } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
 import { getLocalYMD } from '../utils/gasCoreEngine';
+import { fetchSharedCantieri, SharedCantiere } from '../services/cantieriSync';
 
 // ─── TIPOLOGIE PREIMPOSTATE ──────────────────────────────────────
 
@@ -50,6 +51,25 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
 }) => {
   const [mode, setMode] = useState<'list' | 'new' | 'edit'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Cantieri futuri (preventivo) creati su DirettoreCantiere: sola lettura,
+  // non diventano commesse finché non vengono attivati là.
+  const [futureCantieri, setFutureCantieri] = useState<SharedCantiere[]>([]);
+
+  const loadFutureCantieri = useCallback(async () => {
+    try {
+      const rows = await fetchSharedCantieri();
+      setFutureCantieri(rows.filter(r => r.source === 'direttore_cantiere' && r.stato === 'future'));
+    } catch (e) {
+      console.error('Lettura cantieri futuri fallita', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFutureCantieri();
+    const interval = setInterval(loadFutureCantieri, 120000);
+    return () => clearInterval(interval);
+  }, [loadFutureCantieri]);
 
   // Form fields
   const [form, setForm] = useState(emptyForm());
@@ -416,6 +436,34 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Cantieri futuri (preventivo) da DirettoreCantiere — sola lettura */}
+      {mode === 'list' && futureCantieri.length > 0 && (
+        <div className="pt-6 border-t border-slate-100">
+          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Clock size={14} className="text-slate-400" />
+            Cantieri Futuri in arrivo da DirettoreCantiere ({futureCantieri.length})
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {futureCantieri.map(c => (
+              <div
+                key={c.id}
+                className="flex items-center gap-2 bg-slate-50 border border-dashed border-slate-200 rounded-full pl-3 pr-3 py-1.5 text-xs font-medium text-slate-500"
+                title={c.dataInizio ? `Data programmata: ${DATE_FORMATTER.format(new Date(c.dataInizio))}` : 'Data non specificata'}
+              >
+                <HardHat size={12} className="text-slate-400 shrink-0" />
+                <span>{c.nome}</span>
+                {c.dataInizio && (
+                  <span className="text-slate-400">· {DATE_FORMATTER.format(new Date(c.dataInizio))}</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2">
+            Preventivi non ancora attivati — diventano commesse automaticamente quando vengono attivati su DirettoreCantiere.
+          </p>
         </div>
       )}
     </div>
