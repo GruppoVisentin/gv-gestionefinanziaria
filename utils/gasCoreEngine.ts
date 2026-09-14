@@ -758,12 +758,26 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     if (!isCurrentYear) return 0;
     
     // 1. Transaction-based forecasts
+    // Sui RICAVI, non si limita ai mesi strettamente futuri (> oggi.getMonth()): un previsionale di
+    // incasso con data GIA' passata (o nel mese corrente) che non e' MAI diventato un consuntivo reale
+    // (nessuna transazione reale lo linka via linkedForecastId) non e' "gia' negli actual" come
+    // assumeva erroneamente il vecchio commento — e' un incasso atteso che sta slittando, ma che
+    // l'utente si aspetta ancora entro l'anno (bug segnalato dall'utente 2026-09-14, quantificato su
+    // dati reali: 5 incassi attesi per 316.080,64€ con data gia' passata sparivano dalla proiezione).
+    // Sui COSTI questa stessa relax NON si applica: verificato sugli stessi dati reali che il 97% dei
+    // previsionali di costo "passati e mai realizzati" sono budget mensili ricorrenti generici, senza
+    // cantiere, importo fisso ripetuto ogni mese (es. "SUBAPPALTI SU CANTIERI" 145.000€ su 8 mesi) —
+    // pianificazione a scopo di stima, non impegni ancora da pagare collegati a un fornitore/cantiere
+    // reale: includerli tutti avrebbe sovrastimato i costi previsti di oltre 1,4 milioni di euro.
+    // L'unica protezione contro il doppio conteggio resta il controllo "non gia' realizzato" sotto
+    // (linkedForecastId) — stesso principio gia' usato per gli oneri finanziari poco piu' sotto.
+    const isRicavo = types.some(t => t === 'ricavo_core' || t === 'ricavo_immobiliare' || t === 'ricavo_altro' || t === 'provento_finanziario');
     let sum = transactions
       .filter(tx => {
         const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
         return tx.isForecast &&
         parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
-        parseUTCDate(tx.date).getUTCMonth() > oggi.getMonth() && // solo mesi FUTURI: i passati sono già negli actual
+        (isRicavo || parseUTCDate(tx.date).getUTCMonth() > oggi.getMonth()) &&
         type && types.includes(type) &&
         !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
       })
