@@ -1596,15 +1596,20 @@ export const calcPosizIoneIVA = (
     return { mese, ivaIncassata, ivaPagata, saldoIVA, versamentoIVA };
   });
 
-  // Rileva frequenza in modo robusto (se ci sono pagamenti in mesi consecutivi in tutta la storia, è mensile)
-  const paymentsAllYears = transactions.filter(tx =>
+  // Rileva la frequenza per l'ANNO richiesto (se ci sono pagamenti in mesi consecutivi in
+  // quell'anno, è mensile) - prima si guardava tutta la storia insieme: se il regime fiscale
+  // fosse cambiato negli anni (es. per superamento/rientro sotto soglia di volume d'affari),
+  // sarebbe stato rilevato lo stesso regime per ogni anno, indipendentemente da quale fosse
+  // davvero in vigore quell'anno (bug trovato in audit il 2026-09-14).
+  const paymentsAnno = transactions.filter(tx =>
     tx.type === 'EXPENSE' &&
     tx.category === '[FISCO] Versamento IVA' &&
-    !tx.isForecast
+    !tx.isForecast &&
+    parseUTCDate(tx.date).getUTCFullYear() === anno
   );
 
   let hasConsecutivePayments = false;
-  const sortedPayments = [...paymentsAllYears].sort((a, b) => parseUTCDate(a.date).getTime() - parseUTCDate(b.date).getTime());
+  const sortedPayments = [...paymentsAnno].sort((a, b) => parseUTCDate(a.date).getTime() - parseUTCDate(b.date).getTime());
   for (let i = 0; i < sortedPayments.length - 1; i++) {
     const d1 = parseUTCDate(sortedPayments[i].date);
     const d2 = parseUTCDate(sortedPayments[i+1].date);
