@@ -1357,6 +1357,7 @@ export const calcScostamenti = (
   // previsionale (anche saldi pianificati) — stessa distinzione usata dal resto del motore.
   const commesseCompletateReale = computeCommesseCompletate(transactions, projects, false);
   const commesseCompletatePrevisionale = computeCommesseCompletate(transactions, projects, true);
+  const oggi = new Date();
 
   const filtra = (tx: Transaction, isForecast: boolean) => {
     const d = parseUTCDate(tx.date);
@@ -1368,9 +1369,16 @@ export const calcScostamenti = (
     return true;
   };
 
-  const sommaPerTipo = (isForecast: boolean, types: string[]) =>
+  // soloMesiFuturi: quando true, il previsionale conta solo i mesi strettamente successivi a oggi —
+  // stessa restrizione e stesso motivo di getForecastSum in calcCEMetrics (Proiezione Anno): sui COSTI
+  // la maggior parte dei previsionali con data gia' passata sono budget mensili ricorrenti (stesso
+  // importo ripetuto ogni mese, senza cantiere), non impegni reali ancora da pagare — includerli tutti,
+  // come faceva prima questa funzione (nessuna restrizione di mese), gonfiava il "previsionale (rolling
+  // forecast)" di Costi Variabili di ~1,7 milioni di euro rispetto al valore corretto di Proiezione.
+  // Sui RICAVI non si applica: un incasso previsionale scaduto e mai arrivato resta comunque atteso.
+  const sommaPerTipo = (isForecast: boolean, types: string[], soloMesiFuturi: boolean = false) =>
     transactions
-      .filter(tx => filtra(tx, isForecast))
+      .filter(tx => filtra(tx, isForecast) && (!isForecast || !soloMesiFuturi || parseUTCDate(tx.date).getUTCMonth() > oggi.getMonth()))
       .reduce((s, tx) => {
         const tipo = getDynamicCEType(tx, projects, isForecast ? commesseCompletatePrevisionale : commesseCompletateReale, anno);
         if (!tipo || !types.includes(tipo)) return s;
@@ -1418,9 +1426,8 @@ export const calcScostamenti = (
     // In monthly mode, it is the monthly forecast (if future) or actual (if past/current)
     let previsionale = 0;
     if (mese === null) {
-      previsionale = consuntivo + Math.abs(sommaPerTipo(true, [voce.ceType]));
+      previsionale = consuntivo + Math.abs(sommaPerTipo(true, [voce.ceType], !voce.isRicavo));
     } else {
-      const oggi = new Date();
       const isFutureMonth = (anno > oggi.getFullYear()) || (anno === oggi.getFullYear() && mese > oggi.getMonth());
       if (isFutureMonth) {
         previsionale = Math.abs(sommaPerTipo(true, [voce.ceType]));
