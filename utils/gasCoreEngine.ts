@@ -638,8 +638,21 @@ export const buildCEData = (
 export const buildCEDataPrevisionale = (
   transactions: Transaction[],
   anno: number,
-  projects?: Project[]
-): CEData => buildCEData(transactions, anno, undefined, 'cassa', projects, undefined, true);
+  projects?: Project[],
+  initialData?: InitialBalanceBreakdown
+): CEData => {
+  const ce = buildCEData(transactions, anno, undefined, 'cassa', projects, undefined, true);
+  // Gli oneri finanziari previsionali possono venire da transazioni forecast esplicite (una rata
+  // inserita a mano) o dalla simulazione dinamica del piano di ammortamento dei mutui (loanDetails) —
+  // la stessa fonte già usata per calcolare la Proiezione (getDynamicLoansInterests). Senza questo
+  // passaggio, un mutuo con piano di ammortamento noto ma senza una riga forecast esplicita per ogni
+  // rata risultava sottostimato sulla vista Previsionale (segnalato dall'utente 2026-09-17).
+  // getDynamicLoansInterests salta già da solo, mutuo per mutuo e mese per mese, quelli che hanno già
+  // una transazione propria (reale o forecast) — nessun rischio di doppio conteggio qui.
+  const interessiDinamici = getDynamicLoansInterests(transactions, anno, initialData);
+  ce.oneriFin = ce.oneriFin.map((v, m) => v + (interessiDinamici[m] || 0));
+  return ce;
+};
 
 // ─── CALCOLI CE DERIVATI ─────────────────────────────────────────
 

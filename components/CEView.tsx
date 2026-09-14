@@ -121,8 +121,8 @@ const CEView: React.FC<CEViewProps> = ({
   );
 
   const cePrevisionale = useMemo(() =>
-    buildCEDataPrevisionale(transactions, selectedYear, projects),
-    [transactions, selectedYear, projects]
+    buildCEDataPrevisionale(transactions, selectedYear, projects, initialData),
+    [transactions, selectedYear, projects, initialData]
   );
   const metricsPrevisionale = useMemo(() =>
     calcCEMetrics(cePrevisionale, transactions, projects, initialData, undefined),
@@ -1039,11 +1039,12 @@ const CEView: React.FC<CEViewProps> = ({
     });
   };
 
-  const renderBreakdownCantieri = (bucket: 'ricavo_core' | 'ricavo_immobiliare') => {
+  const renderBreakdownCantieri = (bucket: 'ricavo_core' | 'ricavo_immobiliare', totaleAtteso?: number) => {
     const righe = buildBreakdownCantieri(bucket);
     const anniSet = new Set<number>();
     righe.forEach(r => r.perAnno.forEach((_, anno) => anniSet.add(anno)));
     const anni = Array.from(anniSet).sort((a, b) => a - b);
+    const totaleVerdeColonna = righe.reduce((s, r) => s + Array.from(r.perAnno.values()).reduce((s2, c) => s2 + c.verde, 0), 0);
 
     return (
       <tr>
@@ -1071,28 +1072,57 @@ const CEView: React.FC<CEViewProps> = ({
                         {a}{a === selectedYear ? ' (attuale)' : ''}
                       </th>
                     ))}
+                    <th className="py-2 pl-4 text-[10px] font-black text-emerald-700 uppercase text-right border-l border-slate-200">
+                      Totale ricavo
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {righe.map(riga => (
-                    <tr key={riga.cantiere}>
-                      <td className="py-2 pr-4 text-xs font-bold text-slate-700 whitespace-nowrap">{riga.cantiere}</td>
-                      <td className="py-2 pr-4 text-[10px] font-bold uppercase text-slate-400">{riga.metodoPagamento || '—'}</td>
-                      {anni.map(a => {
-                        const cella = riga.perAnno.get(a);
-                        if (!cella || (cella.verde === 0 && cella.nero === 0)) {
-                          return <td key={a} className="py-2 px-3 text-right text-[11px] text-slate-300">—</td>;
-                        }
-                        return (
-                          <td key={a} className="py-2 px-3 text-right text-[11px] font-mono space-y-0.5">
-                            {cella.verde > 0 && <div className="text-emerald-600 font-bold">{formatEuro(cella.verde)}</div>}
-                            {cella.nero > 0 && <div className="text-slate-400">{formatEuro(cella.nero)}</div>}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                  {righe.map(riga => {
+                    const totaleRigaVerde = Array.from(riga.perAnno.values()).reduce((s, c) => s + c.verde, 0);
+                    return (
+                      <tr key={riga.cantiere}>
+                        <td className="py-2 pr-4 text-xs font-bold text-slate-700 whitespace-nowrap">{riga.cantiere}</td>
+                        <td className="py-2 pr-4 text-[10px] font-bold uppercase text-slate-400">{riga.metodoPagamento || '—'}</td>
+                        {anni.map(a => {
+                          const cella = riga.perAnno.get(a);
+                          if (!cella || (cella.verde === 0 && cella.nero === 0)) {
+                            return <td key={a} className="py-2 px-3 text-right text-[11px] text-slate-300">—</td>;
+                          }
+                          return (
+                            <td key={a} className="py-2 px-3 text-right text-[11px] font-mono space-y-0.5">
+                              {cella.verde > 0 && <div className="text-emerald-600 font-bold">{formatEuro(cella.verde)}</div>}
+                              {cella.nero > 0 && <div className="text-slate-400">{formatEuro(cella.nero)}</div>}
+                            </td>
+                          );
+                        })}
+                        <td className="py-2 pl-4 text-right text-[11px] font-mono font-black text-emerald-700 border-l border-slate-100">
+                          {totaleRigaVerde > 0 ? formatEuro(totaleRigaVerde) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-300 bg-slate-100/60">
+                    <td colSpan={2 + anni.length} className="py-2.5 pr-4 text-right text-[11px] font-black text-slate-600 uppercase">
+                      Totale colonna verde (deve combaciare col totale sopra)
+                    </td>
+                    <td className="py-2.5 pl-4 text-right text-xs font-mono font-black text-emerald-800 border-l border-slate-200">
+                      {formatEuro(totaleVerdeColonna)}
+                    </td>
+                  </tr>
+                  {totaleAtteso !== undefined && (
+                    <tr className={Math.abs(totaleVerdeColonna - totaleAtteso) < 0.5 ? 'bg-emerald-50/60' : 'bg-rose-50/60'}>
+                      <td colSpan={2 + anni.length} className="py-2 pr-4 text-right text-[10px] font-bold text-slate-500 uppercase">
+                        Totale mostrato nella riga "{bucket === 'ricavo_core' ? 'Ricavi Core' : 'Acconti Immobiliare'}" sopra
+                      </td>
+                      <td className={`py-2 pl-4 text-right text-[11px] font-mono font-black border-l border-slate-200 ${Math.abs(totaleVerdeColonna - totaleAtteso) < 0.5 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {formatEuro(totaleAtteso)} {Math.abs(totaleVerdeColonna - totaleAtteso) < 0.5 ? '✓' : '✗'}
+                      </td>
+                    </tr>
+                  )}
+                </tfoot>
               </table>
             </div>
           )}
@@ -1184,7 +1214,7 @@ const CEView: React.FC<CEViewProps> = ({
           </>
         )}
       </tr>
-      {breakdownKey && breakdownEspanso === breakdownKey && renderBreakdownCantieri(breakdownKey)}
+      {breakdownKey && breakdownEspanso === breakdownKey && renderBreakdownCantieri(breakdownKey, mainTableLens === 'proiezione' ? undefined : sum)}
       </React.Fragment>
     );
   };
