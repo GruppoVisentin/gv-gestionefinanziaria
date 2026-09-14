@@ -48,7 +48,66 @@ export const commessaDiIncasso = (tx: Transaction, projects?: Project[]): Projec
   );
 };
 
-// Insieme delle commesse COMPLETATE (saldate) in un dato anno, come chiavi `${nomeCommessa}||${anno}`.
+const COMBINING_DIACRITICS = new RegExp('[̀-ͯ]', 'g');
+const normalizzaTesto = (s: string): string =>
+  s.toUpperCase()
+    .normalize('NFD').replace(COMBINING_DIACRITICS, '')
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const PAROLE_GENERICHE_INTESTATARIO = new Set(['SRL', 'SPA', 'SNC', 'SAS', 'SRLS', 'COOP', 'DITTA', 'SOCIETA', 'DEFINIRE', 'DA']);
+
+// Determina a quale INTESTATARIO di una commessa appartiene un incasso, quando la commessa ne ha
+// più di uno (es. Condominio Spin 2: il condominio + Fan Srl; Residence Hop: più acquirenti diversi
+// per unità). Necessario perché il criterio OIC 23 di "commessa completata" (vedi sotto) va applicato
+// per singolo intestatario quando possibile: il saldo di UN cliente non deve rilasciare a ricavo anche
+// gli acconti pregressi degli ALTRI clienti della stessa commessa, che possono avere una storia di
+// fatturazione completamente indipendente (bug segnalato dall'utente 2026-09-11 su Condominio Spin 2:
+// il saldo Fan Srl del 2026 rilasciava anche i ~550k del Condominio, già andati a fatturato 2025).
+// Ritorna l'id dell'intestatario SOLO se il match nel testo è univoco; altrimenti null (nessuna parola
+// distintiva trovata, o trovata su più di un intestatario — es. "coniugi" con cognomi diversi entrambi
+// citati) e il chiamante ricade sul comportamento "intera commessa", più prudente che un'attribuzione
+// indovinata male. Con un solo intestatario (il caso più comune) ritorna sempre null: nessun cambio di
+// comportamento per la maggioranza delle commesse, dove la distinzione non serve.
+export const matchIntestatario = (tx: Transaction, project?: Project): string | null => {
+  if (!project?.intestatari || project.intestatari.length <= 1) return null;
+  const desc = normalizzaTesto(tx.description || '');
+  if (!desc) return null;
+
+  // Il nome della commessa spesso apre la descrizione (es. "Condominio Spin 2 — fan srl saldo") e a
+  // volte condivide parole con uno degli intestatari stessi (qui: "Condominio Residence Spin"). Senza
+  // distinguere, quella riga risulterebbe candidata per ENTRAMBI gli intestatari — matcha "Fan Srl" per
+  // la parola "FAN", ma matcha ANCHE "Condominio Residence Spin" solo perché la descrizione contiene
+  // "Condominio"/"Spin", che sono anche nel nome della commessa. Un match su una parola distintiva (non
+  // condivisa col nome della commessa) è più affidabile di un match che dipende solo da quella
+  // sovrapposizione, e va preferito quando è l'unico.
+  const paroleCommessa = new Set(normalizzaTesto(project.name).split(' '));
+  const candidati = project.intestatari
+    .map(i => {
+      const paroleNome = normalizzaTesto(i.nome).split(' ').filter(p => p.length >= 3 && !PAROLE_GENERICHE_INTESTATARIO.has(p));
+      const paroleTrovate = paroleNome.filter(p => desc.includes(p));
+      const distintivo = paroleTrovate.some(p => !paroleCommessa.has(p));
+      return { id: i.id, match: paroleTrovate.length > 0, distintivo };
+    })
+    .filter(c => c.match);
+
+  if (candidati.length === 0) return null;
+  const distintivi = candidati.filter(c => c.distintivo);
+  if (distintivi.length === 1) return distintivi[0].id;
+  if (distintivi.length > 1) return null; // ambiguo tra più match distintivi
+  // Nessun match "distintivo": va bene un solo candidato rimasto (di norma coincide col nome commessa).
+  return candidati.length === 1 ? candidati[0].id : null;
+};
+
+// Chiave di raggruppamento per il tracciamento del completamento OIC 23: nome commessa + intestatario
+// (quando distinguibile) + anno. Usare SEMPRE questa funzione, mai comporre la stringa a mano, per
+// restare sincronizzati tra computeCommesseCompletate, getDynamicCEType e i due loop di rilascio
+// cumulativo (reale e previsionale).
+const chiaveCompletamento = (nomeCommessa: string, tx: Transaction, project: Project | undefined, anno: number): string =>
+  `${nomeCommessa}||${matchIntestatario(tx, project) ?? '*'}||${anno}`;
+
+// Insieme delle commesse COMPLETATE (saldate) in un dato anno, come chiavi `${nomeCommessa}||${intestatario}||${anno}`.
 // Criterio OIC 23 della "commessa completata": una commessa ad acconto è completata nell'anno in cui riceve
 // un SALDO (categoria "[CANTIERE] Saldo Finale Commessa" oppure la parola "saldo" nella descrizione).
 // Nell'anno di completamento TUTTI gli incassi della commessa (di quell'anno E degli anni precedenti)
@@ -69,15 +128,16 @@ export const computeCommesseCompletate = (transactions: Transaction[], projects?
     const isSaldo = tx.category === '[CANTIERE] Saldo Finale Commessa' ||
                     /\bsaldo\b/i.test(tx.description || '');
     if (!isSaldo) continue;
-    const nome = commessaDiIncasso(tx, projects)?.name || tx.project;
+    const project = commessaDiIncasso(tx, projects);
+    const nome = project?.name || tx.project;
     if (!nome) continue;
     const anno = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
-    set.add(`${nome}||${anno}`);
+    set.add(chiaveCompletamento(nome, tx, project, anno));
   }
   return set;
 };
 
-export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesseCompletate?: Set<string>): string => {
+export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesseCompletate?: Set<string>, annoContesto?: number): string => {
   let type = tx.ceType || '';
   if (tx.category) {
     if (tx.category.startsWith('[STRAORDINARI]')) {
@@ -99,7 +159,19 @@ export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesse
       //   consuntivo sia per la proiezione (i saldi previsionali sono inclusi nel set).
       if (proj.metodoPagamento === 'acconto' && tx.type === 'INCOME') {
         const anno = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
-        const completata = commesseCompletate?.has(`${proj.name}||${anno}`) ?? false;
+        // Se il chiamante sta costruendo il CE per un anno diverso da quello "naturale" (di fattura)
+        // di questa transazione — capita in modalità cassa quando la data di incasso attesa cade in un
+        // anno diverso dalla data fattura — la transazione NON può diventare "ricavo nuovo" in quel
+        // contesto: il suo destino economico è già deciso nel suo anno naturale (già ricavo se
+        // completata allora, altrimenti resta da valutare quando quell'anno completa). Senza questo
+        // controllo un incasso previsionale con fattura in un anno già completato, ma data di cassa
+        // nell'anno dopo, verrebbe ricontato come ricavo NUOVO anche nell'anno di cassa (bug trovato
+        // dall'utente 2026-09-17 tramite il riepilogo cantiere × anno: Condominio Spin 2, fattura 2025
+        // già a ricavo 2025, incasso atteso 2026 veniva sommato di nuovo al fatturato 2026).
+        if (annoContesto !== undefined && annoContesto !== anno) {
+          return 'solo_cashflow';
+        }
+        const completata = commesseCompletate?.has(chiaveCompletamento(proj.name, tx, proj, anno)) ?? false;
         if (!completata) {
           return 'solo_cashflow';
         }
@@ -145,7 +217,7 @@ export const aggregateByMonthAndType = (
   transactions
     .filter(tx => tx.ceType && (soloPrevisionale ? !!tx.isForecast : !tx.isForecast))
     .forEach(tx => {
-      const type = getDynamicCEType(tx, projects, commesseCompletate);
+      const type = getDynamicCEType(tx, projects, commesseCompletate, anno);
       if (!type) return;
       // Il segno segue la DIREZIONE REALE del movimento (INCOME = +, EXPENSE = −), non solo il bucket ceType.
       // Così una nota di credito passiva (rimborso da fornitore: INCOME su un ceType di costo, es. NEP) RIDUCE
@@ -184,22 +256,28 @@ export const aggregateByMonthAndType = (
       if (soloPrevisionale ? !tx.isForecast : !!tx.isForecast) return;
       const isSaldo = tx.category === '[CANTIERE] Saldo Finale Commessa' || /\bsaldo\b/i.test(tx.description || '');
       if (!isSaldo) return;
-      const nome = commessaDiIncasso(tx, projects)?.name || tx.project;
+      const project = commessaDiIncasso(tx, projects);
+      const nome = project?.name || tx.project;
       if (!nome) return;
       const d = parseUTCDate(tx.invoiceDate || tx.date);
       if (d.getUTCFullYear() !== anno) return;
-      meseSaldo.set(nome, Math.max(meseSaldo.get(nome) ?? 0, d.getUTCMonth()));
+      const chiave = chiaveCompletamento(nome, tx, project, anno);
+      meseSaldo.set(chiave, Math.max(meseSaldo.get(chiave) ?? 0, d.getUTCMonth()));
     });
     transactions.forEach(tx => {
       if (tx.type !== 'INCOME') return;
       if (tx.isForecast) return; // gli incassi di anni precedenti rilasciati sono sempre quelli reali
       const proj = commessaDiIncasso(tx, projects);
       if (!proj || proj.metodoPagamento !== 'acconto') return;
-      if (!commesseCompletate.has(`${proj.name}||${anno}`)) return;
+      // Chiave dell'INCASSO da rilasciare (non del saldo): stesso intestatario, stesso criterio di
+      // matchIntestatario applicato coerentemente su ogni singola transazione — così un saldo di UN
+      // cliente rilascia solo gli acconti pregressi dello STESSO cliente, non dell'intera commessa.
+      const chiave = chiaveCompletamento(proj.name, tx, proj, anno);
+      if (!commesseCompletate.has(chiave)) return;
       const y = parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear();
       if (y >= anno) return; // solo anni PRECEDENTI: l'anno corrente è già a ricavo
       const bucket = proj.jobType === 'Immobiliare' ? 'ricavo_immobiliare' : 'ricavo_core';
-      const m = meseSaldo.get(proj.name) ?? 11;
+      const m = meseSaldo.get(chiave) ?? 11;
       result[bucket][m] += Math.abs(tx.amount);
     });
   }
@@ -560,8 +638,21 @@ export const buildCEData = (
 export const buildCEDataPrevisionale = (
   transactions: Transaction[],
   anno: number,
-  projects?: Project[]
-): CEData => buildCEData(transactions, anno, undefined, 'cassa', projects, undefined, true);
+  projects?: Project[],
+  initialData?: InitialBalanceBreakdown
+): CEData => {
+  const ce = buildCEData(transactions, anno, undefined, 'cassa', projects, undefined, true);
+  // Gli oneri finanziari previsionali possono venire da transazioni forecast esplicite (una rata
+  // inserita a mano) o dalla simulazione dinamica del piano di ammortamento dei mutui (loanDetails) —
+  // la stessa fonte già usata per calcolare la Proiezione (getDynamicLoansInterests). Senza questo
+  // passaggio, un mutuo con piano di ammortamento noto ma senza una riga forecast esplicita per ogni
+  // rata risultava sottostimato sulla vista Previsionale (segnalato dall'utente 2026-09-17).
+  // getDynamicLoansInterests salta già da solo, mutuo per mutuo e mese per mese, quelli che hanno già
+  // una transazione propria (reale o forecast) — nessun rischio di doppio conteggio qui.
+  const interessiDinamici = getDynamicLoansInterests(transactions, anno, initialData);
+  ce.oneriFin = ce.oneriFin.map((v, m) => v + (interessiDinamici[m] || 0));
+  return ce;
+};
 
 // ─── CALCOLI CE DERIVATI ─────────────────────────────────────────
 
@@ -654,15 +745,15 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     // 1. Transaction-based forecasts
     let sum = transactions
       .filter(tx => {
-        const type = getDynamicCEType(tx, projects, commesseCompletate);
-        return tx.isForecast && 
-        parseUTCDate(tx.date).getUTCFullYear() === ce.anno && 
+        const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
+        return tx.isForecast &&
+        parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
         parseUTCDate(tx.date).getUTCMonth() > oggi.getMonth() && // solo mesi FUTURI: i passati sono già negli actual
         type && types.includes(type) &&
         !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
       })
       .reduce((s, tx) => {
-        const type = getDynamicCEType(tx, projects, commesseCompletate);
+        const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
         const isIncome = type.startsWith('ricavo') || type === 'provento_finanziario' || (type === 'straordinario' && tx.type === 'INCOME');
         return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
       }, 0);
@@ -711,18 +802,33 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     // pur avendo in timeline il saldo previsionale entro l'anno).
     if (isCurrentYear && projects) {
       projects.filter(p => p.metodoPagamento === 'acconto').forEach(p => {
-        const key = `${p.name}||${ce.anno}`;
-        if (!commesseCompletate.has(key) || commesseCompletateReale.has(key)) return;
         const bucket = p.jobType === 'Immobiliare' ? 'ricavo_immobiliare' : 'ricavo_core';
         if (!types.includes(bucket)) return;
+
+        // Chiavi di completamento SOLO previsionale (non ancora reali, altrimenti gia' dentro `ce` da
+        // buildCEData) per QUESTA commessa in ce.anno — possono essere piu' di una se la commessa ha
+        // più intestatari con saldi previsionali distinti nello stesso anno (es. Condominio Spin 2:
+        // Fan Srl completa nel 2026, il Condominio no — vedi chiaveCompletamento).
+        const chiaviDaRilasciare = new Set(
+          Array.from(commesseCompletate).filter(k => {
+            if (commesseCompletateReale.has(k)) return false;
+            const parti = k.split('||');
+            return parti[0] === p.name && parti[2] === String(ce.anno);
+          })
+        );
+        if (chiaviDaRilasciare.size === 0) return;
+
         const incassiNonAncoraRilasciati = transactions
-          .filter(tx =>
-            tx.type === 'INCOME' &&
-            !tx.isForecast &&
-            parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear() <= ce.anno &&
-            commessaDiIncasso(tx, projects)?.name === p.name &&
-            getDynamicCEType(tx, projects, commesseCompletateReale) === 'solo_cashflow'
-          )
+          .filter(tx => {
+            if (tx.type !== 'INCOME' || tx.isForecast) return false;
+            if (parseUTCDate(tx.invoiceDate || tx.date).getUTCFullYear() > ce.anno) return false;
+            if (commessaDiIncasso(tx, projects)?.name !== p.name) return false;
+            if (getDynamicCEType(tx, projects, commesseCompletateReale) !== 'solo_cashflow') return false;
+            // Rilascia SOLO se l'intestatario di QUESTA transazione è fra quelli completati in
+            // ce.anno — un saldo previsionale di un cliente non sblocca gli acconti degli altri
+            // clienti della stessa commessa.
+            return chiaviDaRilasciare.has(chiaveCompletamento(p.name, tx, p, ce.anno));
+          })
           .reduce((s, tx) => s + Math.abs(tx.amount), 0);
         sum += incassiNonAncoraRilasciati;
       });
@@ -738,9 +844,9 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   if (isCurrentYear || ce.anno > oggi.getFullYear()) {
     transactions
       .filter(tx => {
-        const type = getDynamicCEType(tx, projects, commesseCompletate);
-        return tx.isForecast && 
-        parseUTCDate(tx.date).getUTCFullYear() === ce.anno && 
+        const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
+        return tx.isForecast &&
+        parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
         type === 'onere_finanziario' &&
         !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
       })
@@ -808,14 +914,14 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   // mesiTrascorsi dichiarato a linea 601
 
   const ricaviConInvoiceDate = transactions.filter(tx => {
-    const type = getDynamicCEType(tx, projects, commesseCompletate);
+    const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
     return tx.invoiceDate &&
       parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
       type?.startsWith('ricavo');
   }).length;
 
   const totaleRicavi = transactions.filter(tx => {
-    const type = getDynamicCEType(tx, projects, commesseCompletate);
+    const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
     return parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
       type?.startsWith('ricavo');
   }).length;
