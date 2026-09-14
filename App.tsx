@@ -1789,22 +1789,43 @@ const App: React.FC = () => {
 
   // NEW: Update existing project (for estimates)
   const handleUpdateProject = (updatedProject: Project) => {
+      // Transaction.project e' il NOME della commessa (stringa libera, non l'id): senza questa
+      // propagazione, rinominare una commessa lasciava tutte le transazioni collegate orfane
+      // (riferite a un nome che non esiste piu' in nessuna commessa) - bug trovato in audit il
+      // 2026-09-14.
+      const old = projects.find(p => p.id === updatedProject.id);
+      if (old && old.name !== updatedProject.name) {
+        setTransactions(prev => prev.map(t => t.project === old.name ? { ...t, project: updatedProject.name } : t));
+      }
       setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
   };
 
   const handleDeleteProject = (id: string) => {
-    setProjects(prev => {
-      const project = prev.find(p => p.id === id);
-      // Solo una commessa di proprietà di questa app va rimossa anche dal
-      // registro condiviso: una commessa importata da DirettoreCantiere non
-      // va cancellata lì, altrimenti si perderebbe il cantiere originale.
-      if (project && !project.externalSource) {
-        deleteSharedCantiere('gestione_finanziaria', project.id).catch(e =>
-          console.error('Cancellazione commessa dal registro condiviso fallita', e)
-        );
-      }
-      return prev.filter(p => p.id !== id);
-    });
+    const project = projects.find(p => p.id === id);
+    if (!project) return;
+
+    // Stesso motivo della rename: le transazioni collegate lo sono per NOME, non per id - senza
+    // avviso restavano orfane silenziosamente alla cancellazione (bug trovato in audit il
+    // 2026-09-14). Qui non si cancellano le transazioni: si scollega solo il riferimento al
+    // cantiere ormai inesistente, dopo conferma esplicita dell'utente.
+    const linkedCount = transactions.filter(t => t.project === project.name).length;
+    if (linkedCount > 0) {
+      const ok = window.confirm(
+        `"${project.name}" ha ${linkedCount} transazioni collegate. Cancellando la commessa, quelle transazioni NON verranno cancellate ma perderanno il riferimento al cantiere. Continuare?`
+      );
+      if (!ok) return;
+      setTransactions(prev => prev.map(t => t.project === project.name ? { ...t, project: undefined } : t));
+    }
+
+    // Solo una commessa di proprietà di questa app va rimossa anche dal
+    // registro condiviso: una commessa importata da DirettoreCantiere non
+    // va cancellata lì, altrimenti si perderebbe il cantiere originale.
+    if (!project.externalSource) {
+      deleteSharedCantiere('gestione_finanziaria', project.id).catch(e =>
+        console.error('Cancellazione commessa dal registro condiviso fallita', e)
+      );
+    }
+    setProjects(prev => prev.filter(p => p.id !== id));
   };
 
   // --- CROSS-APP SYNC (registro condiviso cantieri/commesse con DirettoreCantiere) ---
