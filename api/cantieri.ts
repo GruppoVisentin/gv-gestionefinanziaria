@@ -76,7 +76,18 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ cantiere: rowToCantiere(rows[0]) });
     }
 
-    res.setHeader('Allow', 'GET, POST');
+    if (req.method === 'DELETE') {
+      const source = req.query?.source;
+      const sourceId = req.query?.sourceId;
+      if (!source || !sourceId) {
+        return res.status(400).json({ error: 'Parametri obbligatori mancanti: source, sourceId' });
+      }
+      const id = `${source}:${sourceId}`;
+      await sql`DELETE FROM cantieri WHERE id = ${id}`;
+      return res.status(200).json({ ok: true });
+    }
+
+    res.setHeader('Allow', 'GET, POST, DELETE');
     return res.status(405).json({ error: 'Metodo non consentito' });
   } catch (error: any) {
     console.error('Errore API cantieri:', error);

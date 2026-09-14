@@ -109,7 +109,7 @@ import {
   readRulesFile,
   writeRulesFile
 } from './services/fileStorage';
-import { fetchSharedCantieri, pushSharedCantiere } from './services/cantieriSync';
+import { fetchSharedCantieri, pushSharedCantiere, deleteSharedCantiere } from './services/cantieriSync';
 
 interface WelcomeScreenProps {
   pendingHandleFromIDB: FileSystemFileHandle | null;
@@ -1778,7 +1778,18 @@ const App: React.FC = () => {
   };
 
   const handleDeleteProject = (id: string) => {
-    setProjects(prev => prev.filter(p => p.id !== id));
+    setProjects(prev => {
+      const project = prev.find(p => p.id === id);
+      // Solo una commessa di proprietà di questa app va rimossa anche dal
+      // registro condiviso: una commessa importata da DirettoreCantiere non
+      // va cancellata lì, altrimenti si perderebbe il cantiere originale.
+      if (project && !project.externalSource) {
+        deleteSharedCantiere('gestione_finanziaria', project.id).catch(e =>
+          console.error('Cancellazione commessa dal registro condiviso fallita', e)
+        );
+      }
+      return prev.filter(p => p.id !== id);
+    });
   };
 
   // --- CROSS-APP SYNC (registro condiviso cantieri/commesse con DirettoreCantiere) ---
@@ -1793,12 +1804,22 @@ const App: React.FC = () => {
       setProjects(prev => {
         let changed = false;
 
-        const reconciled = prev.map(p => {
+        const reconciled = prev.flatMap(p => {
           const key = p.externalSource
             ? { source: p.externalSource, sourceId: p.externalId! }
             : { source: 'gestione_finanziaria' as const, sourceId: p.id };
           const row = rows.find(r => r.source === key.source && r.sourceId === key.sourceId);
-          if (!row) return p;
+          if (!row) {
+            // Una commessa importata la cui riga è sparita dal registro
+            // significa che è stata cancellata nell'app di origine: va
+            // rimossa anche qui. Una commessa nativa senza riga non è ancora
+            // stata pubblicata (push in corso), va tenuta.
+            if (p.externalSource) {
+              changed = true;
+              return [];
+            }
+            return [p];
+          }
 
           const newName = row.nome;
           const newStart = row.dataInizio || p.startDate;
@@ -1808,9 +1829,9 @@ const App: React.FC = () => {
 
           if (newName !== p.name || newStart !== p.startDate || newStatus !== p.status) {
             changed = true;
-            return { ...p, name: newName, startDate: newStart, status: newStatus };
+            return [{ ...p, name: newName, startDate: newStart, status: newStatus }];
           }
-          return p;
+          return [p];
         });
 
         const existingExternalIds = new Set(
