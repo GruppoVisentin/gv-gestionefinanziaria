@@ -13,7 +13,7 @@ import {
   Info,
   CalendarClock
 } from 'lucide-react';
-import { Transaction, TransactionType, AppView, SPSnapshot, CEData, InitialBalanceBreakdown, Project, RimanenzeData } from '../types';
+import { Transaction, TransactionType, AppView, SPSnapshot, CEData, InitialBalanceBreakdown, Project, RimanenzeData, SaldoInizialeCashFlow } from '../types';
 import SummaryCard from './SummaryCard';
 import { 
   PieChart, 
@@ -52,6 +52,9 @@ interface DashboardProps {
   spSnapshots?: SPSnapshot[];
   ceManualData?: Record<string, Partial<CEData>>;
   rimanenze?: RimanenzeData;
+  saldoInizialeCF?: SaldoInizialeCashFlow;
+  fixedCategories?: string[];
+  variableCategories?: string[];
 }
 
 const COLORS = [
@@ -80,7 +83,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   projects = [],
   spSnapshots = [],
   ceManualData = {},
-  rimanenze = {}
+  rimanenze = {},
+  saldoInizialeCF,
+  fixedCategories = FIXED_COST_CATEGORIES,
+  variableCategories = VARIABLE_COST_CATEGORIES
 }) => {
   const [showHelp, setShowHelp] = useState(false);
   
@@ -308,26 +314,58 @@ const Dashboard: React.FC<DashboardProps> = ({
     return { score, label, color, dscr, breakdown, radarData, spMetrics };
   }, [transactions, spSnapshots, ceManualData, ratingSelectedYear, projects, initialData]);
 
+  // Saldo consuntivo al 01/01/{targetYear}: initialAccounts (= initialData.accounts) rappresenta il
+  // saldo conti SOLO al 01/01/{saldoInizialeCF.annoBase} (di norma l'anno corrente, vedi CashFlowTimeline
+  // — "Configura Saldi Iniziali"), NON un saldo "a tempo zero" da cui sommare in avanti TUTTI gli anni.
+  // BUG FIX 2026-09-14: sommare qui i flussi reali di ogni anno precedente a `initialAccounts` (come
+  // faceva prima questa funzione) contava due volte tutta la storia 2022→annoBase-1, dato che quel saldo
+  // la include già. Replica la stessa logica già corretta di CashFlowTimeline.calcolaSaldoInizialeConsuntivo
+  // e di SPView.autoLiquidita: usa saldoInizialeCF.contiPerAnno[year] quando disponibile (saldo riconciliato
+  // per quell'anno specifico), altrimenti l'ancora di annoBase, accumulando in avanti solo se necessario.
+  const calcolaSaldoAlYear = (targetYear: number, txList: Transaction[]): number => {
+    const cf = saldoInizialeCF;
+    const accountsList = Array.isArray(initialAccounts) ? initialAccounts : [];
+    const annoBase = cf?.annoBase;
+
+    const contiAnno = cf?.contiPerAnno?.[String(targetYear)];
+    if (contiAnno && contiAnno.length > 0) {
+      return contiAnno.reduce((sum, acc) => sum + acc.balance, 0);
+    }
+
+    if (annoBase === undefined) {
+      // Nessun saldoInizialeCF disponibile (prop non passata): fallback al vecchio comportamento
+      // sull'unico dato che abbiamo (initialAccounts), senza alcuna nozione di "anno di riferimento".
+      return accountsList.reduce((sum, acc) => sum + (acc?.balance || 0), 0);
+    }
+
+    const saldoBase = accountsList.reduce((sum, acc) => sum + (acc?.balance || 0), 0) || cf!.saldoManualeConsuntivo || 0;
+    if (targetYear <= annoBase) return saldoBase;
+
+    let saldo = saldoBase;
+    for (let anno = annoBase; anno < targetYear; anno++) {
+      const override = cf?.contiPerAnno?.[String(anno)];
+      if (override && override.length > 0) {
+        saldo = override.reduce((sum, acc) => sum + acc.balance, 0);
+        continue;
+      }
+      txList.forEach(t => {
+        const d = t && t.date ? parseUTCDate(t.date) : null;
+        if (d && d.getUTCFullYear() === anno && !t.isForecast) {
+          const amt = getGrossAmount(t);
+          if (t.type === TransactionType.INCOME) saldo += amt;
+          else if (t.ceType !== 'ammortamento') saldo -= amt;
+        }
+      });
+    }
+    return saldo;
+  };
+
   // Andamento Conto Corrente (Liquidità Cumulata)
   const contoCorrenteData = useMemo(() => {
     const txList = Array.isArray(transactions) ? transactions : [];
-    const accountsList = Array.isArray(initialAccounts) ? initialAccounts : [];
     const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-    let cumulative = accountsList.reduce((sum, acc) => sum + (acc?.balance || 0), 0) || 0;
-    
-    // Aggiunge i flussi reali degli anni precedenti per avere il corretto saldo di partenza del conto corrente dell'anno selezionato
-    txList.forEach(t => {
-      const d = t && t.date ? parseUTCDate(t.date) : null;
-      if (d && d.getUTCFullYear() < contoCorrenteYear && !t.isForecast && t.ceType !== 'ammortamento') {
-        const amt = getGrossAmount(t);
-        if (t.type === TransactionType.INCOME) {
-          cumulative += amt;
-        } else {
-          cumulative -= amt;
-        }
-      }
-    });
-    
+    let cumulative = calcolaSaldoAlYear(contoCorrenteYear, txList);
+
     return months.map((m, index) => {
       const monthTxs = txList.filter(t => {
         const d = t && t.date ? parseUTCDate(t.date) : null;
@@ -349,7 +387,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         LiquiditaCumulata: cumulative
       };
     });
-  }, [transactions, contoCorrenteYear, initialAccounts]);
+  }, [transactions, contoCorrenteYear, initialAccounts, saldoInizialeCF]);
 
   // Confronto Entrate
   const confrontoEntrateData = useMemo(() => {
@@ -424,15 +462,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       parseUTCDate(t.date).getUTCFullYear() === costiFissiYear
     );
 
-    return FIXED_COST_CATEGORIES.map(cat => {
+    return fixedCategories.map(cat => {
       const forecast = prevTxs
         .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
-        
+
       const actual = actTxs
         .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
-        
+
       return {
         name: cat,
         forecast,
@@ -440,7 +478,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         diff: actual - forecast
       };
     }).filter(item => item.forecast > 0 || item.actual > 0);
-  }, [transactions, costiFissiYear]);
+  }, [transactions, costiFissiYear, fixedCategories]);
 
   // Costi Variabili con confronto Previsionale, Consuntivo e Scostamento
   const variableCostTableData = useMemo(() => {
@@ -461,15 +499,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       parseUTCDate(t.date).getUTCFullYear() === costiVariabiliYear
     );
 
-    return VARIABLE_COST_CATEGORIES.map(cat => {
+    return variableCategories.map(cat => {
       const forecast = prevTxs
         .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
-        
+
       const actual = actTxs
         .filter(t => t && t.type === TransactionType.EXPENSE && t.category === cat)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
-        
+
       return {
         name: cat,
         forecast,
@@ -477,7 +515,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         diff: actual - forecast
       };
     }).filter(item => item.forecast > 0 || item.actual > 0);
-  }, [transactions, costiVariabiliYear]);
+  }, [transactions, costiVariabiliYear, variableCategories]);
 
   const renderDashboardCostTable = (data: {name: string, forecast: number, actual: number, diff: number}[]) => {
     if (data.length === 0) return <p className="text-xs text-slate-400 p-4 italic">Nessun dato registrato per questo periodo.</p>;
@@ -668,7 +706,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       } (${CURRENCY_FORMATTER.format([...monthlyData].sort((a,b) => b.Uscite - a.Uscite)[0]?.Uscite || 0)})`
     : `Nessun dato mensile disponibile.`;
 
-  const initialAccountsBalance = Array.isArray(initialAccounts) ? initialAccounts.reduce((sum, acc) => sum + (acc?.balance || 0), 0) : 0;
+  const initialAccountsBalance = calcolaSaldoAlYear(contoCorrenteYear, Array.isArray(transactions) ? transactions : []);
   const finalCCBalance = contoCorrenteData[contoCorrenteData.length - 1]?.LiquiditaCumulata ?? initialAccountsBalance;
   const netCCFlow = finalCCBalance - initialAccountsBalance;
   const contoCorrenteCalculatedValues = `Liquidità Cumulata ${contoCorrenteYear}:\n- Saldo iniziale conti corrente: ${
