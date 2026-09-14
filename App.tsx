@@ -2518,6 +2518,9 @@ const App: React.FC = () => {
                 projects={projects}
                 spSnapshots={spSnapshots}
                 ceManualData={ceManualData}
+                saldoInizialeCF={saldoInizialeCF}
+                fixedCategories={fixedCategories}
+                variableCategories={variableCategories}
             />
           </div>
         );
@@ -2827,8 +2830,8 @@ const App: React.FC = () => {
           />
         );
       default:
-        return <Dashboard 
-                  transactions={transactions} 
+        return <Dashboard
+                  transactions={transactions}
                   expenseCategories={allExpenseCategories}
                   onGoToManuale={handleGoToManuale}
                   initialAccounts={initialData.accounts}
@@ -2837,6 +2840,9 @@ const App: React.FC = () => {
                   spSnapshots={spSnapshots}
                   ceManualData={ceManualData}
                   rimanenze={rimanenze}
+                  saldoInizialeCF={saldoInizialeCF}
+                  fixedCategories={fixedCategories}
+                  variableCategories={variableCategories}
                 />;
     }
   };

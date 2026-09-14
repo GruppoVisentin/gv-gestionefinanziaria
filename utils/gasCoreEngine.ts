@@ -1144,7 +1144,14 @@ export const calcPrevisioneFiscale = (
     ? rimanenze.materialiFine - rimanenze.materialiInizio
     : 0;
 
-  const valoreProduzione = (includeForecast ? ceMetrics.proiezioneFatturato : ceMetrics.fatturato) + deltaWip + deltaMateriali + deltaTerreni;
+  // BUG FIX 2026-09-14: la variazione rimanenze materie prime (voce B.11 C.C.) è una rettifica di COSTO,
+  // non di Valore della Produzione (voce A) — a differenza di WIP/terreni (voce A.2, giustamente qui sopra).
+  // In modalità consuntivo `ceMetrics.totCostiVar`/`costiFissiTot` sotto sono già netti di deltaMateriali
+  // (via calcCEMetrics, che sottrae arrVarRimanenzeMateriali dai costi variabili): sommarlo ANCHE qui a
+  // valoreProduzione lo contava due volte (una in più al numeratore A, una in meno al denominatore B —
+  // stesso segno, base imponibile IRAP gonfiata di 2x deltaMateriali). Va sottratto dai costi (vedi
+  // costiOperativiTotali sotto per la proiezione, che non e' ancora netta), mai aggiunto qui.
+  const valoreProduzione = (includeForecast ? ceMetrics.proiezioneFatturato : ceMetrics.fatturato) + deltaWip + deltaTerreni;
 
   // Costo del personale dipendente (escluso dall'IRAP)
   const costoPersonaleDipendente = transactions
@@ -1170,8 +1177,11 @@ export const calcPrevisioneFiscale = (
 
   // costiFissiTot include ammortamenti. Ai fini IRAP per le S.R.L.,
   // l'ammortamento civilistico (imm. materiali/immateriali) è deducibile nei limiti fiscali.
+  // In proiezione, ceMetrics.proiezioneCostiVariabili (a differenza di totCostiVar consuntivo) NON è
+  // ancora netto di deltaMateriali (calcCEMetrics applica arrVarRimanenzeMateriali solo al consuntivo
+  // totCostiVar, non alla catena proiezione*) — va sottratto qui esplicitamente, stessa rettifica.
   const costiOperativiTotali = includeForecast
-    ? (ceMetrics.proiezioneCostiVariabili + ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio + ceMetrics.proiezioneAmmortamenti)
+    ? (ceMetrics.proiezioneCostiVariabili - deltaMateriali + ceMetrics.proiezioneCostiFissi + ceMetrics.proiezioneCostiStudio + ceMetrics.proiezioneAmmortamenti)
     : (ceMetrics.totCostiVar.reduce((a, b) => a + b, 0) + ceMetrics.costiFissiTot);
 
   // Cuneo fiscale IRAP (art. 11 c. 4-octies D.Lgs. 446/1997): dal 2022 il costo dei dipendenti a TEMPO
