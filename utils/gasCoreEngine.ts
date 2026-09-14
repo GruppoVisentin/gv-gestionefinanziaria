@@ -76,6 +76,19 @@ export const calcolaSaldoInizialeCassaConsuntivo = (
 
 // ─── AGGREGAZIONE MENSILE ────────────────────────────────────────
 
+// Quanto di un previsionale NON è ancora stato realizzato da consuntivi collegati
+// (linkedForecastId). Se nessun consuntivo lo collega, l'intera previsione è residua (0 realizzato).
+// Se un consuntivo lo collega ma per un importo inferiore (es. previsione 1.650€ realizzata da un
+// acconto di soli 25€), il residuo (1.625€) resta un valore atteso, non deve sparire per intero dal
+// previsionale/proiezione — bug trovato in audit il 2026-09-14: prima bastava un SOLO consuntivo
+// collegato, di qualunque importo, per escludere l'intera previsione ovunque nel motore.
+export const residuoPrevisioneNonRealizzata = (tx: Transaction, transactions: Transaction[]): number => {
+  const realizzato = transactions
+    .filter(act => !act.isForecast && act.linkedForecastId === tx.id)
+    .reduce((s, act) => s + Math.abs(act.amount), 0);
+  return Math.max(0, Math.abs(tx.amount) - realizzato);
+};
+
 // Helper to determine ceType dynamically if it's an INCOME and linked to a project
 // Attribuisce un INCASSO a una commessa. Regola generale: per link diretto (tx.project), usato dal 2026 in
 // poi quando ogni incasso è collegato alla sua commessa. Fallback per gli incassi storici NON collegati
@@ -822,12 +835,13 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
         parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
         (isRicavo || parseUTCDate(tx.date).getUTCMonth() > oggi.getMonth()) &&
         type && types.includes(type) &&
-        !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
+        residuoPrevisioneNonRealizzata(tx, transactions) > 0;
       })
       .reduce((s, tx) => {
         const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
         const isIncome = type.startsWith('ricavo') || type === 'provento_finanziario' || (type === 'straordinario' && tx.type === 'INCOME');
-        return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
+        const residuo = residuoPrevisioneNonRealizzata(tx, transactions);
+        return s + (isIncome ? residuo : -residuo);
       }, 0);
 
     // 2. Auto-simulated Project Costs & Revenues
@@ -920,11 +934,11 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
         return tx.isForecast &&
         parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
         type === 'onere_finanziario' &&
-        !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
+        residuoPrevisioneNonRealizzata(tx, transactions) > 0;
       })
       .forEach(tx => {
         const m = parseUTCDate(tx.date).getUTCMonth();
-        forecastOneriFinByMonth[m] += Math.abs(tx.amount);
+        forecastOneriFinByMonth[m] += residuoPrevisioneNonRealizzata(tx, transactions);
       });
   }
 
@@ -1424,8 +1438,11 @@ export const calcScostamenti = (
     if (d.getUTCFullYear() !== anno) return false;
     if (mese !== null && d.getUTCMonth() !== mese) return false;
     if (!!tx.isForecast !== isForecast) return false;
-    // N11 fix: esclude forecast già liquidati (linkedForecastId) per non gonfiare il previsionale
-    if (isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id)) return false;
+    // N11 fix: esclude forecast già liquidati (linkedForecastId) per non gonfiare il previsionale.
+    // Se il consuntivo collegato lo realizza solo in parte, il residuo resta (fix in audit
+    // 2026-09-14: prima un SOLO consuntivo collegato, di qualunque importo, escludeva l'intera
+    // previsione anche se ne copriva solo una piccola parte).
+    if (isForecast && residuoPrevisioneNonRealizzata(tx, transactions) <= 0) return false;
     return true;
   };
 
@@ -1449,7 +1466,8 @@ export const calcScostamenti = (
         // 2026-09-14: un rimborso assicurativo di €3.500 (INCOME su costo_fisso) veniva sommato come
         // se fosse un ulteriore costo invece di nettare quello esistente.
         const isIncome = tx.type === 'INCOME';
-        return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
+        const importo = isForecast ? residuoPrevisioneNonRealizzata(tx, transactions) : Math.abs(tx.amount);
+        return s + (isIncome ? importo : -importo);
       }, 0);
 
   const getBudget = (ceType: string): number => {
