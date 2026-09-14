@@ -721,6 +721,14 @@ const App: React.FC = () => {
   const [regolePuntaNet, setRegolePuntaNet] = useState<import('./utils/puntaNetImporter').RegolaMapping[]>([]);
   const [mappingContiPuntaNet, setMappingContiPuntaNet] = useState<import('./utils/puntaNetImporter').MappingConto | null>(null);
   const [bozzaImportPuntaNet, setBozzaImportPuntaNet] = useState<import('./utils/puntaNetImporter').RigaClassificata[]>([]);
+  // Log delle esecuzioni dell'import automatico giornaliero (scritto da scripts/importaPuntaNet.mjs
+  // --scrivi direttamente nel file dati): serve solo per il banner "N movimenti importati dall'ultima
+  // apertura" qui sotto — l'app non ha altro modo di sapere cosa e' successo tra un'apertura e l'altra,
+  // perche' ha accesso solo al singolo file .gvcf, non alla cartella AUTO con i log testuali.
+  const [logImportAutomatico, setLogImportAutomatico] = useState<{ timestamp: string; autoScritti: number; daRivedere: number }[]>([]);
+  // Fotografia giornaliera di Crediti Clienti/Debiti Fornitori aperti, calcolata da PuntaNet dallo
+  // stesso script automatico — usata in Stato Patrimoniale come suggerimento (mai applicata da sola).
+  const [saldiApertiPuntaNet, setSaldiApertiPuntaNet] = useState<{ data: string; creditiClienti: number; debitiFornitori: number } | null>(null);
   const [importSessions, setImportSessions] = useState<import('./types').ImportSession[]>([]);
   const [storicoCantierePuntaNet, setStoricoCantierePuntaNet] = useState<Transaction[]>([]);
   const [fileBanca, setFileBanca] = useState<File | null>(null);
@@ -731,9 +739,33 @@ const App: React.FC = () => {
   const [showImportStorico, setShowImportStorico] = useState(false);
   const [showDiagnosticModal, setShowDiagnosticModal] = useState(false);
   const [storicoImportato, setStoricoImportato]   = useState(false);
+  const [bannerImportAutoVisibile, setBannerImportAutoVisibile] = useState(true);
 
   const [aliquotaIRES, setAliquotaIRES] = useState<number>(24);
   const [aliquotaIRAP, setAliquotaIRAP] = useState<number>(3.9);
+
+  // Banner "N movimenti importati automaticamente dall'ultima apertura": conta le esecuzioni
+  // dell'import PuntaNet automatico (logImportAutomatico, scritto nel file dati stesso — l'app non
+  // ha altro accesso alla cartella AUTO) piu' recenti dell'ultima volta che QUESTO dispositivo/browser
+  // ha visto il banner (localStorage, per-dispositivo: non ha senso segnarlo "visto" globalmente nel
+  // file condiviso, lo vedrebbe solo il primo che apre l'app dopo l'import). Le righe "da rivedere"
+  // sono gia' segnalate a parte dal banner arancione di bozzaImportPuntaNet — qui contano solo quelle
+  // scritte in automatico SENZA bisogno di intervento.
+  const LOCALSTORAGE_ULTIMO_LOG_IMPORT = 'gv_ultimoLogImportAutomaticoVisto';
+  const nuoviImportAutomatici = useMemo(() => {
+    if (logImportAutomatico.length === 0) return { count: 0, ultimoTimestamp: null as string | null };
+    let ultimoVisto = '';
+    try { ultimoVisto = localStorage.getItem(LOCALSTORAGE_ULTIMO_LOG_IMPORT) || ''; } catch { /* privacy mode, ecc. */ }
+    const nuovi = logImportAutomatico.filter(l => l.timestamp > ultimoVisto);
+    const count = nuovi.reduce((s, l) => s + l.autoScritti, 0);
+    return { count, ultimoTimestamp: logImportAutomatico[logImportAutomatico.length - 1].timestamp };
+  }, [logImportAutomatico]);
+
+  useEffect(() => {
+    if (nuoviImportAutomatici.ultimoTimestamp) {
+      try { localStorage.setItem(LOCALSTORAGE_ULTIMO_LOG_IMPORT, nuoviImportAutomatici.ultimoTimestamp); } catch { /* privacy mode, ecc. */ }
+    }
+  }, [nuoviImportAutomatici.ultimoTimestamp]);
 
   // Memoized Array
   const allExpenseCategories = useMemo(() => [...fixedCategories, ...variableCategories], [fixedCategories, variableCategories]);
@@ -833,12 +865,14 @@ const App: React.FC = () => {
     storicoExcelImportato: storicoImportato,
     aliquoteFiscali: { ires: aliquotaIRES, irap: aliquotaIRAP },
     storicoCantierePuntaNet,
+    logImportAutomatico,
+    saldiApertiPuntaNet,
   }), [
     transactions, projects, fixedCategories, variableCategories, incomeCategories,
     supplierPresets, initialData, responsiblesList, ceManualData, spSnapshots,
     budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze,
     regolePuntaNet, mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
-    storicoCantierePuntaNet
+    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet
   ]);
 
   // Ref che mantiene sempre l'ultima versione di buildBackupData
@@ -941,6 +975,8 @@ const App: React.FC = () => {
     if (data.importSessions) {
       setImportSessions(data.importSessions);
     }
+    if (data.logImportAutomatico) setLogImportAutomatico(data.logImportAutomatico);
+    if (data.saldiApertiPuntaNet) setSaldiApertiPuntaNet(data.saldiApertiPuntaNet);
     if (data.storicoExcelImportato) setStoricoImportato(data.storicoExcelImportato);
     if (data.storicoCantierePuntaNet) setStoricoCantierePuntaNet(data.storicoCantierePuntaNet);
     if (data.aliquoteFiscali) {
@@ -1030,6 +1066,8 @@ const App: React.FC = () => {
           irap: overrides?.aliquotaIRAP !== undefined ? overrides.aliquotaIRAP : aliquotaIRAP
         },
         storicoCantierePuntaNet,
+        logImportAutomatico,
+        saldiApertiPuntaNet,
       };
 
       await writeFile(fileHandle, data);
@@ -2585,6 +2623,7 @@ const App: React.FC = () => {
             onChangeAliquotaIRES={handleAliquotaIRESChange}
             onChangeAliquotaIRAP={handleAliquotaIRAPChange}
             projects={projects}
+            saldiApertiPuntaNet={saldiApertiPuntaNet}
             initialTab={
               view === AppView.CE_RICLASSIFICATO ? 'pl' :
               view === AppView.STATO_PATRIMONIALE ? 'sp' :
@@ -2681,6 +2720,27 @@ const App: React.FC = () => {
             className="bg-white text-slate-900 px-3 py-1 rounded-full text-xs hover:bg-slate-50 transition-colors"
           >
             Collega file
+          </button>
+        </div>
+      )}
+
+      {/* Conferma import automatico riuscito senza bisogno di intervento — chiesto dall'utente per
+          avere un riscontro visibile che l'automatismo ha lavorato, non solo il silenzio quando
+          non c'e' nulla da segnalare (il banner arancione qui sotto). Sparisce chiudendolo, e comunque
+          non si ripresenta piu' per questi stessi movimenti alla prossima apertura (localStorage). */}
+      {bannerImportAutoVisibile && nuoviImportAutomatici.count > 0 && (
+        <div className="bg-emerald-600 text-white px-4 py-2 flex items-center justify-between text-sm font-bold z-[70]">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} />
+            <span>
+              Import automatico PuntaNet: {nuoviImportAutomatici.count} {nuoviImportAutomatici.count === 1 ? 'movimento importato' : 'movimenti importati'} dall'ultima apertura — nessuna verifica necessaria
+            </span>
+          </div>
+          <button
+            onClick={() => setBannerImportAutoVisibile(false)}
+            className="bg-white text-emerald-700 px-3 py-1 rounded-full text-xs hover:bg-emerald-50 transition-colors"
+          >
+            OK
           </button>
         </div>
       )}

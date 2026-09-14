@@ -158,8 +158,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     const manualData = ceManualData || {};
     const ceData = buildCEData(txList, ratingYear, manualData[ratingYear.toString()], 'competenza', projects, initialData);
     const ceMetrics = calcCEMetrics(ceData, txList, projects, initialData, rimanenze[ceData.anno]);
-    const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, txList) : null;
-    
+    const spMetrics = activeSP ? calcSPMetrics(activeSP, ceMetrics, txList, projects) : null;
+
     if (!spMetrics) return { score: 0, label: 'B / C — Incompleto', color: 'text-rose-600', dscr: 0, breakdown: [], radarData: [], spMetrics: null };
     
     let score = 0;
@@ -746,7 +746,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     const manualData = ceManualData || {};
     const ceData = buildCEData(txList, yearToUse, manualData[yearToUse.toString()], 'competenza', projects, initialData);
     const ceMetrics = calcCEMetrics(ceData, txList, projects, initialData, rimanenze[ceData.anno]);
-    return activeSP ? calcSPMetrics(activeSP, ceMetrics, txList) : null;
+    return activeSP ? calcSPMetrics(activeSP, ceMetrics, txList, projects) : null;
   }, [transactions, spSnapshots, ceManualData, patrimonioYear, projects, initialData]);
 
   const structureChartData = useMemo(() => {

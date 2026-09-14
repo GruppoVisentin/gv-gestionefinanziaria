@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, TransactionType, CEData, CERow, BudgetData, RimanenzeAnno, RimanenzeData, AppView, Project, InitialBalanceBreakdown } from '../types';
 import { buildCEData, buildCEDataPrevisionale, calcCEMetrics, calcScostamenti, calcEffettoRimanenze, getDynamicCEType, computeCommesseCompletate, commessaDiIncasso, matchIntestatario, getDynamicLoansInterests, calculateRepayment, parseUTCDate, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
 import { exportCEPDF } from '../utils/cePdfExport';
@@ -40,20 +40,51 @@ const formatPercent = (val: number) =>
 
 const MONTHS = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 
-const ManualCell = ({ value, onChange, month }: { value: number, onChange: (m: number, v: number) => void, month: number }) => (
-  <td className="p-1 min-w-[100px]">
-    <div className="flex items-center bg-amber-50 border border-amber-300 border-dashed rounded px-2 py-1">
-      <span className="text-amber-400 mr-1 text-[10px]">✏️</span>
-      <input
-        type="number"
-        value={value || ''}
-        placeholder="0"
-        onChange={e => onChange(month, parseFloat(e.target.value) || 0)}
-        className="w-full bg-transparent text-right text-xs font-medium text-amber-900 outline-none"
-      />
-    </div>
-  </td>
-);
+const ManualCell = ({ value, onChange, month }: { value: number, onChange: (m: number, v: number) => void, month: number }) => {
+  // Separatore delle migliaia mentre non si sta scrivendo (stesso meccanismo gia' in uso in
+  // ManualInput su Stato Patrimoniale): valore grezzo editabile a fuoco attivo, formattato altrimenti.
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [inputValue, setInputValue] = React.useState(value ? String(value) : '');
+
+  React.useEffect(() => {
+    if (!isFocused) setInputValue(value ? String(value) : '');
+  }, [value, isFocused]);
+
+  const displayValue = isFocused
+    ? inputValue
+    : value ? new Intl.NumberFormat('it-IT', { maximumFractionDigits: 0 }).format(value) : '';
+
+  const handleInputChange = (val: string) => {
+    setInputValue(val);
+    let clean = val.trim();
+    if (clean.includes('.') && clean.includes(',')) {
+      clean = clean.replace(/\./g, '').replace(',', '.');
+    } else if (clean.includes(',')) {
+      clean = clean.replace(',', '.');
+    } else if (clean.includes('.')) {
+      const parts = clean.split('.');
+      if (parts[parts.length - 1].length === 3) clean = clean.replace(/\./g, '');
+    }
+    onChange(month, parseFloat(clean.replace(/[^0-9.-]/g, '')) || 0);
+  };
+
+  return (
+    <td className="p-1 min-w-[100px]">
+      <div className="flex items-center bg-amber-50 border border-amber-300 border-dashed rounded px-2 py-1">
+        <span className="text-amber-400 mr-1 text-[10px]">✏️</span>
+        <input
+          type="text"
+          value={displayValue}
+          placeholder="0"
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          onChange={e => handleInputChange(e.target.value)}
+          className="w-full bg-transparent text-right text-xs font-medium text-amber-900 outline-none"
+        />
+      </div>
+    </td>
+  );
+};
 
 const AutoCell = ({ value }: { value: number }) => (
   <td className="p-1 min-w-[100px] relative group">
@@ -100,6 +131,15 @@ const CEView: React.FC<CEViewProps> = ({
   const [activeTab, setActiveTab] = useState<'ytd' | 'projection' | 'monthly' | 'scostamenti' | 'previsionale'>('ytd');
   const [meseScostamento, setMeseScostamento] = useState<number | null>(null); // null = YTD
   const [modalita, setModalita] = useState<'cassa' | 'competenza'>('cassa');
+
+  // Proiezione Anno stima l'utile di fine anno: quello che conta per utile/tasse è il valore di
+  // competenza (rimanenze incluse), non il timing di incasso — su questo tab "per cassa" non è mai la
+  // scelta giusta, quindi il toggle è nascosto e si forza qui "competenza" ogni volta che si entra.
+  // modalita è condivisa con YTD Consuntivo/Mese per Mese: uscendo da questo tab resta su 'competenza'
+  // finché l'utente non la cambia lì a mano (scelta consapevole — vedi discussione con l'utente).
+  useEffect(() => {
+    if (activeTab === 'projection') setModalita('competenza');
+  }, [activeTab]);
   const [showHelp, setShowHelp] = useState(false);
   const [drawerKpi, setDrawerKpi] = useState<string | null>(null);
   const [breakdownEspanso, setBreakdownEspanso] = useState<'ricavo_core' | 'ricavo_immobiliare' | null>(null);
@@ -241,9 +281,10 @@ const CEView: React.FC<CEViewProps> = ({
       selectedYear,
       meseScostamento,
       budgetData?.[selectedYear.toString()],
-      manualData[selectedYear.toString()]
+      manualData[selectedYear.toString()],
+      projects
     );
-  }, [transactions, selectedYear, meseScostamento, budgetData, manualData]);
+  }, [transactions, selectedYear, meseScostamento, budgetData, manualData, projects]);
 
   const effettoRimanenze = useMemo(() => {
     if (!rimanenzeAnno) return null;
@@ -1282,8 +1323,11 @@ const CEView: React.FC<CEViewProps> = ({
             </button>
           </div>
 
-          {/* Toggle modalità — non si applica alla vista Previsionale (nessuna rimanenza pianificata da applicare) */}
-          {activeTab !== 'previsionale' && (
+          {/* Toggle modalità — non si applica a Previsionale (nessuna rimanenza pianificata da applicare) né a
+              Proiezione Anno (qui conta solo il valore di competenza: è quello che alimenta utile e tasse
+              dell'anno, non il timing di cassa — vedi effetto useEffect qui sotto che blocca modalita su
+              'competenza' quando si entra su questo tab). */}
+          {activeTab !== 'previsionale' && activeTab !== 'projection' && (
             <div className="flex items-center bg-slate-100 rounded-xl p-1">
               <button
                 onClick={() => setModalita('cassa')}

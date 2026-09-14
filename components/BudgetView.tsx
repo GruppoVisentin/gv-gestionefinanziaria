@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, BudgetData, BudgetRow, AppView, Project } from '../types';
-import { aggregateByMonthAndType } from '../utils/gasCoreEngine';
+import { aggregateByMonthAndType, getDynamicCEType, computeCommesseCompletate, parseUTCDate } from '../utils/gasCoreEngine';
 import { exportBudgetPDF } from '../utils/budgetPdfExport';
 import PDFExportButton from './PDFExportButton';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
@@ -28,7 +28,50 @@ interface BudgetViewProps {
   projects?: Project[];
 }
 
-const formatEuro = (val: number) => 
+// Separatore delle migliaia mentre non si sta scrivendo (stesso meccanismo di ManualInput su Stato
+// Patrimoniale/ManualCell sul CE): valore grezzo editabile a fuoco attivo, formattato altrimenti.
+// Estratto in un componente a parte (non inline dentro il .map() della tabella) perche' serve uno
+// stato di focus indipendente per ogni riga - un hook non puo' vivere dentro un callback di map().
+const BudgetAnnuoInput = ({ value, onChange }: { value: number; onChange: (v: number) => void }) => {
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [inputValue, setInputValue] = React.useState(value ? String(value) : '');
+
+  React.useEffect(() => {
+    if (!isFocused) setInputValue(value ? String(value) : '');
+  }, [value, isFocused]);
+
+  const displayValue = isFocused
+    ? inputValue
+    : value ? new Intl.NumberFormat('it-IT', { maximumFractionDigits: 0 }).format(value) : '';
+
+  const handleInputChange = (val: string) => {
+    setInputValue(val);
+    let clean = val.trim();
+    if (clean.includes('.') && clean.includes(',')) {
+      clean = clean.replace(/\./g, '').replace(',', '.');
+    } else if (clean.includes(',')) {
+      clean = clean.replace(',', '.');
+    } else if (clean.includes('.')) {
+      const parts = clean.split('.');
+      if (parts[parts.length - 1].length === 3) clean = clean.replace(/\./g, '');
+    }
+    onChange(parseFloat(clean.replace(/[^0-9.-]/g, '')) || 0);
+  };
+
+  return (
+    <input
+      type="text"
+      value={displayValue}
+      placeholder="0"
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onChange={e => handleInputChange(e.target.value)}
+      className="w-24 bg-transparent text-right text-sm font-black text-amber-900 outline-none"
+    />
+  );
+};
+
+const formatEuro = (val: number) =>
   new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(val);
 
 const formatPercent = (val: number) => 
@@ -50,7 +93,12 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
   const [isEditing, setIsEditing] = useState(false);
   const [showCopyBanner, setShowCopyBanner] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [modalita, setModalita] = useState<'cassa' | 'competenza'>('cassa');
+  // Il confronto Budget/Scostamenti e' un target di conto economico (ricavi/costi riconosciuti),
+  // non un target di cassa — stessa scelta gia' fatta su Previsionale e Proiezione Anno nel CE: solo
+  // Costi Variabili mostrava una differenza non trascurabile tra le due modalita' (~11% sui dati
+  // reali, per via della data fattura vs data cassa), i Ricavi nessuna. Toggle rimosso, fisso su
+  // competenza.
+  const modalita = 'competenza' as const;
 
   const currentBudget = useMemo(() => 
     budgetData[selectedYear.toString()] || { anno: selectedYear, righe: DEFAULT_BUDGET_ROWS }, 
@@ -95,10 +143,31 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
     }
   };
 
-  const actuals = useMemo(() => 
-    aggregateByMonthAndType(transactions, selectedYear, modalita, projects), 
+  const actuals = useMemo(() =>
+    aggregateByMonthAndType(transactions, selectedYear, modalita, projects),
     [transactions, selectedYear, modalita, projects]
   );
+
+  // Candidato "Budget Annuo" da caricare dal previsionale gia' impostato in Cash Flow: somma di TUTTE
+  // le transazioni previsionali dell'anno per ciascuna voce, con la loro VERA distribuzione mensile
+  // (non un /12 piatto come fa la digitazione manuale) — cosi' il budget mensile riflette quando i
+  // soldi sono davvero attesi (es. più SAL concentrati in certi mesi), non una media artificiale.
+  const previsionaleAnnuo = useMemo(() => {
+    const commesseCompletate = computeCommesseCompletate(transactions, projects, true);
+    const perTipo: Record<string, { totale: number; perMese: number[] }> = {};
+    for (const tx of transactions) {
+      if (!tx.isForecast) continue;
+      const d = parseUTCDate(tx.date);
+      if (d.getUTCFullYear() !== selectedYear) continue;
+      const tipo = getDynamicCEType(tx, projects, commesseCompletate, selectedYear);
+      if (!tipo) continue;
+      if (!perTipo[tipo]) perTipo[tipo] = { totale: 0, perMese: Array(12).fill(0) };
+      const importo = Math.abs(tx.amount);
+      perTipo[tipo].totale += importo;
+      perTipo[tipo].perMese[d.getUTCMonth()] += importo;
+    }
+    return perTipo;
+  }, [transactions, selectedYear, projects]);
 
   const totalBudgetRevenues = useMemo(() => currentBudget.righe.filter(r => r.ceType.startsWith('ricavo')).reduce((sum, r) => sum + r.budgetAnnuo, 0), [currentBudget]);
   const totalActualRevenues = useMemo(() => currentBudget.righe.filter(r => r.ceType.startsWith('ricavo')).reduce((sum, r) => sum + Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0)), 0), [currentBudget, actuals]);
@@ -111,6 +180,18 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
       ...newRighe[index], 
       budgetAnnuo: value,
       budgetMensile: Array(12).fill(value / 12) // Distribuzione uniforme di default
+    };
+    onBudgetChange(selectedYear, { ...currentBudget, righe: newRighe });
+  };
+
+  const handleBudgetChangeFromPrevisionale = (index: number, ceType: string) => {
+    const prev = previsionaleAnnuo[ceType];
+    if (!prev) return;
+    const newRighe = [...currentBudget.righe];
+    newRighe[index] = {
+      ...newRighe[index],
+      budgetAnnuo: Math.round(prev.totale),
+      budgetMensile: prev.perMese.map(v => Math.round(v)), // distribuzione mensile VERA, non /12
     };
     onBudgetChange(selectedYear, { ...currentBudget, righe: newRighe });
   };
@@ -150,30 +231,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
           <div className="flex items-center gap-4">
             <HelpButton onClick={() => setShowHelp(true)} />
 
-            {/* Toggle modalità */}
-            <div className="flex items-center bg-slate-100 rounded-xl p-1 no-print">
-              <button
-                onClick={() => setModalita('cassa')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  modalita === 'cassa'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Per cassa
-              </button>
-              <button
-                onClick={() => setModalita('competenza')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  modalita === 'competenza'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Per competenza
-              </button>
-            </div>
-
             <div className="flex items-center bg-slate-100 rounded-xl p-1 no-print">
               <button 
                 onClick={() => setSelectedYear(prev => prev - 1)}
@@ -211,16 +268,38 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
         </div>
 
       {/* Summary Dashboard */}
+      {/* La prima card si chiama "Fatturato" (vedi termId 'fatturato' sotto) ma prendeva SOLO la riga
+          ricavo_core, escludendo Vendite Immobiliari e Altri Ricavi dal budget/consuntivo mostrato —
+          per un'azienda dove l'immobiliare e' spesso la voce di ricavo piu' grande, il "Fatturato"
+          qui sopra poteva risultare molto sottostimato rispetto al vero totale. Ora somma le tre voci
+          di ricavo, Costi Variabili e Costi Fissi restano invariati (gia' righe singole corrette).
+      */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {currentBudget.righe.filter(r => ['ricavo_core', 'costo_variabile', 'costo_fisso'].includes(r.ceType)).map(r => {
-          const actualTotal = Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0));
+        {(() => {
+          const ricaviTypes = ['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro'];
+          const righeRicavo = currentBudget.righe.filter(r => ricaviTypes.includes(r.ceType));
+          const fatturatoRow = {
+            categoria: 'Fatturato',
+            ceType: 'ricavo_core', // solo per calculateScostamento (isIncome = startsWith('ricavo'))
+            budgetAnnuo: righeRicavo.reduce((s, r) => s + r.budgetAnnuo, 0),
+            actualTotal: righeRicavo.reduce((s, r) => s + Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0)), 0),
+            termId: 'fatturato' as const,
+          };
+          const altreRighe = currentBudget.righe
+            .filter(r => ['costo_variabile', 'costo_fisso'].includes(r.ceType))
+            .map(r => ({
+              categoria: r.categoria,
+              ceType: r.ceType,
+              budgetAnnuo: r.budgetAnnuo,
+              actualTotal: Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0)),
+              termId: r.ceType === 'costo_variabile' ? 'primo_margine' as const : 'ebitda' as const,
+            }));
+          return [fatturatoRow, ...altreRighe];
+        })().map(r => {
+          const actualTotal = r.actualTotal;
           const { diff, isPositive } = calculateScostamento(actualTotal, r.budgetAnnuo, r.ceType);
           const pct = r.budgetAnnuo > 0 ? (actualTotal / r.budgetAnnuo) : 0;
-
-          // Map category to glossary term if possible
-          const termId = r.ceType === 'ricavo_core' ? 'fatturato' : 
-                         r.ceType === 'costo_variabile' ? 'primo_margine' : 
-                         r.ceType === 'costo_fisso' ? 'ebitda' : undefined;
+          const termId = r.termId;
 
           return (
             <div key={r.ceType} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -316,14 +395,17 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
                   <td className="py-4 px-6">
                     <div className="flex items-center justify-end bg-amber-50 border border-amber-200 border-dashed rounded-xl px-3 py-2">
                       <span className="text-amber-400 mr-2 text-xs">✏️</span>
-                      <input 
-                        type="number"
-                        value={r.budgetAnnuo || ''}
-                        placeholder="0"
-                        onChange={(e) => handleBudgetChange(i, parseFloat(e.target.value) || 0)}
-                        className="w-24 bg-transparent text-right text-sm font-black text-amber-900 outline-none"
-                      />
+                      <BudgetAnnuoInput value={r.budgetAnnuo} onChange={(v) => handleBudgetChange(i, v)} />
                     </div>
+                    {previsionaleAnnuo[r.ceType] && Math.round(previsionaleAnnuo[r.ceType].totale) !== r.budgetAnnuo && (
+                      <button
+                        onClick={() => handleBudgetChangeFromPrevisionale(i, r.ceType)}
+                        className="text-[10px] text-blue-600 font-bold hover:underline block w-full text-right mt-1"
+                        title="Usa il totale (e la distribuzione mensile reale) del previsionale gia' impostato in Cash Flow"
+                      >
+                        💡 Carica da Previsionale ({formatEuro(previsionaleAnnuo[r.ceType].totale)})
+                      </button>
+                    )}
                   </td>
                   <td className="py-4 px-6 text-right">
                     <div className="bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 text-sm font-black text-sky-900 inline-block min-w-[120px]">
