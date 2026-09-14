@@ -1,5 +1,5 @@
-import { Transaction, InitialBalanceBreakdown } from '../types';
-import { getDynamicLoansInterests, parseUTCDate } from './gasCoreEngine';
+import { Transaction, InitialBalanceBreakdown, Project } from '../types';
+import { getDynamicLoansInterests, getDynamicCEType, computeCommesseCompletate, parseUTCDate } from './gasCoreEngine';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 const getCeType = (tx: Transaction): string => {
@@ -53,17 +53,27 @@ export interface OverheadRates {
 export const calculateOverheadRates = (
   transactions: Transaction[],
   anno: number,
-  initialData?: InitialBalanceBreakdown
+  initialData?: InitialBalanceBreakdown,
+  projects?: Project[]
 ): OverheadRates => {
+
+  // Riclassificazione dinamica (come nel resto del motore): tx.ceType statico non riflette un
+  // metodoPagamento cambiato dopo che le transazioni esistevano gia', ne' un completamento OIC23
+  // avvenuto dopo l'import. Overhead/break-even/Numeri Sacri usavano finora il valore congelato —
+  // stesso gap gia' corretto oggi in calcSPMetrics/calcScostamenti, qui applicato allo stesso modo:
+  // due set separati perche' il completamento di una commessa ad acconto e' valutato diversamente
+  // sul consuntivo (solo saldi gia' incassati) rispetto al previsionale (anche saldi pianificati).
+  const commesseCompletateReale = computeCommesseCompletate(transactions, projects, false);
+  const commesseCompletatePrevisionale = computeCommesseCompletate(transactions, projects, true);
 
   const txAnno = transactions.filter(tx => {
     const d = parseUTCDate(tx.date);
-    return d.getUTCFullYear() === anno && getCeType(tx) && !tx.isForecast;
+    return d.getUTCFullYear() === anno && !tx.isForecast;
   });
 
   const sumByType = (types: string[]) =>
     txAnno
-      .filter(tx => types.includes(getCeType(tx)))
+      .filter(tx => types.includes(getDynamicCEType(tx, projects, commesseCompletateReale, anno)))
       .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
   const totaleCostiDiretti    = sumByType(['costo_variabile']);
@@ -75,9 +85,9 @@ export const calculateOverheadRates = (
 
   // Compenso Soci: costo_studio con categoria che contiene 'Compenso Amministratori' o 'Soci'
   const compensoSoci = txAnno
-    .filter(tx => 
-      getCeType(tx) === 'costo_studio' && 
-      (tx.category?.toLowerCase().includes('compenso amministratori') || 
+    .filter(tx =>
+      getDynamicCEType(tx, projects, commesseCompletateReale, anno) === 'costo_studio' &&
+      (tx.category?.toLowerCase().includes('compenso amministratori') ||
        tx.category?.toLowerCase().includes('soci'))
     )
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
@@ -96,19 +106,27 @@ export const calculateOverheadRates = (
 
   // Proiezione (Spostata a fine funzione per includere previsionali)
   const oggi = new Date();
+  // Un anno FUTURO (non ancora iniziato) non ha per definizione nessun consuntivo — mesiTrascorsi e'
+  // usato come divisore altrove (proiezione lineare 12 mesi in AnalisiView), quindi va tenuto sicuro
+  // (mai 0, per non dividere per zero) pur non pretendendo che i mesi gia' trascorsi di QUEST'anno si
+  // applichino a un anno che deve ancora iniziare. Con consuntivo sempre a 0 per un anno futuro il
+  // valore esatto qui non cambia il risultato (0 × qualsiasi = 0), ma evita testi fuorvianti tipo
+  // "Consuntivo YTD: 0€ (su 9 mesi)" per un anno del quale non e' passato nemmeno un giorno.
   const mesiTrascorsi = anno < oggi.getFullYear()
+    ? 12
+    : anno > oggi.getFullYear()
     ? 12
     : Math.max(1, oggi.getMonth() + 1);
 
   // --- CALCOLO PREVISIONALI ---
   const txAnnoPrev = transactions.filter(tx => {
     const d = parseUTCDate(tx.date);
-    return d.getUTCFullYear() === anno && getCeType(tx) && tx.isForecast;
+    return d.getUTCFullYear() === anno && tx.isForecast;
   });
 
   const sumByTypePrev = (types: string[]) =>
     txAnnoPrev
-      .filter(tx => types.includes(getCeType(tx)))
+      .filter(tx => types.includes(getDynamicCEType(tx, projects, commesseCompletatePrevisionale, anno)))
       .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
   // Calcolo dinamico interessi previsionali sui finanziamenti attivi
@@ -116,7 +134,7 @@ export const calculateOverheadRates = (
 
   const forecastOneriFinByMonth = Array(12).fill(0);
   txAnnoPrev
-    .filter(tx => getCeType(tx) === 'onere_finanziario')
+    .filter(tx => getDynamicCEType(tx, projects, commesseCompletatePrevisionale, anno) === 'onere_finanziario')
     .forEach(tx => {
       const m = parseUTCDate(tx.date).getUTCMonth();
       forecastOneriFinByMonth[m] += Math.abs(tx.amount);
