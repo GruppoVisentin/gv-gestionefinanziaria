@@ -532,6 +532,15 @@ gvDataFresh.transactions = [...gvDataFresh.transactions, ...daScrivere];
 gvDataFresh.bozzaImportPuntaNet = [...(gvDataFresh.bozzaImportPuntaNet || []), ...daMettereInBozza];
 gvDataFresh.timestamp = new Date().toISOString();
 
+// Log delle esecuzioni con scrittura reale, per il banner "N movimenti importati automaticamente
+// dall'ultima apertura" in app — senza questo, l'app (accesso solo al singolo file .gvcf, non alla
+// cartella AUTO) non ha modo di sapere se e quanto ha scritto l'import automatico tra un'apertura e
+// l'altra. Tenute solo le ultime 60 esecuzioni per non far crescere il file all'infinito.
+gvDataFresh.logImportAutomatico = [
+  ...(gvDataFresh.logImportAutomatico || []),
+  { timestamp: new Date().toISOString(), autoScritti: daScrivere.length, daRivedere: daMettereInBozza.length },
+].slice(-60);
+
 const tmpPath = `${GVCF_PATH}.tmp_${process.pid}`;
 fs.writeFileSync(tmpPath, JSON.stringify(gvDataFresh, null, 2));
 fs.renameSync(tmpPath, GVCF_PATH);

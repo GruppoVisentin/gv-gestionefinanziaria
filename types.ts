@@ -321,6 +321,7 @@ export interface BackupData {
   storicoExcelImportato?: boolean;   // flag — impedisce doppio import accidentale
   aliquoteFiscali?: { ires: number; irap: number };
   storicoCantierePuntaNet?: Transaction[]; // ← NUOVO — storico completo per cantiere da PuntaNet (sola lettura, solo Vista Cantiere)
+  logImportAutomatico?: { timestamp: string; autoScritti: number; daRivedere: number }[]; // ← NUOVO — log esecuzioni scripts/importaPuntaNet.mjs --scrivi, per il banner "N movimenti importati dall'ultima apertura"
 }
 
 export enum AppView {
