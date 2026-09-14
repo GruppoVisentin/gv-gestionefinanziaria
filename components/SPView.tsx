@@ -407,6 +407,22 @@ const SPView: React.FC<SPViewProps> = ({
 
   const metrics = useMemo(() => calcSPMetrics(currentSnap, ceMetrics, transactions, projects), [currentSnap, ceMetrics, transactions, projects]);
 
+  // Metriche per l'Archivio Snapshot: ogni riga deve usare l'EBITDA/oneri finanziari del PROPRIO anno,
+  // non quello dello snapshot attualmente aperto nella scheda "Bilancio Riclassificato" (ceMetrics sopra
+  // e' fisso sull'anno di currentSnap). Tot Attivo/PN/PFN mostrati in tabella non dipendono da ceMetrics
+  // quindi finora non si vedeva, ma qualunque indice che lo usa (PFN/EBITDA, copertura interessi)
+  // sarebbe stato sbagliato per ogni riga diversa dallo snapshot corrente.
+  const metricsPerSnapshot = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof calcSPMetrics>>();
+    for (const s of snapshots) {
+      const anno = parseUTCDate(s.dataRiferimento).getUTCFullYear();
+      const ceAnno = buildCEData(transactions, anno, ceManualData[anno.toString()], 'competenza', projects, initialData);
+      const ceMetricsAnno = calcCEMetrics(ceAnno, transactions, projects, initialData, rimanenze ? rimanenze[anno] : undefined);
+      map.set(s.dataRiferimento, calcSPMetrics(s, ceMetricsAnno, transactions, projects));
+    }
+    return map;
+  }, [snapshots, transactions, ceManualData, projects, initialData, rimanenze]);
+
   const handleSave = () => {
     const exists = snapshots.find(s => s.dataRiferimento === currentSnap.dataRiferimento);
     if (exists) {
@@ -1093,7 +1109,7 @@ const SPView: React.FC<SPViewProps> = ({
                 </thead>
                 <tbody>
                   {snapshots.map(s => {
-                    const sMetrics = calcSPMetrics(s, ceMetrics, transactions, projects);
+                    const sMetrics = metricsPerSnapshot.get(s.dataRiferimento)!;
                     return (
                       <tr key={s.dataRiferimento} className="border-t border-slate-100 hover:bg-slate-50 transition-colors group">
                         <td className="py-4 px-6 text-sm font-black text-slate-900">
