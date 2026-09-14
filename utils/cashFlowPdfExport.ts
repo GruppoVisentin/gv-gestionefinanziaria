@@ -1,13 +1,14 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, Project } from '../types';
+import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, Project, SaldoInizialeCashFlow } from '../types';
 import { CURRENCY_FORMATTER } from '../constants';
-import { parseUTCDate } from './gasCoreEngine';
+import { parseUTCDate, calcolaSaldoInizialeCassaConsuntivo } from './gasCoreEngine';
 
 interface CashFlowPdfOptions {
   transactions: Transaction[];
   currentYear: number;
   projects: Project[];
+  saldoInizialeCF: SaldoInizialeCashFlow;
   initialData: {
     accounts: BankAccount[];
     loans?: ExistingLoan[];
@@ -23,6 +24,7 @@ export const exportCashFlowProjectionPDF = ({
   transactions,
   currentYear,
   projects,
+  saldoInizialeCF,
   initialData,
   aiAnalysis
 }: CashFlowPdfOptions) => {
@@ -31,7 +33,10 @@ export const exportCashFlowProjectionPDF = ({
   const pdfH = pdf.internal.pageSize.getHeight();
 
   // --- CALCOLO DATI ---
-  const totalInitialBalance = initialData.accounts.reduce((sum, acc) => sum + acc.balance, 0);
+  // Saldo di partenza corretto per l'anno esportato (prima si usava sempre initialData.accounts,
+  // cioe' il saldo dell'anno base 2026, qualunque fosse currentYear — bug trovato in audit il
+  // 2026-09-14: vedi utils/gasCoreEngine.calcolaSaldoInizialeCassaConsuntivo).
+  const totalInitialBalance = calcolaSaldoInizialeCassaConsuntivo(saldoInizialeCF, transactions, currentYear);
   
   const getGrossAmount = (t: Transaction) => {
     if (typeof t.grossAmount === 'number') return t.grossAmount;

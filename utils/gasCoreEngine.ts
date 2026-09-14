@@ -1,4 +1,4 @@
-import { Transaction, CEData, SPSnapshot, BudgetData, RimanenzeAnno, Project, InitialBalanceBreakdown } from '../types';
+import { Transaction, CEData, SPSnapshot, BudgetData, RimanenzeAnno, Project, InitialBalanceBreakdown, SaldoInizialeCashFlow } from '../types';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 /**
@@ -29,6 +29,49 @@ export const getLocalYMD = (d?: Date): string => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+/**
+ * Saldo di cassa CONSUNTIVO a inizio anno per un dato anno target: se esiste un override
+ * esplicito per l'anno (contiPerAnno) lo usa, altrimenti riparte dal saldo manuale dell'anno
+ * base e accumula i flussi di cassa consuntivi reali (esclusi gli ammortamenti, non monetari)
+ * anno per anno fino a targetYear-1. Unica fonte di verità condivisa da schermo
+ * (CashFlowTimeline) ed export PDF (cashFlowPdfExport): prima il PDF ripartiva sempre dal
+ * saldo dell'anno base, indipendentemente dall'anno esportato (bug trovato in audit il
+ * 2026-09-14 — stesso meccanismo del "contava due volte la storia pre-2026" già corretto
+ * a schermo, mai applicato al PDF).
+ */
+export const calcolaSaldoInizialeCassaConsuntivo = (
+  saldoInizialeCF: SaldoInizialeCashFlow,
+  transactions: Transaction[],
+  targetYear: number
+): number => {
+  const annoBase = saldoInizialeCF.annoBase;
+
+  const contiAnno = saldoInizialeCF.contiPerAnno?.[String(targetYear)];
+  if (contiAnno && contiAnno.length > 0) {
+    return contiAnno.reduce((sum, acc) => sum + acc.balance, 0);
+  }
+
+  if (targetYear <= annoBase) {
+    return saldoInizialeCF.saldoManualeConsuntivo;
+  }
+
+  let saldo = saldoInizialeCF.saldoManualeConsuntivo;
+  for (let anno = annoBase; anno < targetYear; anno++) {
+    transactions.forEach(t => {
+      if (t.isForecast) return;
+      if (parseUTCDate(t.date).getUTCFullYear() !== anno) return;
+      const gross = typeof t.grossAmount === 'number' ? t.grossAmount : t.amount * (1 + (t.vatRate || 0) / 100);
+      if (t.type === 'INCOME') {
+        saldo += gross;
+      } else if (t.ceType !== 'ammortamento') {
+        // Gli ammortamenti sono costi non monetari: non movimentano cassa.
+        saldo -= gross;
+      }
+    });
+  }
+  return saldo;
 };
 
 // ─── AGGREGAZIONE MENSILE ────────────────────────────────────────
