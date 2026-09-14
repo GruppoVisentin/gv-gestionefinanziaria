@@ -101,7 +101,6 @@ const CEView: React.FC<CEViewProps> = ({
   const [modalita, setModalita] = useState<'cassa' | 'competenza'>('cassa');
   const [showHelp, setShowHelp] = useState(false);
   const [drawerKpi, setDrawerKpi] = useState<string | null>(null);
-  const [tipoRettifica, setTipoRettifica] = useState<'consuntivo' | 'proiezione'>('consuntivo');
 
   // Commesse ad acconto completate (saldate) per anno: nell'anno del saldo i loro incassi diventano ricavo.
   // Nel drawer "Spiega" servono DUE varianti, non una sola:
@@ -954,15 +953,22 @@ const CEView: React.FC<CEViewProps> = ({
   };
 
   // La tabella principale mostra UNA sola lente per volta (mai più verde+viola insieme):
-  // 'reale' per YTD Consuntivo e Mese per Mese, 'proiezione' per Proiezione Anno.
+  // 'reale' per YTD Consuntivo e Mese per Mese, 'proiezione' per Proiezione Anno, 'previsionale' per
+  // Previsionale (tabella unificata con le altre viste, stesso formato granulare + drill-down —
+  // richiesta esplicita 2026-09-14, prima aveva un riepilogo a parte più povero di dettaglio).
   // Nessun dato viene perso: per vedere l'altra lente basta cambiare tab, invece di scorrere
   // colonne doppie su ogni riga (richiesta esplicita 2026-09-11: leggibilità).
-  const mainTableLens: 'reale' | 'proiezione' = activeTab === 'projection' ? 'proiezione' : 'reale';
+  const mainTableLens: 'reale' | 'proiezione' | 'previsionale' =
+    activeTab === 'projection' ? 'proiezione' : activeTab === 'previsionale' ? 'previsionale' : 'reale';
   const colSpanSezione = activeTab === 'monthly' ? 15 : 3;
+  // Dati sorgente per le righe della tabella principale: previsionale usa cePrevisionale invece di
+  // ceData, tutto il resto (etichette, struttura, drill-down) resta identico.
+  const activeCeData = mainTableLens === 'previsionale' ? cePrevisionale : ceData;
+  const activeMetrics = mainTableLens === 'previsionale' ? metricsPrevisionale : metrics;
 
   const renderRow = (label: string, data: number[], type: 'auto' | 'manual' | 'calc' | 'kpi', field?: keyof CEData, projOverride?: number, customKpiId?: string) => {
     const sum = data.reduce((a, b) => a + b, 0);
-    const pct = metrics.fatturato > 0 ? sum / metrics.fatturato : 0;
+    const pct = activeMetrics.fatturato > 0 ? sum / activeMetrics.fatturato : 0;
     
     // Check if there are forecasts in the current year
     const hasForecasts = txAnno.some(tx => tx.isForecast);
@@ -1012,18 +1018,18 @@ const CEView: React.FC<CEViewProps> = ({
             )
           ))
         ) : null}
-        {mainTableLens === 'reale' ? (
-          <>
-            <CalcCell value={sum} isKPI={type === 'kpi'} />
-            <td className="p-1 text-right text-[10px] font-medium text-slate-500">
-              {formatPercent(pct)}
-            </td>
-          </>
-        ) : (
+        {mainTableLens === 'proiezione' ? (
           <>
             <ProjectionCell value={projection} />
             <td className="p-1 text-right text-[10px] font-medium text-violet-600 font-bold">
               {formatPercent(projectionPct)}
+            </td>
+          </>
+        ) : (
+          <>
+            <CalcCell value={sum} isKPI={type === 'kpi'} />
+            <td className="p-1 text-right text-[10px] font-medium text-slate-500">
+              {formatPercent(pct)}
             </td>
           </>
         )}
@@ -1268,18 +1274,25 @@ const CEView: React.FC<CEViewProps> = ({
         </div>
 
 
-      {(activeTab === 'ytd' || activeTab === 'monthly' || activeTab === 'projection') && (
+      {(activeTab === 'ytd' || activeTab === 'monthly' || activeTab === 'projection' || activeTab === 'previsionale') && (
       <>
-      {/* KPI Summary Cards */}
+      {(() => {
+        // Etichette condivise dalle 5 card KPI, derivate dalla lente attiva — evita di ripetere lo
+        // stesso branch a 3 vie 5 volte. Per 'proiezione' si leggono i campi metrics.proiezioneX
+        // (mix reale+previsionale); per 'reale' e 'previsionale' bastano i campi base di
+        // activeMetrics (= metrics o metricsPrevisionale), niente proiezione da mescolare.
+        const suffissoTitolo = mainTableLens === 'proiezione' ? ' (Proiezione)' : mainTableLens === 'previsionale' ? ' (Previsionale)' : ' YTD';
+        const suffissoSottotitolo = mainTableLens === 'proiezione' ? 'proiezione 12 mesi' : mainTableLens === 'previsionale' ? 'previsionale (piano)' : 'reale YTD';
+        return (
       <InfoTooltipWrapper className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Fatturato {mainTableLens === 'reale' ? 'YTD' : '(Proiezione)'}</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Fatturato{suffissoTitolo}</span>
                 <InfoTooltip
                   termId="fatturato"
-                  calculatedValues={`Fatturato YTD:\n- Consuntivo YTD: ${formatEuro(metrics.fatturato)}\n- Proiezione 12m: ${formatEuro(metrics.proiezioneFatturato)}`}
+                  calculatedValues={`Fatturato YTD:\n- Consuntivo YTD: ${formatEuro(metrics.fatturato)}\n- Proiezione 12m: ${formatEuro(metrics.proiezioneFatturato)}\n- Previsionale puro: ${formatEuro(metricsPrevisionale.fatturato)}`}
                 />
               </div>
               <button
@@ -1289,19 +1302,19 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            <div className="text-2xl font-black text-slate-900">{formatEuro(mainTableLens === 'reale' ? metrics.fatturato : metrics.proiezioneFatturato)}</div>
-            <div className="text-[10px] text-slate-500 mt-1">{mainTableLens === 'reale' ? 'reale YTD' : 'proiezione 12 mesi'}</div>
+            <div className="text-2xl font-black text-slate-900">{formatEuro(mainTableLens === 'proiezione' ? metrics.proiezioneFatturato : activeMetrics.fatturato)}</div>
+            <div className="text-[10px] text-slate-500 mt-1">{suffissoSottotitolo}</div>
           </div>
         </div>
- 
+
         <div className="p-5 rounded-3xl border shadow-sm bg-indigo-50 border-indigo-100 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Primo Margine {mainTableLens === 'proiezione' ? '(Proiezione)' : ''}</span>
+                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Primo Margine{suffissoTitolo}</span>
                 <InfoTooltip
                   termId="primo_margine"
-                  calculatedValues={`Primo Margine:\n- Consuntivo YTD: ${formatEuro(metrics.primoMargineTot)} (${formatPercent(metrics.primoMarginePercent)})\n- Proiezione 12m: ${formatEuro(metrics.proiezionePrimoMargine)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)})`}
+                  calculatedValues={`Primo Margine:\n- Consuntivo YTD: ${formatEuro(metrics.primoMargineTot)} (${formatPercent(metrics.primoMarginePercent)})\n- Proiezione 12m: ${formatEuro(metrics.proiezionePrimoMargine)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)})\n- Previsionale puro: ${formatEuro(metricsPrevisionale.primoMargineTot)} (${formatPercent(metricsPrevisionale.primoMarginePercent)})`}
                 />
               </div>
               <button
@@ -1311,28 +1324,28 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            {mainTableLens === 'reale' ? (
+            {mainTableLens === 'proiezione' ? (
               <>
-                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.primoMarginePercent)}</div>
-                <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.primoMargineTot)})</div>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">{suffissoSottotitolo} ({formatEuro(metrics.proiezionePrimoMargine)})</div>
               </>
             ) : (
               <>
-                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine / metrics.proiezioneFatturato : 0)}</div>
-                <div className="text-[10px] text-slate-500 mt-1">proiezione 12 mesi ({formatEuro(metrics.proiezionePrimoMargine)})</div>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(activeMetrics.primoMarginePercent)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">{suffissoSottotitolo} ({formatEuro(activeMetrics.primoMargineTot)})</div>
               </>
             )}
           </div>
         </div>
- 
+
         <div className="p-5 rounded-3xl border shadow-sm bg-emerald-50 border-emerald-100 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">EBITDA % {mainTableLens === 'proiezione' ? '(Proiezione)' : ''}</span>
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">EBITDA %{suffissoTitolo}</span>
                 <InfoTooltip
                   termId="ebitda"
-                  calculatedValues={`EBITDA %:\n- Consuntivo YTD: ${formatEuro(metrics.ebitdaTot)} (${formatPercent(metrics.ebitdaPercent)})\n- Proiezione 12m: ${formatEuro(metrics.proiezioneEbitda)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)})`}
+                  calculatedValues={`EBITDA %:\n- Consuntivo YTD: ${formatEuro(metrics.ebitdaTot)} (${formatPercent(metrics.ebitdaPercent)})\n- Proiezione 12m: ${formatEuro(metrics.proiezioneEbitda)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)})\n- Previsionale puro: ${formatEuro(metricsPrevisionale.ebitdaTot)} (${formatPercent(metricsPrevisionale.ebitdaPercent)})`}
                 />
               </div>
               <button
@@ -1342,28 +1355,28 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            {mainTableLens === 'reale' ? (
+            {mainTableLens === 'proiezione' ? (
               <>
-                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.ebitdaPercent)}</div>
-                <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.ebitdaTot)})</div>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">{suffissoSottotitolo} ({formatEuro(metrics.proiezioneEbitda)})</div>
               </>
             ) : (
               <>
-                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda / metrics.proiezioneFatturato : 0)}</div>
-                <div className="text-[10px] text-slate-500 mt-1">proiezione 12 mesi ({formatEuro(metrics.proiezioneEbitda)})</div>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(activeMetrics.ebitdaPercent)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">{suffissoSottotitolo} ({formatEuro(activeMetrics.ebitdaTot)})</div>
               </>
             )}
           </div>
         </div>
- 
+
         <div className="p-5 rounded-3xl border shadow-sm bg-amber-50 border-amber-100 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider">EBIT % {mainTableLens === 'proiezione' ? '(Proiezione)' : ''}</span>
+                <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider">EBIT %{suffissoTitolo}</span>
                 <InfoTooltip
                   termId="ebit"
-                  calculatedValues={`EBIT %:\n- Consuntivo YTD: ${formatEuro(metrics.ebitTot)} (${formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)})\n- Proiezione 12m: ${formatEuro(metrics.proiezioneEbit)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)})`}
+                  calculatedValues={`EBIT %:\n- Consuntivo YTD: ${formatEuro(metrics.ebitTot)} (${formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)})\n- Proiezione 12m: ${formatEuro(metrics.proiezioneEbit)} (${formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)})\n- Previsionale puro: ${formatEuro(metricsPrevisionale.ebitTot)} (${formatPercent(metricsPrevisionale.fatturato > 0 ? metricsPrevisionale.ebitTot / metricsPrevisionale.fatturato : 0)})`}
                 />
               </div>
               <button
@@ -1373,25 +1386,25 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            {mainTableLens === 'reale' ? (
+            {mainTableLens === 'proiezione' ? (
               <>
-                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}</div>
-                <div className="text-[10px] text-slate-500 mt-1">reale YTD ({formatEuro(metrics.ebitTot)})</div>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">{suffissoSottotitolo} ({formatEuro(metrics.proiezioneEbit)})</div>
               </>
             ) : (
               <>
-                <div className="text-2xl font-black text-slate-900">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)}</div>
-                <div className="text-[10px] text-slate-500 mt-1">proiezione 12 mesi ({formatEuro(metrics.proiezioneEbit)})</div>
+                <div className="text-2xl font-black text-slate-900">{formatPercent(activeMetrics.fatturato > 0 ? activeMetrics.ebitTot / activeMetrics.fatturato : 0)}</div>
+                <div className="text-[10px] text-slate-500 mt-1">{suffissoSottotitolo} ({formatEuro(activeMetrics.ebitTot)})</div>
               </>
             )}
           </div>
         </div>
- 
+
         <div className="bg-[#222222] p-5 rounded-3xl border border-slate-800 shadow-lg text-white flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Punto di Pareggio {mainTableLens === 'proiezione' ? '(Proiezione)' : ''}</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Punto di Pareggio{suffissoTitolo}</span>
                 <InfoTooltip
                   termId="break_even"
                   calculatedValues={`Punto di Pareggio:\n- Competenza YTD: ${formatEuro(metrics.breakEven)}\n- Cassa YTD: ${formatEuro(metrics.breakEvenCassa)}\n- Proiezione Competenza 12m: ${formatEuro(projBreakEven)}\n- Proiezione Cassa 12m: ${formatEuro(projBreakEvenCassa)}`}
@@ -1404,20 +1417,22 @@ const CEView: React.FC<CEViewProps> = ({
                 Spiega →
               </button>
             </div>
-            {mainTableLens === 'reale' ? (
+            {mainTableLens === 'proiezione' ? (
               <>
-                <div className="text-2xl font-black">{formatEuro(metrics.breakEven)}</div>
-                <div className="text-[10px] text-slate-400 mt-1">reale YTD (cassa: {formatEuro(metrics.breakEvenCassa)})</div>
+                <div className="text-2xl font-black">{formatEuro(projBreakEven)}</div>
+                <div className="text-[10px] text-slate-400 mt-1">{suffissoSottotitolo} (cassa: {formatEuro(projBreakEvenCassa)})</div>
               </>
             ) : (
               <>
-                <div className="text-2xl font-black">{formatEuro(projBreakEven)}</div>
-                <div className="text-[10px] text-slate-400 mt-1">proiezione 12 mesi (cassa: {formatEuro(projBreakEvenCassa)})</div>
+                <div className="text-2xl font-black">{formatEuro(activeMetrics.breakEven)}</div>
+                <div className="text-[10px] text-slate-400 mt-1">{suffissoSottotitolo} (cassa: {formatEuro(activeMetrics.breakEvenCassa)})</div>
               </>
             )}
           </div>
         </div>
       </InfoTooltipWrapper>
+        );
+      })()}
 
       {/* Main CE Table */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1429,15 +1444,20 @@ const CEView: React.FC<CEViewProps> = ({
                 {activeTab === 'monthly' && MONTHS.map(m => (
                   <th key={m} className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">{m}</th>
                 ))}
-                {mainTableLens === 'reale' ? (
-                  <>
-                    <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Totale YTD</th>
-                    <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% Fatt.</th>
-                  </>
-                ) : (
+                {mainTableLens === 'proiezione' ? (
                   <>
                     <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Proiezione 📈</th>
                     <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% Proi.</th>
+                  </>
+                ) : mainTableLens === 'previsionale' ? (
+                  <>
+                    <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Previsionale {selectedYear}</th>
+                    <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% su Ricavi</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Totale YTD</th>
+                    <th className="py-4 px-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">% Fatt.</th>
                   </>
                 )}
               </tr>
@@ -1445,40 +1465,40 @@ const CEView: React.FC<CEViewProps> = ({
             <tbody>
               {/* RICAVI */}
               <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">① Ricavi di Struttura</td></tr>
-              {renderRow('Ricavi Core (SAL/Commesse)', ceData.ricaviCore, 'auto', undefined, metrics.proiezioneRicaviCore)}
-              {renderRow('Vendite Immobiliari', ceData.ricaviImmobiliare, 'auto', undefined, metrics.proiezioneRicaviImmobiliare)}
-              {renderRow('Altri Ricavi (Affitti/Sviluppo)', ceData.ricaviAltro, 'auto', undefined, metrics.proiezioneRicaviAltro)}
+              {renderRow('Ricavi Core (SAL/Commesse)', activeCeData.ricaviCore, 'auto', undefined, metrics.proiezioneRicaviCore)}
+              {renderRow('Vendite Immobiliari', activeCeData.ricaviImmobiliare, 'auto', undefined, metrics.proiezioneRicaviImmobiliare)}
+              {renderRow('Altri Ricavi (Affitti/Sviluppo)', activeCeData.ricaviAltro, 'auto', undefined, metrics.proiezioneRicaviAltro)}
               <tr className="bg-slate-100 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALE RICAVI (A)</td>
                 {activeTab === 'monthly' && metrics.totRicavi.map((v, i) => <CalcCell key={i} value={v} />)}
-                {mainTableLens === 'reale' ? (
-                  <>
-                    <CalcCell value={metrics.fatturato} isKPI />
-                    <td className="p-1 text-right text-[10px]">100%</td>
-                  </>
-                ) : (
+                {mainTableLens === 'proiezione' ? (
                   <>
                     <ProjectionCell value={metrics.proiezioneFatturato} />
                     <td className="p-1 text-right text-[10px] font-bold text-violet-600">100%</td>
+                  </>
+                ) : (
+                  <>
+                    <CalcCell value={activeMetrics.fatturato} isKPI />
+                    <td className="p-1 text-right text-[10px]">100%</td>
                   </>
                 )}
               </tr>
 
               {/* COSTI VARIABILI */}
               <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">② Costi Variabili</td></tr>
-              {renderRow('Costi Variabili (Materiali/Subappalti)', ceData.costiVariabili, 'auto', undefined, metrics.proiezioneCostiVariabili)}
+              {renderRow('Costi Variabili (Materiali/Subappalti)', activeCeData.costiVariabili, 'auto', undefined, metrics.proiezioneCostiVariabili)}
               <tr className="bg-slate-50/30 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-50/30 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTALE COSTI VARIABILI (B)</td>
                 {activeTab === 'monthly' && metrics.totCostiVar.map((v, i) => <CalcCell key={i} value={v} />)}
-                {mainTableLens === 'reale' ? (
-                  <>
-                    <CalcCell value={metrics.totCostiVar.reduce((a,b)=>a+b,0)} isKPI />
-                    <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.totCostiVar.reduce((a,b)=>a+b,0)/metrics.fatturato : 0)}</td>
-                  </>
-                ) : (
+                {mainTableLens === 'proiezione' ? (
                   <>
                     <ProjectionCell value={metrics.proiezioneCostiVariabili} />
                     <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneCostiVariabili/metrics.proiezioneFatturato : 0)}</td>
+                  </>
+                ) : (
+                  <>
+                    <CalcCell value={activeMetrics.totCostiVar.reduce((a,b)=>a+b,0)} isKPI />
+                    <td className="p-1 text-right text-[10px]">{formatPercent(activeMetrics.fatturato > 0 ? activeMetrics.totCostiVar.reduce((a,b)=>a+b,0)/activeMetrics.fatturato : 0)}</td>
                   </>
                 )}
               </tr>
@@ -1486,53 +1506,53 @@ const CEView: React.FC<CEViewProps> = ({
               <tr className="bg-[#222222] text-white font-black">
                 <td className="py-4 px-4 text-sm sticky left-0 bg-[#222222] z-10">PRIMO MARGINE (A - B)</td>
                 {activeTab === 'monthly' && metrics.primoMargine.map((v, i) => <td key={i} className="text-right px-2 text-xs">{formatEuro(v)}</td>)}
-                {mainTableLens === 'reale' ? (
-                  <>
-                    <td className="text-right px-4 text-sm">{formatEuro(metrics.primoMargineTot)}</td>
-                    <td className="text-right px-2 text-xs">{formatPercent(metrics.primoMarginePercent)}</td>
-                  </>
-                ) : (
+                {mainTableLens === 'proiezione' ? (
                   <>
                     <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezionePrimoMargine)}</td>
                     <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezionePrimoMargine/metrics.proiezioneFatturato : 0)}</td>
+                  </>
+                ) : (
+                  <>
+                    <td className="text-right px-4 text-sm">{formatEuro(activeMetrics.primoMargineTot)}</td>
+                    <td className="text-right px-2 text-xs">{formatPercent(activeMetrics.primoMarginePercent)}</td>
                   </>
                 )}
               </tr>
 
               {/* COSTI FISSI */}
               <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">③ Costi Fissi di Struttura</td></tr>
-              {renderRow('Costi Studio (Personale/Amm.)', ceData.costiStudio, 'auto', undefined, metrics.proiezioneCostiStudio)}
-              {renderRow('Altri Costi Fissi (Sedi/Marketing)', ceData.costiFissi, 'auto', undefined, metrics.proiezioneCostiFissi)}
-              {renderRow('Ammortamenti (Manuale)', ceData.ammortamenti, 'manual', 'ammortamenti', metrics.proiezioneAmmortamenti)}
-              
+              {renderRow('Costi Studio (Personale/Amm.)', activeCeData.costiStudio, 'auto', undefined, metrics.proiezioneCostiStudio)}
+              {renderRow('Altri Costi Fissi (Sedi/Marketing)', activeCeData.costiFissi, 'auto', undefined, metrics.proiezioneCostiFissi)}
+              {renderRow('Ammortamenti (Manuale)', activeCeData.ammortamenti, 'manual', 'ammortamenti', metrics.proiezioneAmmortamenti)}
+
               <tr className="bg-[#222222] text-white font-black">
                 <td className="py-4 px-4 text-sm sticky left-0 bg-[#222222] z-10">EBITDA</td>
                 {activeTab === 'monthly' && metrics.ebitda.map((v, i) => <td key={i} className="text-right px-2 text-xs">{formatEuro(v)}</td>)}
-                {mainTableLens === 'reale' ? (
-                  <>
-                    <td className="text-right px-4 text-sm">{formatEuro(metrics.ebitdaTot)}</td>
-                    <td className="text-right px-2 text-xs">{formatPercent(metrics.ebitdaPercent)}</td>
-                  </>
-                ) : (
+                {mainTableLens === 'proiezione' ? (
                   <>
                     <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezioneEbitda)}</td>
                     <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbitda/metrics.proiezioneFatturato : 0)}</td>
                   </>
+                ) : (
+                  <>
+                    <td className="text-right px-4 text-sm">{formatEuro(activeMetrics.ebitdaTot)}</td>
+                    <td className="text-right px-2 text-xs">{formatPercent(activeMetrics.ebitdaPercent)}</td>
+                  </>
                 )}
               </tr>
 
-              {effettoRimanenze && modalita === 'cassa' && mainTableLens === 'reale' && (
+              {effettoRimanenze && mainTableLens !== 'proiezione' && (mainTableLens === 'previsionale' || modalita === 'cassa') && (
                 <tr className="bg-emerald-50/50 font-bold border-b border-emerald-100">
                   <td className="py-3 px-4 text-xs sticky left-0 bg-emerald-50/50 z-10 text-emerald-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                     <div className="flex flex-col">
-                      <span>EBITDA DI COMPETENZA (OIC)</span>
+                      <span>{mainTableLens === 'previsionale' ? 'EBITDA PREVISIONALE RETTIFICATO' : 'EBITDA DI COMPETENZA (OIC)'}</span>
                       <span className="text-[9px] font-normal text-emerald-600">Inclusa var. rimanenze: {formatEuro(effettoRimanenze.variazioneRimanenzeNetta)}</span>
                     </div>
                   </td>
                   {activeTab === 'monthly' && Array(12).fill(0).map((_, i) => <td key={i} className="px-2"></td>)}
-                  <td className="text-right px-4 text-sm text-emerald-700">{formatEuro(metrics.ebitdaTot + effettoRimanenze.variazioneRimanenzeNetta)}</td>
+                  <td className="text-right px-4 text-sm text-emerald-700">{formatEuro(activeMetrics.ebitdaTot + effettoRimanenze.variazioneRimanenzeNetta)}</td>
                   <td className="text-right px-2 text-xs text-emerald-600">
-                    {formatPercent(effettoRimanenze.fatturatoCompetenzaRettificato > 0 ? (metrics.ebitdaTot + effettoRimanenze.variazioneRimanenzeNetta) / effettoRimanenze.fatturatoCompetenzaRettificato : 0)}
+                    {formatPercent(effettoRimanenze.fatturatoCompetenzaRettificato > 0 ? (activeMetrics.ebitdaTot + effettoRimanenze.variazioneRimanenzeNetta) / effettoRimanenze.fatturatoCompetenzaRettificato : 0)}
                   </td>
                 </tr>
               )}
@@ -1544,18 +1564,18 @@ const CEView: React.FC<CEViewProps> = ({
                 {activeTab === 'monthly' && metrics.ebit.map((v, i) =>
                   <td key={i} className="text-right px-2 text-xs text-slate-300">{formatEuro(v)}</td>
                 )}
-                {mainTableLens === 'reale' ? (
-                  <>
-                    <td className="text-right px-4 text-sm text-slate-300">{formatEuro(metrics.ebitTot)}</td>
-                    <td className="text-right px-2 text-xs text-slate-400">
-                      {formatPercent(metrics.fatturato > 0 ? metrics.ebitTot / metrics.fatturato : 0)}
-                    </td>
-                  </>
-                ) : (
+                {mainTableLens === 'proiezione' ? (
                   <>
                     <ProjectionCell value={metrics.proiezioneEbit} />
                     <td className="p-1 text-right text-[10px] font-bold text-violet-600">
                       {formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbit / metrics.proiezioneFatturato : 0)}
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="text-right px-4 text-sm text-slate-300">{formatEuro(activeMetrics.ebitTot)}</td>
+                    <td className="text-right px-2 text-xs text-slate-400">
+                      {formatPercent(activeMetrics.fatturato > 0 ? activeMetrics.ebitTot / activeMetrics.fatturato : 0)}
                     </td>
                   </>
                 )}
@@ -1563,10 +1583,10 @@ const CEView: React.FC<CEViewProps> = ({
 
               {/* ONERI E IMPOSTE */}
               <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">④ Oneri, Proventi e Imposte</td></tr>
-              {renderRow('Oneri Finanziari', ceData.oneriFin, 'auto', undefined, metrics.proiezioneOneriFin)}
-              {renderRow('Proventi Finanziari', ceData.proventiFin, 'auto', undefined, metrics.proiezioneProventiFin)}
-              {renderRow('Risultato Straordinario', ceData.straordinario, 'auto', undefined, metrics.proiezioneStraordinario)}
-              
+              {renderRow('Oneri Finanziari', activeCeData.oneriFin, 'auto', undefined, metrics.proiezioneOneriFin)}
+              {renderRow('Proventi Finanziari', activeCeData.proventiFin, 'auto', undefined, metrics.proiezioneProventiFin)}
+              {renderRow('Risultato Straordinario', activeCeData.straordinario, 'auto', undefined, metrics.proiezioneStraordinario)}
+
               <tr className="bg-slate-100 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-100 z-10">
                   <div className="flex items-center justify-between">
@@ -1580,20 +1600,20 @@ const CEView: React.FC<CEViewProps> = ({
                   </div>
                 </td>
                 {activeTab === 'monthly' && metrics.ebt.map((v, i) => <CalcCell key={i} value={v} />)}
-                {mainTableLens === 'reale' ? (
-                  <>
-                    <CalcCell value={metrics.ebtTot} isKPI />
-                    <td className="p-1 text-right text-[10px]">{formatPercent(metrics.fatturato > 0 ? metrics.ebtTot/metrics.fatturato : 0)}</td>
-                  </>
-                ) : (
+                {mainTableLens === 'proiezione' ? (
                   <>
                     <ProjectionCell value={metrics.proiezioneEbt} />
                     <td className="p-1 text-right text-[10px] font-bold text-violet-600">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbt/metrics.proiezioneFatturato : 0)}</td>
                   </>
+                ) : (
+                  <>
+                    <CalcCell value={activeMetrics.ebtTot} isKPI />
+                    <td className="p-1 text-right text-[10px]">{formatPercent(activeMetrics.fatturato > 0 ? activeMetrics.ebtTot/activeMetrics.fatturato : 0)}</td>
+                  </>
                 )}
               </tr>
 
-              {renderRow('Imposte Stimate (Manuale)', ceData.imposte, 'manual', 'imposte', previsioneFiscale.totaleImposteStimate)}
+              {renderRow('Imposte Stimate (Manuale)', activeCeData.imposte, 'manual', 'imposte', previsioneFiscale.totaleImposteStimate)}
 
               <tr className="bg-slate-900 text-white font-black">
                 <td className="py-4 px-4 text-sm sticky left-0 bg-slate-900 z-10">
@@ -1608,72 +1628,27 @@ const CEView: React.FC<CEViewProps> = ({
                   </div>
                 </td>
                 {activeTab === 'monthly' && metrics.utileNetto.map((v, i) => <td key={i} className="text-right px-2 text-xs">{formatEuro(v)}</td>)}
-                {mainTableLens === 'reale' ? (
-                  <>
-                    <td className="text-right px-4 text-sm">{formatEuro(metrics.utileNettoTot)}</td>
-                    <td className="text-right px-2 text-xs">{formatPercent(metrics.utileNettoPercent)}</td>
-                  </>
-                ) : (
+                {mainTableLens === 'proiezione' ? (
                   <>
                     <td className="text-right px-4 text-sm italic text-slate-400">📈 {formatEuro(metrics.proiezioneUtile)}</td>
                     <td className="text-right px-2 text-xs text-violet-300">{formatPercent(metrics.proiezioneFatturato > 0 ? metrics.proiezioneUtile/metrics.proiezioneFatturato : 0)}</td>
+                  </>
+                ) : (
+                  <>
+                    <td className="text-right px-4 text-sm">{formatEuro(activeMetrics.utileNettoTot)}</td>
+                    <td className="text-right px-2 text-xs">{formatPercent(activeMetrics.utileNettoPercent)}</td>
                   </>
                 )}
               </tr>
 
               {/* SOCI */}
               <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-900 uppercase">⑤ Compenso Imprenditore</td></tr>
-              {renderRow('Prelievo Utile Soci', ceData.compensoImprenditore, 'auto', undefined, metrics.proiezioneCompensoImprenditore)}
+              {renderRow('Prelievo Utile Soci', activeCeData.compensoImprenditore, 'auto', undefined, metrics.proiezioneCompensoImprenditore)}
             </tbody>
           </table>
         </div>
       </div>
       </>
-      )}
-
-      {activeTab === 'previsionale' && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider sticky left-0 bg-slate-50 z-20">
-                    Voce di Conto
-                  </th>
-                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">
-                    Previsionale {selectedYear} (12 mesi)
-                  </th>
-                  <th className="py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">
-                    % su Ricavi
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {[
-                  { label: 'Ricavi Totali', val: metricsPrevisionale.fatturato, isBold: true },
-                  { label: 'Costi Variabili', val: metricsPrevisionale.totCostiVar.reduce((a: number, b: number) => a + b, 0) },
-                  { label: 'Primo Margine', val: metricsPrevisionale.primoMargineTot, isBold: true, color: 'text-slate-900' },
-                  { label: 'Costi di Struttura', val: metricsPrevisionale.costiFissiTot },
-                  { label: 'EBITDA', val: metricsPrevisionale.ebitdaTot, isBold: true, color: 'text-slate-900' },
-                  { label: 'EBIT', val: metricsPrevisionale.ebitTot },
-                  { label: 'Utile Netto', val: metricsPrevisionale.utileNettoTot, isBold: true, color: 'text-slate-900' },
-                ].map(row => (
-                  <tr key={row.label} className="hover:bg-slate-50/50 transition-colors">
-                    <td className={`py-4 px-4 text-xs ${row.isBold ? 'font-black uppercase' : 'font-medium text-slate-600'}`}>
-                      {row.label}
-                    </td>
-                    <td className={`py-4 px-4 text-right text-sm font-black font-mono ${row.color || 'text-slate-900'}`}>
-                      {formatEuro(row.val)}
-                    </td>
-                    <td className="py-4 px-4 text-right text-xs font-mono text-slate-500">
-                      {formatPercent(metricsPrevisionale.fatturato > 0 ? row.val / metricsPrevisionale.fatturato : 0)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
       )}
 
       {activeTab === 'scostamenti' && (
@@ -2089,20 +2064,37 @@ const CEView: React.FC<CEViewProps> = ({
 
         {/* RISULTATI RETTIFICATI — visibili solo se rimanenze inserite */}
         {effettoRimanenze && (() => {
-          // Sempre su base CASSA (rawMetricsCassa) così il ponte Cassa → Competenza è identico nelle due viste
-          // e non si crea doppio conteggio quando la modalità attiva è "competenza".
-          const cassaRicavi = tipoRettifica === 'consuntivo' ? rawMetricsCassa.fatturato : rawMetricsCassa.proiezioneFatturato;
-          const cassaCostiVar = tipoRettifica === 'consuntivo' ? rawMetricsCassa.totCostiVar.reduce((a,b)=>a+b,0) : rawMetricsCassa.proiezioneCostiVariabili;
-          const cassaUtile = tipoRettifica === 'consuntivo'
-            ? rawMetricsCassa.utileNettoTot
-            : (rawMetricsCassa.proiezioneEbt + rawMetricsCassa.proiezioneStraordinario - previsioneFiscale.totaleImposteStimate);
+          // La base del ponte Cassa/Piano → Rettifica segue automaticamente il tab del CE attivo,
+          // invece di un toggle separato: così la tabella rimanenze mostra sempre l'utile legato a
+          // QUELLA vista (richiesta esplicita 2026-09-14). 'Mese per Mese' e 'Scostamenti' non hanno
+          // una lente propria qui: usano il consuntivo come le altre sezioni rimanenze.
+          const rettificaLens: 'consuntivo' | 'proiezione' | 'previsionale' =
+            activeTab === 'projection' ? 'proiezione' : activeTab === 'previsionale' ? 'previsionale' : 'consuntivo';
+
+          const cassaRicavi = rettificaLens === 'proiezione' ? rawMetricsCassa.proiezioneFatturato
+            : rettificaLens === 'previsionale' ? metricsPrevisionale.fatturato
+            : rawMetricsCassa.fatturato;
+          const cassaCostiVar = rettificaLens === 'proiezione' ? rawMetricsCassa.proiezioneCostiVariabili
+            : rettificaLens === 'previsionale' ? metricsPrevisionale.totCostiVar.reduce((a,b)=>a+b,0)
+            : rawMetricsCassa.totCostiVar.reduce((a,b)=>a+b,0);
+          const cassaUtile = rettificaLens === 'proiezione'
+            ? (rawMetricsCassa.proiezioneEbt + rawMetricsCassa.proiezioneStraordinario - previsioneFiscale.totaleImposteStimate)
+            : rettificaLens === 'previsionale'
+            ? metricsPrevisionale.utileNettoTot
+            : rawMetricsCassa.utileNettoTot;
 
           const rettificatoRicavi = cassaRicavi + effettoRimanenze.deltaWip;
           const rettificatoCostiVar = cassaCostiVar - effettoRimanenze.deltaMateriali - effettoRimanenze.deltaTerreni;
           const rettificatoUtile = cassaUtile + effettoRimanenze.variazioneRimanenzeNetta;
-          const baseIRES = Math.max(0, tipoRettifica === 'consuntivo'
-            ? (rawMetricsCassa.ebtTot + rawMetricsCassa.straordinario + effettoRimanenze.variazioneRimanenzeNetta)
-            : (rawMetricsCassa.proiezioneEbt + rawMetricsCassa.proiezioneStraordinario + effettoRimanenze.variazioneRimanenzeNetta));
+          const baseIRES = Math.max(0, rettificaLens === 'proiezione'
+            ? (rawMetricsCassa.proiezioneEbt + rawMetricsCassa.proiezioneStraordinario + effettoRimanenze.variazioneRimanenzeNetta)
+            : rettificaLens === 'previsionale'
+            ? (metricsPrevisionale.ebtTot + metricsPrevisionale.straordinario + effettoRimanenze.variazioneRimanenzeNetta)
+            : (rawMetricsCassa.ebtTot + rawMetricsCassa.straordinario + effettoRimanenze.variazioneRimanenzeNetta));
+
+          const etichettaBase = rettificaLens === 'proiezione' ? 'Proiezione a fine Anno'
+            : rettificaLens === 'previsionale' ? 'Previsionale (Piano)'
+            : 'Consuntivo YTD';
 
           return (
             <>
@@ -2111,22 +2103,11 @@ const CEView: React.FC<CEViewProps> = ({
               <div className="p-6 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest">
-                    CE Rettificato — Confronto Cassa vs Competenza con Rimanenze
+                    CE Rettificato — {etichettaBase} con Rimanenze
                   </h4>
-                  <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold self-start sm:self-auto">
-                    <button
-                      onClick={() => setTipoRettifica('consuntivo')}
-                      className={`px-3 py-1 rounded-md transition-all ${tipoRettifica === 'consuntivo' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-                    >
-                      Consuntivo YTD
-                    </button>
-                    <button
-                      onClick={() => setTipoRettifica('proiezione')}
-                      className={`px-3 py-1 rounded-md transition-all ${tipoRettifica === 'proiezione' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-                    >
-                      Proiezione a fine Anno
-                    </button>
-                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-lg self-start sm:self-auto">
+                    Segue il tab CE selezionato sopra
+                  </span>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -2135,7 +2116,7 @@ const CEView: React.FC<CEViewProps> = ({
                       <tr className="border-b border-slate-100">
                         <th className="pb-3 text-[10px] font-black text-indigo-500 uppercase tracking-wider w-[220px]">Voce</th>
                         <th className="pb-3 text-right text-[10px] font-black text-sky-500 uppercase tracking-wider">
-                          {tipoRettifica === 'consuntivo' ? 'Per Cassa (YTD)' : 'Per Cassa (Proiezione)'}
+                          {rettificaLens === 'proiezione' ? 'Per Cassa (Proiezione)' : rettificaLens === 'previsionale' ? 'Previsionale (Piano)' : 'Per Cassa (YTD)'}
                         </th>
                         <th className="pb-3 text-right text-[10px] font-black text-amber-500 uppercase tracking-wider">Rettifica Rimanenze</th>
                         <th className="pb-3 text-right text-[10px] font-black text-emerald-500 uppercase tracking-wider">Valore Rettificato</th>
