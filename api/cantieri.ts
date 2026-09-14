@@ -21,6 +21,12 @@ async function ensureSchema() {
 
 function toDateStr(value: any): string | null {
   if (!value) return null;
+  // The driver returns DATE columns as JS Date objects; String(date) gives
+  // toString() ("Sun Jan 15 2024 ...") not an ISO string, so slicing that
+  // silently drops the year. Format explicitly instead.
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
   return String(value).slice(0, 10);
 }
 
