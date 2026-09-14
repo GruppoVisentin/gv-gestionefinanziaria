@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, CEData, AppView, RimanenzeData, InitialBalanceBreakdown, Project } from '../types';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, parseUTCDate } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, parseUTCDate, getDynamicCEType, computeCommesseCompletate } from '../utils/gasCoreEngine';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 const getCeType = (tx: Transaction): string => {
@@ -375,7 +375,13 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
   }, [activeWorkersList, transactions, anno, meseOrario, oreOperaiStorico]);
 
   // Calcoli base
-  const rates = useMemo(() => calculateOverheadRates(transactions, anno, initialData), [transactions, anno, initialData]);
+  const rates = useMemo(() => calculateOverheadRates(transactions, anno, initialData, projects), [transactions, anno, initialData, projects]);
+
+  // Riclassificazione dinamica per compensoSociPrev/metricsPrev qui sotto — stesso motivo e stesso
+  // meccanismo di calculateOverheadRates (vedi commento li'): tx.ceType statico non riflette un
+  // metodoPagamento cambiato dopo l'import ne' un completamento OIC23 avvenuto dopo. Qui serve solo
+  // il set previsionale (includeForecast=true): entrambi i blocchi sotto filtrano solo tx.isForecast.
+  const commesseCompletatePrevisionaleAnalisi = useMemo(() => computeCommesseCompletate(transactions, projects, true), [transactions, projects]);
   
   // Overhead Rate effettivamente scelto per il preventivo
   const ratesForPreventivo = useMemo(() => {
@@ -401,7 +407,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     return (transactions || [])
       .filter(tx => {
         const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
-        return getCeType(tx) === 'costo_studio' && 
+        return getDynamicCEType(tx, projects, commesseCompletatePrevisionaleAnalisi, anno) === 'costo_studio' &&
         tx.isForecast &&
         !isLinked &&
         parseUTCDate(tx.date).getUTCFullYear() === anno &&
@@ -409,18 +415,18 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
          tx.category?.toLowerCase().includes('soci'))
       })
       .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-  }, [transactions, anno]);
+  }, [transactions, anno, projects, commesseCompletatePrevisionaleAnalisi]);
 
   const metricsPrev = useMemo(() => {
     const txPrev = (transactions || []).filter(tx => {
       const isLinked = transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
       const d = parseUTCDate(tx.date);
-      return d.getUTCFullYear() === anno && getCeType(tx) && tx.isForecast && !isLinked;
+      return d.getUTCFullYear() === anno && tx.isForecast && !isLinked;
     });
 
     const sumByType = (types: string[]) =>
       txPrev
-        .filter(tx => types.includes(getCeType(tx)))
+        .filter(tx => types.includes(getDynamicCEType(tx, projects, commesseCompletatePrevisionaleAnalisi, anno)))
         .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
     const fatturato = sumByType(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare']);
@@ -431,7 +437,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     const oneriFin = sumByType(['onere_finanziario']);
     const proventiFin = sumByType(['provento_finanziario']);
     const straordinario = txPrev
-      .filter(tx => getCeType(tx) === 'straordinario')
+      .filter(tx => getDynamicCEType(tx, projects, commesseCompletatePrevisionaleAnalisi, anno) === 'straordinario')
       .reduce((sum, tx) => sum + (tx.type === 'INCOME' ? Math.abs(tx.amount) : -Math.abs(tx.amount)), 0);
 
     const primoMargine = fatturato - costiVariabili;
