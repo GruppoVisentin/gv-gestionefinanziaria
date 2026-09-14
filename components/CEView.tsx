@@ -749,17 +749,15 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'EBIT', valore: ebit2, isPositivo: true, percentualeSu: fat },
           { label: 'Oneri Finanziari', valore: onFin, isPositivo: false, indent: true },
           { label: 'Proventi Finanziari', valore: prFin, isPositivo: true, indent: true },
-          { label: 'Risultato Straordinario', valore: str, isPositivo: str > 0, indent: true },
           { label: 'EBT', valore: ebt, isPositivo: ebt > 0, isRisultato: true, percentualeSu: fat },
         ],
-        ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio', 'ammortamento', 'onere_finanziario', 'provento_finanziario', 'straordinario'],
+        ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio', 'ammortamento', 'onere_finanziario', 'provento_finanziario'],
         proiezioneValore: metrics.proiezioneEbt,
         proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbt / metrics.proiezioneFatturato : 0,
         proiezioneSteps: [
           { label: 'EBIT [Proiezione]', valore: metrics.proiezioneEbit, isPositivo: true, percentualeSu: metrics.proiezioneFatturato },
           { label: 'Oneri Finanziari [Proiezione]', valore: metrics.proiezioneOneriFin, isPositivo: false, indent: true },
           { label: 'Proventi Finanziari [Proiezione]', valore: metrics.proiezioneProventiFin, isPositivo: true, indent: true },
-          { label: 'Risultato Straordinario [Proiezione]', valore: metrics.proiezioneStraordinario, isPositivo: metrics.proiezioneStraordinario > 0, indent: true },
           { label: 'EBT [Proiezione]', valore: metrics.proiezioneEbt, isPositivo: metrics.proiezioneEbt > 0, isRisultato: true, percentualeSu: metrics.proiezioneFatturato },
         ],
         soloPrevisionaleValore: prevEbt,
@@ -768,7 +766,6 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'EBIT [Previsionale]', valore: prevEbit, isPositivo: true, percentualeSu: prevFat },
           { label: 'Oneri Finanziari [Previsionale]', valore: prevOnFin, isPositivo: false, indent: true },
           { label: 'Proventi Finanziari [Previsionale]', valore: prevPrFin, isPositivo: true, indent: true },
-          { label: 'Risultato Straordinario [Previsionale]', valore: prevStr, isPositivo: prevStr > 0, indent: true },
           { label: 'EBT [Previsionale]', valore: prevEbt, isPositivo: prevEbt > 0, isRisultato: true, percentualeSu: prevFat }
         ]
       },
@@ -776,8 +773,13 @@ const CEView: React.FC<CEViewProps> = ({
         nome: 'Utile Netto',
         valore: utile,
         percentuale: fat > 0 ? utile / fat : 0,
+        // Il Risultato Straordinario NON entra nell'EBT (vedi drawer 'ebt' sopra): entra qui, tra
+        // EBT e Imposte, prima dell'Utile Netto - corretto in audit il 2026-09-14 (prima la riga
+        // era mostrata come se confluisse nell'EBT, ma esclusa dal suo calcolo, e qui mancava del
+        // tutto: il totale mostrato non tornava con le righe sopra in nessuna delle due tabelle).
         steps: [
           { label: 'EBT', valore: ebt, isPositivo: true, percentualeSu: fat },
+          { label: 'Risultato Straordinario', valore: str, isPositivo: str > 0, indent: true },
           { label: 'Imposte stimate (IRES + IRAP)', valore: imp, isPositivo: false, indent: true },
           { label: 'Utile Netto', valore: utile, isPositivo: utile > 0, isRisultato: true, percentualeSu: fat },
         ],
@@ -795,6 +797,7 @@ const CEView: React.FC<CEViewProps> = ({
         soloPrevisionalePercentuale: prevFat > 0 ? prevUtile / prevFat : 0,
         soloPrevisionaleSteps: [
           { label: 'EBT [Previsionale]', valore: prevEbt, isPositivo: true, percentualeSu: prevFat },
+          { label: 'Risultato Straordinario [Previsionale]', valore: prevStr, isPositivo: prevStr > 0, indent: true },
           { label: 'Imposte stimate [Previsionale]', valore: prevTaxes, isPositivo: false, indent: true },
           { label: 'Utile Netto [Previsionale]', valore: prevUtile, isPositivo: prevUtile > 0, isRisultato: true, percentualeSu: prevFat }
         ]
@@ -1827,7 +1830,6 @@ const CEView: React.FC<CEViewProps> = ({
               <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">④ Oneri, Proventi e Imposte</td></tr>
               {renderRow('Oneri Finanziari', activeCeData.oneriFin, 'auto', undefined, metrics.proiezioneOneriFin)}
               {renderRow('Proventi Finanziari', activeCeData.proventiFin, 'auto', undefined, metrics.proiezioneProventiFin)}
-              {renderRow('Risultato Straordinario', activeCeData.straordinario, 'auto', undefined, metrics.proiezioneStraordinario)}
 
               <tr className="bg-slate-100 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-100 z-10">
@@ -1855,6 +1857,10 @@ const CEView: React.FC<CEViewProps> = ({
                 )}
               </tr>
 
+              {/* Il Risultato Straordinario non entra nell'EBT (vedi drawer 'ebt'): sta qui, dopo l'EBT e
+                  prima delle Imposte, coerente col ponte a Utile Netto (bug di posizionamento trovato in
+                  audit il 2026-09-14 - prima era disegnato sopra il totale EBT, come se vi confluisse). */}
+              {renderRow('Risultato Straordinario', activeCeData.straordinario, 'auto', undefined, metrics.proiezioneStraordinario)}
               {renderRow('Imposte Stimate (Manuale)', activeCeData.imposte, 'manual', 'imposte', previsioneFiscale.totaleImposteStimate)}
 
               <tr className="bg-slate-900 text-white font-black">
