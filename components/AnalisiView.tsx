@@ -461,6 +461,80 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     };
   }, [transactions, anno]);
 
+  // Versione "pura" (tutto l'anno, senza esclusione dei previsionali gia' realizzati) per la card
+  // "Previsionale" dei 7+1 Numeri Sacri: rappresenta il piano/budget impostato a inizio anno, stessa
+  // filosofia di rates.*Prev in calculateOverheadRates (nessun filtro isLinked). Diversa da
+  // metricsPrev/compensoSociPrev sopra, che invece escludono i previsionali gia' realizzati (servono solo
+  // al blend di Proiezione, non a mostrare "il piano"). Richiesto dall'utente 2026-09-14: 3 card distinte
+  // per numero sacro — YTD (bianca) / Previsionale (scura) / Proiezione (nuova, colore diverso).
+  const compensoSociPrevPuro = useMemo(() => {
+    return (transactions || [])
+      .filter(tx =>
+        getDynamicCEType(tx, projects, commesseCompletatePrevisionaleAnalisi, anno) === 'costo_studio' &&
+        tx.isForecast &&
+        parseUTCDate(tx.date).getUTCFullYear() === anno &&
+        (tx.category?.toLowerCase().includes('compenso amministratori') ||
+         tx.category?.toLowerCase().includes('soci'))
+      )
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  }, [transactions, anno, projects, commesseCompletatePrevisionaleAnalisi]);
+
+  const metricsPrevPuro = useMemo(() => {
+    const txPrev = (transactions || []).filter(tx => {
+      const d = parseUTCDate(tx.date);
+      return d.getUTCFullYear() === anno && tx.isForecast;
+    });
+
+    const sumByType = (types: string[]) =>
+      txPrev
+        .filter(tx => types.includes(getDynamicCEType(tx, projects, commesseCompletatePrevisionaleAnalisi, anno)))
+        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+
+    const fatturato = sumByType(['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare']);
+    const costiVariabili = sumByType(['costo_variabile']);
+    const costiFissi = sumByType(['costo_fisso']);
+    const costiStudio = sumByType(['costo_studio']);
+    const ammortamenti = sumByType(['ammortamento']);
+    const oneriFin = sumByType(['onere_finanziario']);
+    const proventiFin = sumByType(['provento_finanziario']);
+    const straordinario = txPrev
+      .filter(tx => getDynamicCEType(tx, projects, commesseCompletatePrevisionaleAnalisi, anno) === 'straordinario')
+      .reduce((sum, tx) => sum + (tx.type === 'INCOME' ? Math.abs(tx.amount) : -Math.abs(tx.amount)), 0);
+
+    const primoMargine = fatturato - costiVariabili;
+    const primoMarginePercent = fatturato > 0 ? primoMargine / fatturato : 0;
+
+    const ebitda = primoMargine - (costiFissi + costiStudio);
+    const ebitdaPercent = fatturato > 0 ? ebitda / fatturato : 0;
+
+    const ebit = ebitda - ammortamenti;
+    const ebt = ebit - oneriFin + proventiFin;
+
+    const imposte = sumByType(['imposta_ce']);
+    const utileNetto = ebt + straordinario - imposte;
+    const utileNettoPercent = fatturato > 0 ? utileNetto / fatturato : 0;
+
+    const pctCostiVar = fatturato > 0 ? costiVariabili / fatturato : 0;
+    const breakEven = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + ammortamenti) / (1 - pctCostiVar) : 0;
+
+    const costiCapitaleRate = txPrev
+      .filter(tx => getCeType(tx) === 'capex' && tx.category?.includes('[FINANZA] Quota Capitale Rate Finanziamenti'))
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+    const breakEvenCassa = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + costiCapitaleRate) / (1 - pctCostiVar) : 0;
+
+    return {
+      fatturato,
+      primoMargine,
+      primoMarginePercent,
+      ebitda,
+      ebitdaPercent,
+      utileNetto,
+      utileNettoPercent,
+      breakEven,
+      breakEvenCassa
+    };
+  }, [transactions, anno, projects, commesseCompletatePrevisionaleAnalisi]);
+
   const rimanenzeAnno = rimanenze?.[anno.toString()];
 
   const previsioneFiscale = useMemo(() =>
@@ -1672,30 +1746,33 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
           <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
               {[
-                { 
-                  id: 1, 
-                  label: 'Fatturato YTD', 
+                {
+                  id: 1,
+                  label: 'Fatturato',
                   termId: 'fatturato',
-                  value: formatEuro(metrics.fatturato), 
-                  prevValue: formatEuro(metrics.proiezioneFatturato),
+                  value: formatEuro(metrics.fatturato),
+                  prevValue: formatEuro(metricsPrevPuro.fatturato),
+                  projValue: formatEuro(metrics.proiezioneFatturato),
                   desc: 'Ricavi core realizzati',
-                  status: 'blue', 
+                  status: 'blue',
                   icon: BarChart2,
                   proj: formatEuro(metrics.proiezioneFatturato),
-                  calculatedValues: `Fatturato YTD:\n- Consuntivo YTD: ${formatEuro(metrics.fatturato)} (su ${rates.mesiTrascorsi} mesi)\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneFatturato)}`
+                  calculatedValues: `Fatturato:\n- Consuntivo YTD: ${formatEuro(metrics.fatturato)} (su ${rates.mesiTrascorsi} mesi)\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.fatturato)}\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneFatturato)}`
                 },
-                { 
-                  id: 2, 
-                  label: 'Primo Margine %', 
+                {
+                  id: 2,
+                  label: 'Primo Margine %',
                   termId: 'primo_margine',
-                  value: formatPercent(metrics.primoMarginePercent), 
-                  prevValue: formatPercent(proiezionePrimoMarginePercent),
-                  prevValRaw: proiezionePrimoMarginePercent,
+                  value: formatPercent(metrics.primoMarginePercent),
+                  prevValue: formatPercent(metricsPrevPuro.primoMarginePercent),
+                  prevValRaw: metricsPrevPuro.primoMarginePercent,
+                  projValue: formatPercent(proiezionePrimoMarginePercent),
+                  projValRaw: proiezionePrimoMarginePercent,
                   desc: 'Margine dopo costi diretti',
-                  status: 'emerald', 
+                  status: 'emerald',
                   icon: Target,
                   proj: formatPercent(metrics.primoMarginePercent),
-                  calculatedValues: `Primo Margine:\n- Consuntivo YTD: ${formatEuro(metrics.primoMargineTot)} (${formatPercent(metrics.primoMarginePercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneFatturato - metrics.proiezioneCostiVariabili)} (${formatPercent(proiezionePrimoMarginePercent)})`,
+                  calculatedValues: `Primo Margine:\n- Consuntivo YTD: ${formatEuro(metrics.primoMargineTot)} (${formatPercent(metrics.primoMarginePercent)})\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.primoMargine)} (${formatPercent(metricsPrevPuro.primoMarginePercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneFatturato - metrics.proiezioneCostiVariabili)} (${formatPercent(proiezionePrimoMarginePercent)})`,
                   soglie: {
                     valore: metrics.primoMarginePercent,
                     tipo: 'piu_alto_meglio',
@@ -1707,6 +1784,16 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                     ]
                   },
                   prevSoglie: {
+                    valore: metricsPrevPuro.primoMarginePercent,
+                    tipo: 'piu_alto_meglio',
+                    fasce: [
+                      { min: 0.15, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.10, max: 0.15, label: 'Buono', colore: 'buono' },
+                      { min: 0.05, max: 0.10, label: 'Attenzione', colore: 'attenzione' },
+                      { max: 0.05, label: 'Critico', colore: 'critico' },
+                    ]
+                  },
+                  projSoglie: {
                     valore: proiezionePrimoMarginePercent,
                     tipo: 'piu_alto_meglio',
                     fasce: [
@@ -1717,18 +1804,20 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                     ]
                   }
                 },
-                { 
-                  id: 3, 
-                  label: 'EBITDA %', 
+                {
+                  id: 3,
+                  label: 'EBITDA %',
                   termId: 'ebitda',
-                  value: formatPercent(metrics.ebitdaPercent), 
-                  prevValue: formatPercent(proiezioneEbitdaPercent),
-                  prevValRaw: proiezioneEbitdaPercent,
+                  value: formatPercent(metrics.ebitdaPercent),
+                  prevValue: formatPercent(metricsPrevPuro.ebitdaPercent),
+                  prevValRaw: metricsPrevPuro.ebitdaPercent,
+                  projValue: formatPercent(proiezioneEbitdaPercent),
+                  projValRaw: proiezioneEbitdaPercent,
                   desc: 'Margine operativo lordo',
-                  status: 'indigo', 
+                  status: 'indigo',
                   icon: TrendingUp,
                   proj: formatPercent(metrics.ebitdaPercent),
-                  calculatedValues: `EBITDA:\n- Consuntivo YTD: ${formatEuro(metrics.ebitdaTot)} (${formatPercent(metrics.ebitdaPercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneEbitda)} (${formatPercent(proiezioneEbitdaPercent)})`,
+                  calculatedValues: `EBITDA:\n- Consuntivo YTD: ${formatEuro(metrics.ebitdaTot)} (${formatPercent(metrics.ebitdaPercent)})\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.ebitda)} (${formatPercent(metricsPrevPuro.ebitdaPercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneEbitda)} (${formatPercent(proiezioneEbitdaPercent)})`,
                   soglie: {
                     valore: metrics.ebitdaPercent,
                     tipo: 'piu_alto_meglio',
@@ -1740,6 +1829,16 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                     ]
                   },
                   prevSoglie: {
+                    valore: metricsPrevPuro.ebitdaPercent,
+                    tipo: 'piu_alto_meglio',
+                    fasce: [
+                      { min: 0.10, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.07, max: 0.10, label: 'Buono', colore: 'buono' },
+                      { min: 0.04, max: 0.07, label: 'Attenzione', colore: 'attenzione' },
+                      { max: 0.04, label: 'Critico', colore: 'critico' },
+                    ]
+                  },
+                  projSoglie: {
                     valore: proiezioneEbitdaPercent,
                     tipo: 'piu_alto_meglio',
                     fasce: [
@@ -1750,18 +1849,20 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                     ]
                   }
                 },
-                { 
-                  id: 4, 
-                  label: 'Utile Netto %', 
+                {
+                  id: 4,
+                  label: 'Utile Netto %',
                   termId: 'utile_netto',
-                  value: formatPercent(metrics.utileNettoPercent), 
-                  prevValue: formatPercent(proiezioneUtileNettoPercent),
-                  prevValRaw: proiezioneUtileNettoPercent,
+                  value: formatPercent(metrics.utileNettoPercent),
+                  prevValue: formatPercent(metricsPrevPuro.utileNettoPercent),
+                  prevValRaw: metricsPrevPuro.utileNettoPercent,
+                  projValue: formatPercent(proiezioneUtileNettoPercent),
+                  projValRaw: proiezioneUtileNettoPercent,
                   desc: 'Utile dopo tasse e ammortamenti',
-                  status: 'violet', 
+                  status: 'violet',
                   icon: Zap,
                   proj: formatPercent(metrics.utileNettoPercent),
-                  calculatedValues: `Utile Netto:\n- Consuntivo YTD: ${formatEuro(metrics.utileNettoTot)} (${formatPercent(metrics.utileNettoPercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneUtile)} (${formatPercent(proiezioneUtileNettoPercent)})`,
+                  calculatedValues: `Utile Netto:\n- Consuntivo YTD: ${formatEuro(metrics.utileNettoTot)} (${formatPercent(metrics.utileNettoPercent)})\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.utileNetto)} (${formatPercent(metricsPrevPuro.utileNettoPercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneUtile)} (${formatPercent(proiezioneUtileNettoPercent)})`,
                   soglie: {
                     valore: metrics.utileNettoPercent,
                     tipo: 'piu_alto_meglio',
@@ -1773,6 +1874,16 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                     ]
                   },
                   prevSoglie: {
+                    valore: metricsPrevPuro.utileNettoPercent,
+                    tipo: 'piu_alto_meglio',
+                    fasce: [
+                      { min: 0.06, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.04, max: 0.06, label: 'Buono', colore: 'buono' },
+                      { min: 0.02, max: 0.04, label: 'Attenzione', colore: 'attenzione' },
+                      { max: 0.02, label: 'Critico', colore: 'critico' },
+                    ]
+                  },
+                  projSoglie: {
                     valore: proiezioneUtileNettoPercent,
                     tipo: 'piu_alto_meglio',
                     fasce: [
@@ -1783,20 +1894,22 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                     ]
                   }
                 },
-                { 
-                  id: 5, 
-                  label: 'Punto di Pareggio', 
+                {
+                  id: 5,
+                  label: 'Punto di Pareggio',
                   termId: 'break_even',
-                  value: formatEuro(metrics.breakEven), 
-                  prevValue: formatEuro(projBreakEven),
+                  value: formatEuro(metrics.breakEven),
+                  prevValue: formatEuro(metricsPrevPuro.breakEven),
+                  projValue: formatEuro(projBreakEven),
                   desc: 'Fatturato minimo per pareggio',
-                  status: 'rose', 
+                  status: 'rose',
                   icon: AlertCircle,
                   proj: formatEuro(metrics.breakEven),
                   extra: formatEuro(metrics.breakEvenCassa),
                   extraLabel: 'Di cassa',
-                  prevExtra: formatEuro(projBreakEvenCassa),
-                  calculatedValues: `Punto di Pareggio:\n- Competenza YTD: ${formatEuro(metrics.breakEven)}\n- Cassa YTD: ${formatEuro(metrics.breakEvenCassa)}\n- Stato rispetto a Fatturato: ${metrics.fatturato >= metrics.breakEven ? 'RAGGIUNTO (Fatturato YTD ' + formatEuro(metrics.fatturato) + ' >= Pareggio ' + formatEuro(metrics.breakEven) + ')' : 'MANCANO ' + formatEuro(metrics.breakEven - metrics.fatturato)}`,
+                  prevExtra: formatEuro(metricsPrevPuro.breakEvenCassa),
+                  projExtra: formatEuro(projBreakEvenCassa),
+                  calculatedValues: `Punto di Pareggio:\n- Competenza YTD: ${formatEuro(metrics.breakEven)}\n- Cassa YTD: ${formatEuro(metrics.breakEvenCassa)}\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.breakEven)}\n- Proiezione a fine anno: ${formatEuro(projBreakEven)}\n- Stato rispetto a Fatturato: ${metrics.fatturato >= metrics.breakEven ? 'RAGGIUNTO (Fatturato YTD ' + formatEuro(metrics.fatturato) + ' >= Pareggio ' + formatEuro(metrics.breakEven) + ')' : 'MANCANO ' + formatEuro(metrics.breakEven - metrics.fatturato)}`,
                   soglie: {
                     valore: metrics.fatturato,
                     tipo: 'piu_alto_meglio',
@@ -1808,6 +1921,16 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                     ]
                   },
                   prevSoglie: {
+                    valore: metricsPrevPuro.fatturato,
+                    tipo: 'piu_alto_meglio',
+                    customLabel: metricsPrevPuro.fatturato >= metricsPrevPuro.breakEven ? 'Raggiunto' : 'Mancano ' + formatEuro(metricsPrevPuro.breakEven - metricsPrevPuro.fatturato),
+                    fasce: [
+                      { min: metricsPrevPuro.breakEven, label: 'Raggiunto', colore: 'ottimo' },
+                      { min: metricsPrevPuro.breakEven * 0.8, max: metricsPrevPuro.breakEven, label: 'Quasi', colore: 'attenzione' },
+                      { max: metricsPrevPuro.breakEven * 0.8, label: 'Lontano', colore: 'critico' },
+                    ]
+                  },
+                  projSoglie: {
                     valore: metrics.proiezioneFatturato,
                     tipo: 'piu_alto_meglio',
                     customLabel: metrics.proiezioneFatturato >= projBreakEven ? 'Raggiunto' : 'Mancano ' + formatEuro(projBreakEven - metrics.proiezioneFatturato),
@@ -1818,18 +1941,20 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                     ]
                   }
                 },
-                { 
-                  id: 6, 
-                  label: 'Incidenza Studio %', 
+                {
+                  id: 6,
+                  label: 'Incidenza Studio %',
                   termId: 'incidenza_studio_fatturato',
-                  value: formatPercent(rates.incidenzaStudioFatturato), 
+                  value: formatPercent(rates.incidenzaStudioFatturato),
                   prevValue: formatPercent(rates.incidenzaStudioFatturatoPrev),
                   prevValRaw: rates.incidenzaStudioFatturatoPrev,
+                  projValue: formatPercent(incidenzeProiezione.incidenzaStudioFatturato),
+                  projValRaw: incidenzeProiezione.incidenzaStudioFatturato,
                   desc: 'Costo tecnici su fatturato',
-                  status: 'sky', 
+                  status: 'sky',
                   icon: Calculator,
                   proj: formatPercent(rates.incidenzaStudioFatturato),
-                  calculatedValues: `Incidenza Studio sul Fatturato:\n- Consuntivo: Costi Studio ${formatEuro(rates.totaleCostiStudio)} / Fatturato ${formatEuro(rates.fatturato)} = ${formatPercent(rates.incidenzaStudioFatturato)}\n- Previsionale: Costi Studio Target ${formatEuro(rates.totaleCostiStudioPrev)} / Fatturato Target ${formatEuro(rates.fatturatoPrev)} = ${formatPercent(rates.incidenzaStudioFatturatoPrev)}`,
+                  calculatedValues: `Incidenza Studio sul Fatturato:\n- Consuntivo: Costi Studio ${formatEuro(rates.totaleCostiStudio)} / Fatturato ${formatEuro(rates.fatturato)} = ${formatPercent(rates.incidenzaStudioFatturato)}\n- Previsionale: Costi Studio Target ${formatEuro(rates.totaleCostiStudioPrev)} / Fatturato Target ${formatEuro(rates.fatturatoPrev)} = ${formatPercent(rates.incidenzaStudioFatturatoPrev)}\n- Proiezione a fine anno: ${formatPercent(incidenzeProiezione.incidenzaStudioFatturato)}`,
                   soglie: {
                     valore: rates.incidenzaStudioFatturato,
                     tipo: 'piu_basso_meglio',
@@ -1839,20 +1964,42 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                       { min: 0.20, max: 0.25, label: 'Attenzione', colore: 'attenzione' },
                       { min: 0.25, label: 'Critico', colore: 'critico' },
                     ]
+                  },
+                  prevSoglie: {
+                    valore: rates.incidenzaStudioFatturatoPrev,
+                    tipo: 'piu_basso_meglio',
+                    fasce: [
+                      { max: 0.15, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.15, max: 0.20, label: 'Buono', colore: 'buono' },
+                      { min: 0.20, max: 0.25, label: 'Attenzione', colore: 'attenzione' },
+                      { min: 0.25, label: 'Critico', colore: 'critico' },
+                    ]
+                  },
+                  projSoglie: {
+                    valore: incidenzeProiezione.incidenzaStudioFatturato,
+                    tipo: 'piu_basso_meglio',
+                    fasce: [
+                      { max: 0.15, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.15, max: 0.20, label: 'Buono', colore: 'buono' },
+                      { min: 0.20, max: 0.25, label: 'Attenzione', colore: 'attenzione' },
+                      { min: 0.25, label: 'Critico', colore: 'critico' },
+                    ]
                   }
                 },
-                { 
-                  id: 7, 
-                  label: 'Incidenza Fissi %', 
+                {
+                  id: 7,
+                  label: 'Incidenza Fissi %',
                   termId: 'incidenza_fissi_fatturato',
-                  value: formatPercent(rates.incidenzaFissiFatturato), 
+                  value: formatPercent(rates.incidenzaFissiFatturato),
                   prevValue: formatPercent(rates.incidenzaFissiFatturatoPrev),
                   prevValRaw: rates.incidenzaFissiFatturatoPrev,
+                  projValue: formatPercent(incidenzeProiezione.incidenzaFissiFatturato),
+                  projValRaw: incidenzeProiezione.incidenzaFissiFatturato,
                   desc: 'Costi struttura su fatturato',
-                  status: 'amber', 
+                  status: 'amber',
                   icon: BarChart2,
                   proj: formatPercent(rates.incidenzaFissiFatturato),
-                  calculatedValues: `Incidenza Costi Fissi (escl. Studio):\n- Consuntivo: Costi Fissi Puri ${formatEuro(rates.totaleOverheadPuro)} / Fatturato ${formatEuro(rates.fatturato)} = ${formatPercent(rates.incidenzaFissiFatturato)}\n- Previsionale: Costi Fissi Target ${formatEuro(rates.totaleOverheadPuroPrev)} / Fatturato Target ${formatEuro(rates.fatturatoPrev)} = ${formatPercent(rates.incidenzaFissiFatturatoPrev)}`,
+                  calculatedValues: `Incidenza Costi Fissi (escl. Studio):\n- Consuntivo: Costi Fissi Puri ${formatEuro(rates.totaleOverheadPuro)} / Fatturato ${formatEuro(rates.fatturato)} = ${formatPercent(rates.incidenzaFissiFatturato)}\n- Previsionale: Costi Fissi Target ${formatEuro(rates.totaleOverheadPuroPrev)} / Fatturato Target ${formatEuro(rates.fatturatoPrev)} = ${formatPercent(rates.incidenzaFissiFatturatoPrev)}\n- Proiezione a fine anno: ${formatPercent(incidenzeProiezione.incidenzaFissiFatturato)}`,
                   soglie: {
                     valore: rates.incidenzaFissiFatturato,
                     tipo: 'piu_basso_meglio',
@@ -1862,16 +2009,37 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                       { min: 0.12, max: 0.15, label: 'Attenzione', colore: 'attenzione' },
                       { min: 0.15, label: 'Critico', colore: 'critico' },
                     ]
+                  },
+                  prevSoglie: {
+                    valore: rates.incidenzaFissiFatturatoPrev,
+                    tipo: 'piu_basso_meglio',
+                    fasce: [
+                      { max: 0.08, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.08, max: 0.12, label: 'Buono', colore: 'buono' },
+                      { min: 0.12, max: 0.15, label: 'Attenzione', colore: 'attenzione' },
+                      { min: 0.15, label: 'Critico', colore: 'critico' },
+                    ]
+                  },
+                  projSoglie: {
+                    valore: incidenzeProiezione.incidenzaFissiFatturato,
+                    tipo: 'piu_basso_meglio',
+                    fasce: [
+                      { max: 0.08, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.08, max: 0.12, label: 'Buono', colore: 'buono' },
+                      { min: 0.12, max: 0.15, label: 'Attenzione', colore: 'attenzione' },
+                      { min: 0.15, label: 'Critico', colore: 'critico' },
+                    ]
                   }
                 },
-                { 
-                  id: 8, 
-                  label: 'Compenso Soci', 
+                {
+                  id: 8,
+                  label: 'Compenso Soci',
                   termId: undefined,
-                  value: formatEuro(rates.compensoSoci), 
-                  prevValue: formatEuro(proiezioneCompensoSoci),
+                  value: formatEuro(rates.compensoSoci),
+                  prevValue: formatEuro(compensoSociPrevPuro),
+                  projValue: formatEuro(proiezioneCompensoSoci),
                   desc: 'Remunerazione proprietà',
-                  status: 'orange', 
+                  status: 'orange',
                   icon: Sparkles,
                   proj: formatEuro(proiezioneCompensoSoci),
                   soglie: {
@@ -1885,6 +2053,16 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                     ]
                   },
                   prevSoglie: {
+                    valore: metricsPrevPuro.utileNetto > 0 ? compensoSociPrevPuro / metricsPrevPuro.utileNetto : 1,
+                    tipo: 'piu_basso_meglio',
+                    fasce: [
+                      { max: 0.30, label: 'Ottimo', colore: 'ottimo' },
+                      { min: 0.30, max: 0.50, label: 'Buono', colore: 'buono' },
+                      { min: 0.50, max: 0.80, label: 'Attenzione', colore: 'attenzione' },
+                      { min: 0.80, label: 'Critico', colore: 'critico' },
+                    ]
+                  },
+                  projSoglie: {
                     valore: metrics.proiezioneUtile > 0 ? proiezioneCompensoSoci / metrics.proiezioneUtile : 1,
                     tipo: 'piu_basso_meglio',
                     fasce: [
@@ -1899,7 +2077,8 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                 const numWithData = {
                   ...num,
                   hasNoData: metrics.fatturato === 0,
-                  prevHasNoData: metrics.proiezioneFatturato === 0,
+                  prevHasNoData: metricsPrevPuro.fatturato === 0,
+                  projHasNoData: metrics.proiezioneFatturato === 0,
                 };
                 return (
                   <div key={num.id} className="flex flex-col gap-3">
@@ -1907,6 +2086,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                       <SacredCard num={numWithData} />
                     </div>
                     <SacredForecastCard num={numWithData} />
+                    <SacredProiezioneCard num={numWithData} />
                   </div>
                 );
               })}
@@ -2662,6 +2842,7 @@ const SacredCard = ({ num }: { num: any }) => {
               )
             )}
           </div>
+          <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">YTD</p>
           <p className="text-xs text-slate-500 leading-tight">{num.desc}</p>
         </div>
 
@@ -2766,18 +2947,60 @@ const SacredForecastCard = ({ num }: { num: any }) => {
               {s?.customLabel || fascia?.label || 'Target'}
             </span>
           </div>
-          <p className="text-[9px] text-slate-400 leading-tight">Proiezione Chiusura (Forecast)</p>
+          <p className="text-[9px] text-slate-400 leading-tight">Previsionale</p>
         </div>
         <div className="text-slate-500">
           <num.icon size={16} />
         </div>
       </div>
-      
+
       <div className="flex items-baseline justify-between">
         <div className={`text-lg font-black ${textColor}`}>{num.prevValue}</div>
         {num.prevExtra && (
           <span className="text-[8px] text-slate-400 font-bold uppercase">
             {num.extraLabel}: <strong className={`${textColor} font-black`}>{num.prevExtra}</strong>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const SacredProiezioneCard = ({ num }: { num: any }) => {
+  const s = num.projSoglie || num.soglie;
+  const val = num.projSoglie ? num.projSoglie.valore : (num.projValRaw !== undefined ? num.projValRaw : null);
+
+  const fascia = (s && val !== null) ? getFascia(s, val) : undefined;
+  const textColor = fascia ? TEXT_SOGLIA_DARK[fascia.colore] : 'text-violet-300';
+  const badgeBg = fascia ? (
+    fascia.colore === 'ottimo' ? 'bg-emerald-500/20 text-emerald-300' :
+    fascia.colore === 'buono' ? 'bg-sky-500/20 text-sky-300' :
+    fascia.colore === 'attenzione' ? 'bg-amber-500/20 text-amber-300' :
+    'bg-rose-500/20 text-rose-300'
+  ) : 'bg-violet-500/20 text-violet-300';
+
+  return (
+    <div className="bg-violet-950 text-white rounded-[24px] border border-violet-900 shadow-sm p-4 flex flex-col justify-between h-[110px] transition-all duration-300 hover:border-violet-700">
+      <div className="flex justify-between items-start">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-1.5">
+            <h4 className="text-[9px] font-black text-violet-300/70 uppercase tracking-widest">{num.label}</h4>
+            <span className={`px-1.5 py-0.2 text-[7px] font-black rounded uppercase ${badgeBg}`}>
+              {s?.customLabel || fascia?.label || 'Target'}
+            </span>
+          </div>
+          <p className="text-[9px] text-violet-300/70 leading-tight">Proiezione</p>
+        </div>
+        <div className="text-violet-400">
+          <num.icon size={16} />
+        </div>
+      </div>
+
+      <div className="flex items-baseline justify-between">
+        <div className={`text-lg font-black ${textColor}`}>{num.projValue}</div>
+        {num.projExtra && (
+          <span className="text-[8px] text-violet-300/70 font-bold uppercase">
+            {num.extraLabel}: <strong className={`${textColor} font-black`}>{num.projExtra}</strong>
           </span>
         )}
       </div>
