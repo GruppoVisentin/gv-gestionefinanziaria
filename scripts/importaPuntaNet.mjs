@@ -334,7 +334,12 @@ for (const mv of movimenti) {
 
   const dataISO = mv.Data.slice(0, 10);
   const dataOk = dataPlausibile(dataISO);
-  const alta = categoria && confidenza === 'alta' && (tipo === 'INCOME' || vatRate !== null) && dataOk;
+  // Anche le entrate devono avere un'aliquota nota per essere scritte in automatico: senza
+  // questo controllo un'entrata con vatRate mancante finiva scritta come se fosse un reverse
+  // charge dichiarato (0%), gonfiando silenziosamente il credito IVA mostrato in app (bug
+  // trovato in audit il 2026-09-14 sui dati storici 2023-2025, mai coperto per il flusso
+  // automatico 2026+). Ora, se manca l'aliquota, la riga finisce in bozza da rivedere a mano.
+  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk;
 
   const base = {
     id: crypto.randomUUID(),
@@ -440,7 +445,9 @@ for (const s of scadenzeAperte) {
 
   const dataISO = s.DataRata.slice(0, 10);
   const dataOk = dataPlausibile(dataISO);
-  const alta = categoria && confidenza === 'alta' && (tipo === 'INCOME' || vatRate !== null) && dataOk;
+  // Vedi nota identica piu' sopra (ramo movimenti bancari): anche qui un'entrata senza aliquota
+  // nota va in revisione manuale, non scritta come se fosse reverse charge dichiarato.
+  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk;
 
   // Collegamento a previsione ESISTENTE (solo lettura, mai modificata) — una fattura emessa e
   // non ancora incassata/pagata puo' gia' corrispondere a qualcosa che l'utente ha pianificato.
