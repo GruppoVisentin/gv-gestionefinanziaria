@@ -16,9 +16,16 @@ interface VistaCantiereViewProps {
 const formatEuro = (v: number) => CURRENCY_FORMATTER.format(v);
 
 const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transactions, storicoCantierePuntaNet = [] }) => {
+  // Di default solo i cantieri attivi (comportamento invariato), ma con la possibilita' di
+  // includere anche quelli completati: prima sparivano per sempre da questa vista appena chiusi,
+  // rendendo impossibile un consuntivo finale (margine, entrate/uscite totali) sulla commessa
+  // proprio nel momento in cui interessa di piu' guardarla (bug trovato in audit il 2026-09-14).
+  const [mostraCompletati, setMostraCompletati] = useState(false);
   const progettiAttivi = useMemo(
-    () => [...projects].filter(p => p.status === 'ACTIVE').sort((a, b) => a.name.localeCompare(b.name)),
-    [projects]
+    () => [...projects]
+      .filter(p => p.status === 'ACTIVE' || mostraCompletati)
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [projects, mostraCompletati]
   );
 
   const [selezionato, setSelezionato] = useState<string>(progettiAttivi[0]?.name ?? '');
@@ -140,6 +147,14 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-10 text-center">
         <HardHat size={40} className="mx-auto text-slate-300 mb-3" />
         <p className="text-slate-500 font-semibold">Nessun cantiere attivo trovato.</p>
+        {!mostraCompletati && (
+          <button
+            onClick={() => setMostraCompletati(true)}
+            className="mt-3 text-xs font-bold text-blue-600 hover:underline"
+          >
+            Mostra anche i cantieri completati
+          </button>
+        )}
       </div>
     );
   }
@@ -152,17 +167,28 @@ const VistaCantiereView: React.FC<VistaCantiereViewProps> = ({ projects, transac
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">Vista Cantiere</h2>
           <p className="text-slate-500 text-sm font-medium">Entrate e uscite collegate a una singola commessa</p>
         </div>
-        <div className="relative">
-          <select
-            value={selezionato}
-            onChange={e => setSelezionato(e.target.value)}
-            className="appearance-none bg-white border border-slate-200 rounded-2xl px-5 py-3 pr-10 font-bold text-slate-800 shadow-sm cursor-pointer min-w-[260px]"
-          >
-            {progettiAttivi.map(p => (
-              <option key={p.id} value={p.name}>{p.name}</option>
-            ))}
-          </select>
-          <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={mostraCompletati}
+              onChange={e => setMostraCompletati(e.target.checked)}
+              className="rounded border-slate-300"
+            />
+            Mostra anche completati
+          </label>
+          <div className="relative">
+            <select
+              value={selezionato}
+              onChange={e => setSelezionato(e.target.value)}
+              className="appearance-none bg-white border border-slate-200 rounded-2xl px-5 py-3 pr-10 font-bold text-slate-800 shadow-sm cursor-pointer min-w-[260px]"
+            >
+              {progettiAttivi.map(p => (
+                <option key={p.id} value={p.name}>{p.name}{p.status === 'COMPLETED' ? ' (completata)' : ''}</option>
+              ))}
+            </select>
+            <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
         </div>
       </div>
 

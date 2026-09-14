@@ -28,7 +28,12 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
   const [estSub, setEstSub] = useState('');
   const [estProf, setEstProf] = useState('');
 
-  const activeProjects = projects.filter(p => p.status === 'ACTIVE' && p.name !== 'Altra tipologia di entrata');
+  // Di default solo i cantieri attivi (comportamento invariato), con la possibilita' di includere
+  // anche quelli completati: prima sparivano per sempre da questa vista appena chiusi, impedendo
+  // un consuntivo finale sulla distribuzione costi della commessa (bug trovato in audit il
+  // 2026-09-14).
+  const [mostraCompletati, setMostraCompletati] = useState(false);
+  const activeProjects = projects.filter(p => (p.status === 'ACTIVE' || mostraCompletati) && p.name !== 'Altra tipologia di entrata');
 
   // --- LOGIC: GENERATE TIMELINE DATA ---
   const timelineData = useMemo<{
@@ -280,7 +285,18 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
         {/* --- PROJECT LIST --- */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-1 space-y-4">
-                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Commesse Attive</h3>
+                <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Commesse Attive</h3>
+                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={mostraCompletati}
+                            onChange={e => setMostraCompletati(e.target.checked)}
+                            className="rounded border-slate-300"
+                        />
+                        Anche completate
+                    </label>
+                </div>
                 {activeProjects.length === 0 ? (
                     <div className="p-4 bg-white rounded-lg border border-slate-200 text-slate-400 text-sm italic">
                         Nessuna commessa attiva.
@@ -293,7 +309,10 @@ const ProjectCostDistribution: React.FC<ProjectCostDistributionProps> = ({ proje
                         return (
                             <div key={p.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-slate-400 transition-all group">
                                 <div className="flex justify-between items-start mb-2">
-                                    <h4 className="font-bold text-slate-800 text-sm truncate w-3/4" title={p.name}>{p.name}</h4>
+                                    <h4 className="font-bold text-slate-800 text-sm truncate w-3/4" title={p.name}>
+                                        {p.name}
+                                        {p.status === 'COMPLETED' && <span className="ml-1.5 text-[9px] font-bold text-slate-400 uppercase">(completata)</span>}
+                                    </h4>
                                     {isAuthorized && (
                                         <button onClick={() => handleEditClick(p)} className="text-slate-300 hover:text-slate-900 transition-colors">
                                             <Edit size={16} />
