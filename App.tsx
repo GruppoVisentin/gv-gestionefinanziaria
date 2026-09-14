@@ -1019,12 +1019,27 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const saveToFile = useCallback(async (handle: FileSystemFileHandle, backupHandle?: FileSystemFileHandle | null) => {
+  // Coda dei salvataggi: autosave (debounce 1.5s), triggerImmediateSave (~25 punti dell'app) e
+  // Ctrl+S possono partire quasi in contemporanea. Senza serializzarli, due scritture potrebbero
+  // aprire due stream indipendenti sullo stesso file (comportamento non garantito dall'API File
+  // System Access) — un salvataggio con dati leggermente piu' vecchi potrebbe "vincere" su uno piu'
+  // recente (rischio strutturale segnalato in audit il 2026-09-14, mai riprodotto ma plausibile).
+  // Ogni nuovo salvataggio aspetta che quello in corso finisca prima di leggere lo stato piu'
+  // recente (tramite buildBackupDataRef) e scrivere: non e' un semplice ritardo, perche' la lettura
+  // dello stato avviene solo quando il task parte davvero, quindi arriva sempre coi dati piu' freschi.
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueueSave = useCallback((task: () => Promise<void>): Promise<void> => {
+    const run = saveQueueRef.current.then(task, task);
+    saveQueueRef.current = run.catch(() => {}); // un errore nel singolo salvataggio non deve bloccare i successivi
+    return run;
+  }, []);
+
+  const saveToFile = useCallback((handle: FileSystemFileHandle, backupHandle?: FileSystemFileHandle | null) => enqueueSave(async () => {
     try {
       setSaveStatus('saving');
       const data = buildBackupDataRef.current(); // ← legge sempre l'ultima versione
       await writeFile(handle, data);
-      
+
       // Salva in parallelo sul file di backup su Drive se configurato
       if (backupHandle) {
         try {
@@ -1033,7 +1048,7 @@ const App: React.FC = () => {
           console.error("Errore scrittura file di backup di sicurezza", err);
         }
       }
-      
+
       setLastSaved(new Date());
       setSaveStatus('saved');
       hasUnsavedChangesRef.current = false;
@@ -1042,7 +1057,7 @@ const App: React.FC = () => {
       console.error('Save failed', e);
       setSaveStatus('error');
     }
-  }, []); // ← array vuoto: saveToFile non cambia mai → interval non si resetta mai
+  }), [enqueueSave]); // ← saveToFile non cambia mai → interval non si resetta mai
 
   const triggerImmediateSave = useCallback(async (
     updatedTxs?: Transaction[], 
@@ -1068,59 +1083,61 @@ const App: React.FC = () => {
     }
   ) => {
     if (!fileHandle) return;
-    try {
-      setSaveStatus('saving');
-      // Parte SEMPRE da buildBackupData() (che include TUTTI i campi di BackupData, es. clients/
-      // fornitori) e applica sopra solo gli override espliciti passati a questa funzione — invece di
-      // ricostruire l'oggetto campo per campo a mano, elenco che in passato e' rimasto indietro rispetto
-      // al tipo BackupData e ha causato la perdita silenziosa di clients/fornitori ad ogni salvataggio
-      // immediato (bug trovato in audit il 2026-09-14).
-      const base = buildBackupDataRef.current();
-      const data: BackupData = {
-        ...base,
-        timestamp: new Date().toISOString(),
-        transactions: updatedTxs || base.transactions,
-        fixedCategories: overrides?.fixedCategories || base.fixedCategories,
-        variableCategories: overrides?.variableCategories || base.variableCategories,
-        incomeCategories: overrides?.incomeCategories || base.incomeCategories,
-        saldoInizialeCF: overrides?.saldoInizialeCF || base.saldoInizialeCF,
-        operators: overrides?.operators || base.operators,
-        ceManualData: overrides?.ceManualData || base.ceManualData,
-        spSnapshots: overrides?.spSnapshots || base.spSnapshots,
-        budgetData: overrides?.budgetData || base.budgetData,
-        oreCantiereStorico: overrides?.oreStorico || base.oreCantiereStorico,
-        oreOperaiStorico: overrides?.oreOperaiStorico || base.oreOperaiStorico,
-        tipologieCantiere: overrides?.tipologieCantiere || base.tipologieCantiere,
-        cantieriPrev: updatedCantieriPrev || base.cantieriPrev,
-        rimanenze: overrides?.rimanenze || base.rimanenze,
-        bozzaImportPuntaNet: overrides?.bozzaImportPuntaNet ?? base.bozzaImportPuntaNet,
-        importSessions: updatedSessions || base.importSessions,
-        storicoExcelImportato: updatedStoricoImportato !== undefined ? updatedStoricoImportato : base.storicoExcelImportato,
-        aliquoteFiscali: {
-          ires: overrides?.aliquotaIRES !== undefined ? overrides.aliquotaIRES : base.aliquoteFiscali.ires,
-          irap: overrides?.aliquotaIRAP !== undefined ? overrides.aliquotaIRAP : base.aliquoteFiscali.irap
-        },
-      };
+    return enqueueSave(async () => {
+      try {
+        setSaveStatus('saving');
+        // Parte SEMPRE da buildBackupData() (che include TUTTI i campi di BackupData, es. clients/
+        // fornitori) e applica sopra solo gli override espliciti passati a questa funzione — invece di
+        // ricostruire l'oggetto campo per campo a mano, elenco che in passato e' rimasto indietro rispetto
+        // al tipo BackupData e ha causato la perdita silenziosa di clients/fornitori ad ogni salvataggio
+        // immediato (bug trovato in audit il 2026-09-14).
+        const base = buildBackupDataRef.current();
+        const data: BackupData = {
+          ...base,
+          timestamp: new Date().toISOString(),
+          transactions: updatedTxs || base.transactions,
+          fixedCategories: overrides?.fixedCategories || base.fixedCategories,
+          variableCategories: overrides?.variableCategories || base.variableCategories,
+          incomeCategories: overrides?.incomeCategories || base.incomeCategories,
+          saldoInizialeCF: overrides?.saldoInizialeCF || base.saldoInizialeCF,
+          operators: overrides?.operators || base.operators,
+          ceManualData: overrides?.ceManualData || base.ceManualData,
+          spSnapshots: overrides?.spSnapshots || base.spSnapshots,
+          budgetData: overrides?.budgetData || base.budgetData,
+          oreCantiereStorico: overrides?.oreStorico || base.oreCantiereStorico,
+          oreOperaiStorico: overrides?.oreOperaiStorico || base.oreOperaiStorico,
+          tipologieCantiere: overrides?.tipologieCantiere || base.tipologieCantiere,
+          cantieriPrev: updatedCantieriPrev || base.cantieriPrev,
+          rimanenze: overrides?.rimanenze || base.rimanenze,
+          bozzaImportPuntaNet: overrides?.bozzaImportPuntaNet ?? base.bozzaImportPuntaNet,
+          importSessions: updatedSessions || base.importSessions,
+          storicoExcelImportato: updatedStoricoImportato !== undefined ? updatedStoricoImportato : base.storicoExcelImportato,
+          aliquoteFiscali: {
+            ires: overrides?.aliquotaIRES !== undefined ? overrides.aliquotaIRES : base.aliquoteFiscali.ires,
+            irap: overrides?.aliquotaIRAP !== undefined ? overrides.aliquotaIRAP : base.aliquoteFiscali.irap
+          },
+        };
 
-      await writeFile(fileHandle, data);
-      if (backupFileHandle) {
-        try {
-          await writeFile(backupFileHandle, data);
-        } catch (e) {
-          console.error('Backup write failed', e);
+        await writeFile(fileHandle, data);
+        if (backupFileHandle) {
+          try {
+            await writeFile(backupFileHandle, data);
+          } catch (e) {
+            console.error('Backup write failed', e);
+          }
         }
+        setLastSaved(new Date());
+        setSaveStatus('saved');
+        // I dati sono stati persistiti: azzera il flag così l'autosave periodico non riscrive inutilmente
+        // (coerente con saveToFile). Prima restava true e provocava un save ridondante al tick successivo.
+        hasUnsavedChangesRef.current = false;
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (e) {
+        console.error('Immediate save failed', e);
+        setSaveStatus('error');
       }
-      setLastSaved(new Date());
-      setSaveStatus('saved');
-      // I dati sono stati persistiti: azzera il flag così l'autosave periodico non riscrive inutilmente
-      // (coerente con saveToFile). Prima restava true e provocava un save ridondante al tick successivo.
-      hasUnsavedChangesRef.current = false;
-      setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch (e) {
-      console.error('Immediate save failed', e);
-      setSaveStatus('error');
-    }
-  }, [fileHandle, backupFileHandle]);
+    });
+  }, [fileHandle, backupFileHandle, enqueueSave]);
 
   // --- INITIALIZATION ---
   useEffect(() => {
