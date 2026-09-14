@@ -65,7 +65,10 @@ export const exportCashFlowProjectionPDF = ({
         .filter(t => t.type === TransactionType.INCOME)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
       const aExpense = actualTransactions
-        .filter(t => t.type === TransactionType.EXPENSE)
+        // Gli ammortamenti sono costi non monetari: non movimentano cassa, vanno esclusi qui
+        // come gia' avviene a schermo in CashFlowTimeline (bug trovato in audit il 2026-09-14:
+        // il PDF li contava, causando uno scarto di flusso netto rispetto allo schermo).
+        .filter(t => t.type === TransactionType.EXPENSE && t.ceType !== 'ammortamento')
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
       return { income: aIncome, expense: aExpense, net: aIncome - aExpense, hasActuals: true };
     }
@@ -81,7 +84,7 @@ export const exportCashFlowProjectionPDF = ({
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
     let fExpense = forecastTransactions
-      .filter(t => t.type === TransactionType.EXPENSE)
+      .filter(t => t.type === TransactionType.EXPENSE && t.ceType !== 'ammortamento')
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
     const calculateLoanRepayment = (mIdx: number) => {
