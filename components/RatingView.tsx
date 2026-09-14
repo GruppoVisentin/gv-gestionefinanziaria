@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Transaction, SPSnapshot, CEData, AppView, Project, InitialBalanceBreakdown, RimanenzeData } from '../types';
 import { buildCEData, calcCEMetrics, calcSPMetrics, calcRollingDSODPO, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
+import { DSCR_MIN_THRESHOLD } from '../constants';
 import PDFExportButton from './PDFExportButton';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
 import { HelpButton } from './HelpPanel';
@@ -267,6 +268,22 @@ const RatingView: React.FC<RatingViewProps> = ({
     ];
   }, [spMetrics, ceMetrics, rimanenze, ratingYear, previsioneFiscale.utileDopoImposte]);
 
+  // DSCR (Debt Service Coverage Ratio): la app ha gia' una soglia bancaria dedicata
+  // (DSCR_MIN_THRESHOLD in constants.ts) ma nessuna vista la usava - il DSCR veniva calcolato solo
+  // in Dashboard.tsx, non nella vista dedicata al rating bancario (gap trovato in audit il
+  // 2026-09-14). Stessa formula gia' in uso in Dashboard: CFADS = EBITDA - Imposte, DSCR = CFADS /
+  // (Oneri Finanziari + Quota Capitale Rate). Non entra nel punteggio complessivo (totalScore) qui
+  // sotto, coerente con come Dashboard lo tratta gia' come indicatore a se stante, informativo.
+  const dscr = useMemo(() => {
+    const cfads = ceMetrics.ebitdaTot - ceMetrics.imposteTot;
+    const denominatore = ceMetrics.oneriFin + ceMetrics.costiCapitaleRate;
+    // null = nessun servizio del debito da coprire (denominatore 0): davvero N/A. Un rapporto
+    // negativo per CFADS negativo invece e' un segnale reale (grave) e va mostrato, non nascosto
+    // dietro "N/A" come farebbe un confronto "dscr > 0" (stesso dettaglio di Dashboard.tsx, qui
+    // corretto in fase di aggiunta invece di essere replicato).
+    return denominatore > 0 ? cfads / denominatore : null;
+  }, [ceMetrics]);
+
   const totalScore = indicators.reduce((a, b) => a + (b.score || 0), 0);
   const rating = totalScore >= 5.5 ? { label: 'AAA / AA — Eccellente', color: 'slate-900' } :
                  totalScore >= 4 ? { label: 'A / BBB — Solido', color: 'slate-700' } :
@@ -339,9 +356,29 @@ const RatingView: React.FC<RatingViewProps> = ({
           ))}
         </div>
         <p className="text-xs mt-6 opacity-80 max-w-xl mx-auto italic">
-          Questa valutazione si basa sugli indici di bilancio calcolati automaticamente. 
+          Questa valutazione si basa sugli indici di bilancio calcolati automaticamente.
           Il rating reale della banca include anche la Centrale Rischi e fattori qualitativi.
         </p>
+      </div>
+
+      {/* DSCR — informativo, non incluso nel punteggio complessivo (coerente con come lo tratta
+          gia' Dashboard.tsx): la app ha una soglia bancaria dedicata (DSCR_MIN_THRESHOLD) ma
+          nessuna vista la usava - il DSCR non veniva mostrato affatto qui, nella vista dedicata
+          al rating bancario (gap trovato in audit il 2026-09-14). */}
+      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Copertura Oneri (DSCR)</span>
+            <InfoTooltip termId="dscr" />
+          </div>
+          <div className={`text-2xl font-black mt-1 ${dscr === null ? 'text-slate-400' : dscr >= DSCR_MIN_THRESHOLD ? 'text-emerald-600' : 'text-rose-600'}`}>
+            {dscr !== null ? `${dscr.toFixed(2)}x` : 'N/A'}
+          </div>
+          <p className="text-[10px] font-bold text-slate-400 mt-1">
+            Soglia bancaria prudenziale: ≥ {DSCR_MIN_THRESHOLD.toFixed(2)}x — non incluso nel punteggio complessivo qui sopra
+          </p>
+        </div>
+        <span className="text-2xl">💰</span>
       </div>
 
       {/* Legenda Gradi di Valutazione */}
