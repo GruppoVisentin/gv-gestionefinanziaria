@@ -1054,38 +1054,36 @@ const App: React.FC = () => {
     if (!fileHandle) return;
     try {
       setSaveStatus('saving');
+      // Parte SEMPRE da buildBackupData() (che include TUTTI i campi di BackupData, es. clients/
+      // fornitori) e applica sopra solo gli override espliciti passati a questa funzione — invece di
+      // ricostruire l'oggetto campo per campo a mano, elenco che in passato e' rimasto indietro rispetto
+      // al tipo BackupData e ha causato la perdita silenziosa di clients/fornitori ad ogni salvataggio
+      // immediato (bug trovato in audit il 2026-09-14).
+      const base = buildBackupDataRef.current();
       const data: BackupData = {
-        version: '4.0',
+        ...base,
         timestamp: new Date().toISOString(),
-        transactions: updatedTxs || transactions,
-        projects,
-        fixedCategories: overrides?.fixedCategories || fixedCategories,
-        variableCategories: overrides?.variableCategories || variableCategories,
-        incomeCategories: overrides?.incomeCategories || incomeCategories,
-        supplierPresets,
-        initialData,
-        saldoInizialeCF: overrides?.saldoInizialeCF || saldoInizialeCF,
-        operators: overrides?.operators || responsiblesList,
-        ceManualData: overrides?.ceManualData || ceManualData,
-        spSnapshots: overrides?.spSnapshots || spSnapshots,
-        budgetData: overrides?.budgetData || budgetData,
-        oreCantiereStorico: overrides?.oreStorico || oreStorico,
-        oreOperaiStorico: overrides?.oreOperaiStorico || oreOperaiStorico,
-        tipologieCantiere: overrides?.tipologieCantiere || tipologieCantiere,
-        cantieriPrev: updatedCantieriPrev || cantieriPrev,
-        rimanenze: overrides?.rimanenze || rimanenze,
-        regolePuntaNet,
-        mappingContiPuntaNet,
-        bozzaImportPuntaNet: overrides?.bozzaImportPuntaNet ?? bozzaImportPuntaNet,
-        importSessions: updatedSessions || importSessions,
-        storicoExcelImportato: updatedStoricoImportato !== undefined ? updatedStoricoImportato : storicoImportato,
+        transactions: updatedTxs || base.transactions,
+        fixedCategories: overrides?.fixedCategories || base.fixedCategories,
+        variableCategories: overrides?.variableCategories || base.variableCategories,
+        incomeCategories: overrides?.incomeCategories || base.incomeCategories,
+        saldoInizialeCF: overrides?.saldoInizialeCF || base.saldoInizialeCF,
+        operators: overrides?.operators || base.operators,
+        ceManualData: overrides?.ceManualData || base.ceManualData,
+        spSnapshots: overrides?.spSnapshots || base.spSnapshots,
+        budgetData: overrides?.budgetData || base.budgetData,
+        oreCantiereStorico: overrides?.oreStorico || base.oreCantiereStorico,
+        oreOperaiStorico: overrides?.oreOperaiStorico || base.oreOperaiStorico,
+        tipologieCantiere: overrides?.tipologieCantiere || base.tipologieCantiere,
+        cantieriPrev: updatedCantieriPrev || base.cantieriPrev,
+        rimanenze: overrides?.rimanenze || base.rimanenze,
+        bozzaImportPuntaNet: overrides?.bozzaImportPuntaNet ?? base.bozzaImportPuntaNet,
+        importSessions: updatedSessions || base.importSessions,
+        storicoExcelImportato: updatedStoricoImportato !== undefined ? updatedStoricoImportato : base.storicoExcelImportato,
         aliquoteFiscali: {
-          ires: overrides?.aliquotaIRES !== undefined ? overrides.aliquotaIRES : aliquotaIRES,
-          irap: overrides?.aliquotaIRAP !== undefined ? overrides.aliquotaIRAP : aliquotaIRAP
+          ires: overrides?.aliquotaIRES !== undefined ? overrides.aliquotaIRES : base.aliquoteFiscali.ires,
+          irap: overrides?.aliquotaIRAP !== undefined ? overrides.aliquotaIRAP : base.aliquoteFiscali.irap
         },
-        storicoCantierePuntaNet,
-        logImportAutomatico,
-        saldiApertiPuntaNet,
       };
 
       await writeFile(fileHandle, data);
@@ -1106,13 +1104,7 @@ const App: React.FC = () => {
       console.error('Immediate save failed', e);
       setSaveStatus('error');
     }
-  }, [
-    fileHandle, backupFileHandle, transactions, projects, fixedCategories, variableCategories,
-    incomeCategories, supplierPresets, initialData, saldoInizialeCF, responsiblesList, ceManualData,
-    spSnapshots, budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze, regolePuntaNet,
-    mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
-    storicoCantierePuntaNet
-  ]);
+  }, [fileHandle, backupFileHandle]);
 
   // --- INITIALIZATION ---
   useEffect(() => {
