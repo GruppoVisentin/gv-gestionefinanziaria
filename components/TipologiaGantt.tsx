@@ -148,6 +148,27 @@ const TipologiaGantt: React.FC<TipologiaGanttProps> = ({
       .reduce((s, f) => s + f.percentuale, 0);
 
   const handleSave = () => {
+    // Blocca il salvataggio se una fase ha i mesi invertiti (meseFine prima di meseInizio) o se
+    // le percentuali di una voce non sommano a 100% - prima si poteva salvare comunque: una fase
+    // invertita generava una durata negativa clampata silenziosamente a 1 mese in fase di
+    // generazione, e percentuali diverse da 100% causavano sotto/sovra-preventivazione silenziosa
+    // nel cash flow, senza alcun segnale (bug trovato in audit il 2026-09-14 - gia' presente nei
+    // dati reali una fase con meseInizio: -1, meseFine: -3).
+    const errori: string[] = [];
+    voci.forEach(v => {
+      if (v.fasi.length === 0) return;
+      if (v.fasi.some(f => getDurata(f.meseInizio, f.meseFine) < 1)) {
+        errori.push(`"${v.categoria}": una fase ha il mese di fine prima (o uguale a) del mese di inizio.`);
+      }
+      const pct = sommaPct(v.categoria);
+      if (Math.abs(pct - 100) > 0.5) {
+        errori.push(`"${v.categoria}": le fasi sommano a ${pct.toFixed(1)}% invece di 100%.`);
+      }
+    });
+    if (errori.length > 0) {
+      alert(`Impossibile salvare, correggi prima di continuare:\n\n${errori.join('\n')}`);
+      return;
+    }
     onSave({ ...tipologia, vociAttive: voci });
   };
 
