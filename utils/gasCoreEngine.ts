@@ -1650,11 +1650,17 @@ export const calcPosizIoneIVA = (
     } else {
       let creditoQ = 0;
 
-      // Q1 (Jan, Feb, Mar) -> Paid in May (month 4)
+      // Un versamento reale puo' non cadere esattamente nel mese "canonico" di scadenza (ravvedimento,
+      // ritardi bancari): prima si leggeva/scriveva un SOLO mese fisso, quindi un versamento registrato
+      // nel mese immediatamente precedente spariva dal totale annuale pur essendo gia' stato pagato
+      // (bug trovato in audit il 2026-09-14). Qui si somma/verifica su tutta la finestra di competenza.
+      const finestraHaVersamento = (mesi: number[]) => mesi.some(m => mensileCalcolato[m].versamentoIVA > 0);
+
+      // Q1 (Jan, Feb, Mar) -> Paid in Apr/May (mesi 3-4)
       const saldoQ1 = mensileCalcolato[0].saldoIVA + mensileCalcolato[1].saldoIVA + mensileCalcolato[2].saldoIVA;
       const posQ1 = saldoQ1 - creditoQ;
       if (posQ1 > 0) {
-        if (mensileCalcolato[4].isForecastMese || mensileCalcolato[4].versamentoIVA === 0) {
+        if (mensileCalcolato[4].isForecastMese || !finestraHaVersamento([3, 4])) {
           mensileCalcolato[4].versamentoIVA = posQ1;
         }
         creditoQ = 0;
@@ -1662,11 +1668,11 @@ export const calcPosizIoneIVA = (
         creditoQ = Math.abs(posQ1);
       }
 
-      // Q2 (Apr, May, Jun) -> Paid in Aug (month 7)
+      // Q2 (Apr, May, Jun) -> Paid in Jul/Aug (mesi 6-7)
       const saldoQ2 = mensileCalcolato[3].saldoIVA + mensileCalcolato[4].saldoIVA + mensileCalcolato[5].saldoIVA;
       const posQ2 = saldoQ2 - creditoQ;
       if (posQ2 > 0) {
-        if (mensileCalcolato[7].isForecastMese || mensileCalcolato[7].versamentoIVA === 0) {
+        if (mensileCalcolato[7].isForecastMese || !finestraHaVersamento([6, 7])) {
           mensileCalcolato[7].versamentoIVA = posQ2;
         }
         creditoQ = 0;
@@ -1674,11 +1680,11 @@ export const calcPosizIoneIVA = (
         creditoQ = Math.abs(posQ2);
       }
 
-      // Q3 (Jul, Aug, Sep) -> Paid in Nov (month 10)
+      // Q3 (Jul, Aug, Sep) -> Paid in Oct/Nov (mesi 9-10)
       const saldoQ3 = mensileCalcolato[6].saldoIVA + mensileCalcolato[7].saldoIVA + mensileCalcolato[8].saldoIVA;
       const posQ3 = saldoQ3 - creditoQ;
       if (posQ3 > 0) {
-        if (mensileCalcolato[10].isForecastMese || mensileCalcolato[10].versamentoIVA === 0) {
+        if (mensileCalcolato[10].isForecastMese || !finestraHaVersamento([9, 10])) {
           mensileCalcolato[10].versamentoIVA = posQ3;
         }
         creditoQ = 0;
@@ -1745,18 +1751,20 @@ export const calcPosizIoneIVA = (
     // Q4 versamento avviene a Marzo (mese 2), Febbraio (mese 1) o Gennaio (mese 0) del prossimo anno
     const q4VersamentoNextYear = getVersamentoMeseNextYear(2) + getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0);
 
+    const sommaVersamentoFinestra = (mesi: number[]) => mesi.reduce((s, m) => s + mensileCalcolato[m].versamentoIVA, 0);
+
     mensileCalcolato.forEach((m, idx) => {
       if (idx === 2) {
         const q1Saldo = mensileCalcolato[0].saldoIVA + mensileCalcolato[1].saldoIVA + mensileCalcolato[2].saldoIVA;
-        const q1Versamenti = mensileCalcolato[4].versamentoIVA;
+        const q1Versamenti = sommaVersamentoFinestra([3, 4]);
         m.posizionNetta = q1Saldo - q1Versamenti;
       } else if (idx === 5) {
         const q2Saldo = mensileCalcolato[3].saldoIVA + mensileCalcolato[4].saldoIVA + mensileCalcolato[5].saldoIVA;
-        const q2Versamenti = mensileCalcolato[7].versamentoIVA;
+        const q2Versamenti = sommaVersamentoFinestra([6, 7]);
         m.posizionNetta = q2Saldo - q2Versamenti;
       } else if (idx === 8) {
         const q3Saldo = mensileCalcolato[6].saldoIVA + mensileCalcolato[7].saldoIVA + mensileCalcolato[8].saldoIVA;
-        const q3Versamenti = mensileCalcolato[10].versamentoIVA;
+        const q3Versamenti = sommaVersamentoFinestra([9, 10]);
         m.posizionNetta = q3Saldo - q3Versamenti;
       } else if (idx === 11) {
         const q4Saldo = mensileCalcolato[9].saldoIVA + mensileCalcolato[10].saldoIVA + mensileCalcolato[11].saldoIVA;
@@ -1778,9 +1786,9 @@ export const calcPosizIoneIVA = (
     const decVersamentoNextYear = getVersamentoMeseNextYear(0);
     totaleVersato = activeMonthsVersato + decVersamentoNextYear;
   } else {
-    const q1Payment = mensileCalcolato[4].versamentoIVA;
-    const q2Payment = mensileCalcolato[7].versamentoIVA;
-    const q3Payment = mensileCalcolato[10].versamentoIVA;
+    const q1Payment = mensileCalcolato[3].versamentoIVA + mensileCalcolato[4].versamentoIVA;
+    const q2Payment = mensileCalcolato[6].versamentoIVA + mensileCalcolato[7].versamentoIVA;
+    const q3Payment = mensileCalcolato[9].versamentoIVA + mensileCalcolato[10].versamentoIVA;
     const q4Payment = (getVersamentoMeseNextYear(2) + getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0)) || mensileCalcolato[11].versamentoIVA;
     totaleVersato = q1Payment + q2Payment + q3Payment + q4Payment;
   }
