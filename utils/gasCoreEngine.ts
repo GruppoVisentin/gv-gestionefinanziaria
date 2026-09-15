@@ -1003,8 +1003,16 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     ? imposteManualiYtd / ebtYtd          // aliquota reale dai dati inseriti
     : 0.279;                               // fallback: IRES 24% + IRAP 3.9%
 
-  const forecastUtile = isCurrentYear ? (proiezioneEbt - ebtYtd) * (1 - aliquotaEffettiva) + forecastStraordinario : 0;
-  const proiezioneUtile = isCurrentYear ? utileNettoTot + forecastUtile : utileNettoTot;
+  // Le imposte proiettate vanno stimate sull'INTERO imponibile dell'anno (EBT + straordinario
+  // proiettati), non solo sull'incremento rispetto a oggi. La vecchia formula sommava l'utile YTD
+  // (gia' al netto delle imposte reali versate finora) a un incremento tassato separatamente:
+  // un'approssimazione che diventa molto imprecisa quando l'utile YTD e' fortemente negativo -
+  // tipico a meta' anno per un'edile, dove i ricavi da SAL/saldo commessa arrivano tardi. Bug
+  // trovato confrontando col calcolo fiscale vero del pannello "CE Rettificato" di CEView.tsx
+  // (calcPrevisioneFiscale): differenza di ~726.000 euro sui dati reali del 2026-09-15.
+  const baseImponibileProiezione = proiezioneEbt + proiezioneStraordinario;
+  const imposteProiezioneStimate = Math.max(0, baseImponibileProiezione) * aliquotaEffettiva;
+  const proiezioneUtile = isCurrentYear ? (baseImponibileProiezione - imposteProiezioneStimate) : utileNettoTot;
 
   // mesiTrascorsi dichiarato a linea 601
 
