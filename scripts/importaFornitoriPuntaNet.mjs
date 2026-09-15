@@ -118,12 +118,46 @@ if (!mapping.ragioneSociale) {
 const colonneSelect = Object.values(mapping).map(c => `[${c}]`).join(', ');
 const righe = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT ${colonneSelect} FROM [${TABELLA}] FOR JSON PATH`);
 
+// Riepilogo economico per fornitore, per le insight della tab "Mestieri Fornitori"
+// di Direttore Cantiere (fatturato, numero fatture, ultimo utilizzo). A differenza
+// dell'anagrafica sopra, qui l'aggregazione è per IDCliFor via chiave numerica reale
+// (Documenti.IDCliFor = Clienti Fornitori.IDCliFor) — non serve alcun fuzzy match sui
+// nomi, quindi il dato è affidabile al 100% per i soli fornitori con IDCliFor noto
+// (cioè quelli già passati da PuntaNet, non quelli inseriti a mano in app).
+// Tipo = 1 = FEP, fattura passiva (fornitore) — coerente con importaPuntaNet.mjs.
+let riepilogoPerId = new Map();
+if (mapping.puntaNetIdCliFor) {
+  try {
+    const riepilogo = runSql(
+      DB_IMPRESA,
+      `SET NOCOUNT ON; SELECT IDCliFor,
+         COUNT(*) AS NumeroFatture,
+         SUM(Totale) AS FatturatoTotale,
+         SUM(CASE WHEN YEAR(Data) = YEAR(GETDATE()) THEN Totale ELSE 0 END) AS FatturatoAnnoCorrente,
+         MAX(Data) AS UltimaFattura
+       FROM Documenti WHERE Tipo = 1 GROUP BY IDCliFor FOR JSON PATH`
+    );
+    riepilogoPerId = new Map(riepilogo.map(r => [String(r.IDCliFor), r]));
+  } catch (e) {
+    console.log(`\nImpossibile calcolare il riepilogo economico (${e.message}) — il report includerà comunque l'anagrafica, senza fatturato/numero fatture.`);
+  }
+}
+
 const fornitori = righe
   .map(r => {
     const out = {};
     for (const [campo, colonna] of Object.entries(mapping)) {
       const v = r[colonna];
       if (v !== null && v !== undefined && String(v).trim() !== '') out[campo] = typeof v === 'string' ? v.trim() : v;
+    }
+    if (out.puntaNetIdCliFor !== undefined) {
+      const r2 = riepilogoPerId.get(String(out.puntaNetIdCliFor));
+      if (r2) {
+        out.numeroFatturePuntaNet = r2.NumeroFatture;
+        out.fatturatoTotalePuntaNet = r2.FatturatoTotale;
+        out.fatturatoAnnoCorrente = r2.FatturatoAnnoCorrente;
+        out.ultimaFatturaPuntaNet = r2.UltimaFattura ? String(r2.UltimaFattura).slice(0, 10) : undefined;
+      }
     }
     return out;
   })

@@ -19,6 +19,13 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // Aggiunte in un secondo momento (riepilogo economico per le insight della tab
+  // "Mestieri Fornitori") — la tabella esisteva già in produzione, quindi vanno
+  // aggiunte con ALTER, non basta il CREATE TABLE IF NOT EXISTS sopra.
+  await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS numero_fatture INTEGER`;
+  await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS fatturato_anno_corrente NUMERIC`;
+  await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS fatturato_totale NUMERIC`;
+  await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS ultima_fattura DATE`;
 }
 
 function rowToFornitore(row: any) {
@@ -34,8 +41,18 @@ function rowToFornitore(row: any) {
     pec: row.pec,
     puntaNetIdCliFor: row.punta_net_id_cli_for,
     mestiere: row.mestiere,
+    numeroFatture: row.numero_fatture,
+    fatturatoAnnoCorrente: row.fatturato_anno_corrente !== null ? Number(row.fatturato_anno_corrente) : null,
+    fatturatoTotale: row.fatturato_totale !== null ? Number(row.fatturato_totale) : null,
+    ultimaFattura: toDateStr(row.ultima_fattura),
     updatedAt: row.updated_at,
   };
+}
+
+function toDateStr(value: any): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
 }
 
 export default async function handler(req: any, res: any) {
@@ -53,14 +70,17 @@ export default async function handler(req: any, res: any) {
       // mestiere: quella si imposta solo da Direttore Cantiere (vedi PATCH sotto),
       // che è l'unica app con una sezione dedicata a categorizzare i fornitori per
       // mestiere — qui scrivendola andremmo a cancellare la categorizzazione fatta lì.
-      const { source, sourceId, ragioneSociale, pIvaCf, indirizzo, telefono, email, pec, puntaNetIdCliFor } = req.body || {};
+      const {
+        source, sourceId, ragioneSociale, pIvaCf, indirizzo, telefono, email, pec, puntaNetIdCliFor,
+        numeroFatture, fatturatoAnnoCorrente, fatturatoTotale, ultimaFattura,
+      } = req.body || {};
       if (!source || !sourceId || !ragioneSociale) {
         return res.status(400).json({ error: 'Campi obbligatori mancanti: source, sourceId, ragioneSociale' });
       }
       const id = `${source}:${sourceId}`;
       const rows = await sql`
-        INSERT INTO fornitori_registry (id, source, source_id, ragione_sociale, piva_cf, indirizzo, telefono, email, pec, punta_net_id_cli_for, updated_at)
-        VALUES (${id}, ${source}, ${sourceId}, ${ragioneSociale}, ${pIvaCf ?? null}, ${indirizzo ?? null}, ${telefono ?? null}, ${email ?? null}, ${pec ?? null}, ${puntaNetIdCliFor ?? null}, now())
+        INSERT INTO fornitori_registry (id, source, source_id, ragione_sociale, piva_cf, indirizzo, telefono, email, pec, punta_net_id_cli_for, numero_fatture, fatturato_anno_corrente, fatturato_totale, ultima_fattura, updated_at)
+        VALUES (${id}, ${source}, ${sourceId}, ${ragioneSociale}, ${pIvaCf ?? null}, ${indirizzo ?? null}, ${telefono ?? null}, ${email ?? null}, ${pec ?? null}, ${puntaNetIdCliFor ?? null}, ${numeroFatture ?? null}, ${fatturatoAnnoCorrente ?? null}, ${fatturatoTotale ?? null}, ${ultimaFattura ?? null}, now())
         ON CONFLICT (id) DO UPDATE SET
           ragione_sociale = EXCLUDED.ragione_sociale,
           piva_cf = EXCLUDED.piva_cf,
@@ -69,6 +89,10 @@ export default async function handler(req: any, res: any) {
           email = EXCLUDED.email,
           pec = EXCLUDED.pec,
           punta_net_id_cli_for = EXCLUDED.punta_net_id_cli_for,
+          numero_fatture = EXCLUDED.numero_fatture,
+          fatturato_anno_corrente = EXCLUDED.fatturato_anno_corrente,
+          fatturato_totale = EXCLUDED.fatturato_totale,
+          ultima_fattura = EXCLUDED.ultima_fattura,
           updated_at = now()
         RETURNING *
       `;

@@ -133,6 +133,15 @@ export interface Fornitore {
   // Presenti solo se importato dal report PuntaNet (Clienti Fornitori), per
   // riconciliare re-importazioni successive senza creare doppioni.
   puntaNetIdCliFor?: number;
+  // Riepilogo economico da Documenti (Tipo=1, fatture fornitore), calcolato in SQL
+  // per IDCliFor da scripts/importaFornitoriPuntaNet.mjs — presente solo per i
+  // fornitori con puntaNetIdCliFor noto. Pubblicato sul registro condiviso per le
+  // insight della tab "Mestieri Fornitori" di Direttore Cantiere; mai calcolato o
+  // modificato altrove in app.
+  numeroFatturePuntaNet?: number;
+  fatturatoAnnoCorrente?: number;
+  fatturatoTotalePuntaNet?: number;
+  ultimaFatturaPuntaNet?: string; // ISO date string
 }
 
 export interface BankAccount {
