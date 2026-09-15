@@ -200,7 +200,7 @@ const IncomeTimeline: React.FC<IncomeTimelineProps> = ({
       availableProjects.filter(p => p.status === 'ACTIVE' && p.estimatedStartDate).forEach(p => {
           if (projectName && p.name.trim() !== projectName) return;
           const start = parseUTCDate(p.estimatedStartDate!);
-          const startMonthGlobal = start.getFullYear() * 12 + start.getMonth();
+          const startMonthGlobal = start.getUTCFullYear() * 12 + start.getUTCMonth();
           const targetMonthGlobal = currentYear * 12 + monthIndex;
           const diff = targetMonthGlobal - startMonthGlobal;
 

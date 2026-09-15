@@ -2,7 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Transaction, TransactionType, Project } from '../types';
 import { CURRENCY_FORMATTER } from '../constants';
-import { getDynamicCEType, computeCommesseCompletate } from './gasCoreEngine';
+import { getDynamicCEType, computeCommesseCompletate, parseUTCDate } from './gasCoreEngine';
 
 export interface MonthlyReportConfig {
   monthIndex: number;
@@ -64,9 +64,13 @@ export const exportMonthlyReportPDF = async (config: MonthlyReportConfig): Promi
   };
 
   // ── Filtra transazioni del mese ──────────────────────────────
+  // parseUTCDate + getters UTC, non new Date(...).getFullYear()/getMonth() (fuso locale): stessa
+  // convenzione del motore CE, altrimenti in un fuso orario dietro UTC una transazione vicina a
+  // fine/inizio mese poteva finire nel mese sbagliato in questo export (bug trovato in audit il
+  // 2026-09-15).
   const txMese = transactions.filter(t => {
-    const d = new Date(t.date);
-    return d.getFullYear() === year && d.getMonth() === monthIndex;
+    const d = parseUTCDate(t.date);
+    return d.getUTCFullYear() === year && d.getUTCMonth() === monthIndex;
   });
 
   // Escludi ammortamenti (costi non monetari) dal flusso di cassa
