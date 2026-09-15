@@ -1,13 +1,14 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, Project } from '../types';
+import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, Project, SaldoInizialeCashFlow } from '../types';
 import { CURRENCY_FORMATTER } from '../constants';
-import { parseUTCDate } from './gasCoreEngine';
+import { parseUTCDate, calcolaSaldoInizialeCassaConsuntivo, getDynamicCEType, computeCommesseCompletate } from './gasCoreEngine';
 
 interface CashFlowPdfOptions {
   transactions: Transaction[];
   currentYear: number;
   projects: Project[];
+  saldoInizialeCF: SaldoInizialeCashFlow;
   initialData: {
     accounts: BankAccount[];
     loans?: ExistingLoan[];
@@ -23,6 +24,7 @@ export const exportCashFlowProjectionPDF = ({
   transactions,
   currentYear,
   projects,
+  saldoInizialeCF,
   initialData,
   aiAnalysis
 }: CashFlowPdfOptions) => {
@@ -31,7 +33,10 @@ export const exportCashFlowProjectionPDF = ({
   const pdfH = pdf.internal.pageSize.getHeight();
 
   // --- CALCOLO DATI ---
-  const totalInitialBalance = initialData.accounts.reduce((sum, acc) => sum + acc.balance, 0);
+  // Saldo di partenza corretto per l'anno esportato (prima si usava sempre initialData.accounts,
+  // cioe' il saldo dell'anno base 2026, qualunque fosse currentYear — bug trovato in audit il
+  // 2026-09-14: vedi utils/gasCoreEngine.calcolaSaldoInizialeCassaConsuntivo).
+  const totalInitialBalance = calcolaSaldoInizialeCassaConsuntivo(saldoInizialeCF, transactions, currentYear);
   
   const getGrossAmount = (t: Transaction) => {
     if (typeof t.grossAmount === 'number') return t.grossAmount;
@@ -39,6 +44,14 @@ export const exportCashFlowProjectionPDF = ({
     const vat = t.vatRate ? (amount * t.vatRate) / 100 : 0;
     return amount + vat;
   };
+
+  // ceType e' congelato sulla transazione al momento della creazione: se la classificazione di
+  // una categoria cambia dopo, le transazioni vecchie restano con il valore vecchio.
+  // getDynamicCEType rilegge sempre la classificazione attuale (gia' usato dal motore CE
+  // principale) - prima questo export filtrava/sommava su tx.ceType grezzo (bug trovato in audit
+  // il 2026-09-14: 2 transazioni reali 2026 con ceType disallineato dalla categoria attuale).
+  const commesseCompletatePdf = computeCommesseCompletate(transactions, projects);
+  const dynCeType = (t: Transaction) => getDynamicCEType(t, projects, commesseCompletatePdf, currentYear);
 
   const meseCorrente = new Date().getMonth();
   const isAnnoCorrente = currentYear === new Date().getFullYear();
@@ -60,7 +73,10 @@ export const exportCashFlowProjectionPDF = ({
         .filter(t => t.type === TransactionType.INCOME)
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
       const aExpense = actualTransactions
-        .filter(t => t.type === TransactionType.EXPENSE)
+        // Gli ammortamenti sono costi non monetari: non movimentano cassa, vanno esclusi qui
+        // come gia' avviene a schermo in CashFlowTimeline (bug trovato in audit il 2026-09-14:
+        // il PDF li contava, causando uno scarto di flusso netto rispetto allo schermo).
+        .filter(t => t.type === TransactionType.EXPENSE && dynCeType(t) !== 'ammortamento')
         .reduce((sum, t) => sum + getGrossAmount(t), 0);
       return { income: aIncome, expense: aExpense, net: aIncome - aExpense, hasActuals: true };
     }
@@ -76,7 +92,7 @@ export const exportCashFlowProjectionPDF = ({
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
     let fExpense = forecastTransactions
-      .filter(t => t.type === TransactionType.EXPENSE)
+      .filter(t => t.type === TransactionType.EXPENSE && dynCeType(t) !== 'ammortamento')
       .reduce((sum, t) => sum + getGrossAmount(t), 0);
 
     const calculateLoanRepayment = (mIdx: number) => {
@@ -323,8 +339,9 @@ export const exportCashFlowProjectionPDF = ({
     .filter(t => !t.isForecast && t.date.startsWith(String(currentYear)))
     .reduce((sum, t) => {
       const amt = Math.abs(t.amount);
-      if (['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro'].includes(t.ceType as any)) return sum + amt;
-      if (['costo_variabile', 'costo_fisso', 'costo_studio'].includes(t.ceType as any)) return sum - amt;
+      const tipo = dynCeType(t);
+      if (['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro'].includes(tipo)) return sum + amt;
+      if (['costo_variabile', 'costo_fisso', 'costo_studio'].includes(tipo)) return sum - amt;
       return sum;
     }, 0);
 
@@ -439,19 +456,20 @@ export const exportCashFlowProjectionPDF = ({
     const d = parseUTCDate(t.date);
     if (d.getUTCFullYear() !== currentYear) return;
     const amount = Math.abs(t.amount);
+    const tipo = dynCeType(t);
 
-    if (t.ceType?.startsWith('ricavo')) {
+    if (tipo?.startsWith('ricavo')) {
       fatturato += amount;
-    } else if (t.ceType === 'costo_variabile') {
+    } else if (tipo === 'costo_variabile') {
       costiVariabili += amount;
-    } else if (t.ceType === 'costo_studio') {
+    } else if (tipo === 'costo_studio') {
       costiStudio += amount;
       if (t.category?.toLowerCase().includes('compenso amministratori') || t.category?.toLowerCase().includes('soci')) {
         compensoSoci += amount;
       }
-    } else if (t.ceType === 'costo_fisso') {
+    } else if (tipo === 'costo_fisso') {
       costiFissi += amount;
-    } else if (t.ceType === 'onere_finanziario') {
+    } else if (tipo === 'onere_finanziario') {
       oneriFin += amount;
     }
   });

@@ -356,6 +356,11 @@ export interface BackupData {
   saldiApertiPuntaNet?: { data: string; creditiClienti: number; debitiFornitori: number }; // ← NUOVO — fotografia giornaliera di Crediti Clienti/Debiti Fornitori aperti da PuntaNet, per il suggerimento in Stato Patrimoniale
   clients?: Client[]; // ← NUOVO — anagrafica clienti condivisa con l'ecosistema GV
   fornitori?: Fornitore[]; // ← NUOVO — anagrafica fornitori per macro/sotto categoria di lavorazione
+  // ← NUOVO — ceType assegnato alle categorie personalizzate create dall'utente (non presenti nella
+  // mappa statica CATEGORY_TO_CE_TYPE di constants.ts). Senza questo, una categoria custom cadeva
+  // sempre su 'solo_cashflow' ed era invisibile nel Conto Economico (bug trovato in audit il
+  // 2026-09-14).
+  customCategoryCeTypes?: Record<string, CEType>;
 }
 
 export enum AppView {

@@ -9,6 +9,12 @@ interface CEPdfOptions {
   ceData: CEData;
   activeTab: 'ytd' | 'projection' | 'monthly' | 'scostamenti' | 'previsionale';
   scostamenti?: any[];
+  // Stesso segnale gia' calcolato da CEView (txAnno.some(tx => tx.isForecast)): prima il PDF lo
+  // ricalcolava con un'euristica diversa e piu' debole (proiezioneFatturato !== fatturato), che
+  // risultava falsa quando le previsioni toccavano solo costi/oneri e non i ricavi - causando
+  // righe a 0 nel PDF dove lo schermo mostrava il valore vero di proiezione (bug trovato in audit
+  // il 2026-09-14).
+  hasForecasts: boolean;
 }
 
 const formatEuro = (val: number) => 
@@ -25,7 +31,8 @@ export const exportCEPDF = ({
   metrics,
   ceData,
   activeTab,
-  scostamenti
+  scostamenti,
+  hasForecasts
 }: CEPdfOptions) => {
   const orientation = activeTab === 'monthly' ? 'l' : 'p';
   const pdf = new jsPDF(orientation, 'mm', 'a4');
@@ -98,7 +105,6 @@ export const exportCEPDF = ({
     const addRow = (label: string, data: number[], isBold = false, isKPI = false, projOverride?: number) => {
       const sum = data.reduce((a, b) => a + b, 0);
       const pct = metrics.fatturato > 0 ? sum / metrics.fatturato : 0;
-      const hasForecasts = metrics.proiezioneFatturato !== metrics.fatturato;
       const projection = (hasForecasts && projOverride !== undefined)
         ? projOverride
         : (metrics.mesiTrascorsi > 0 ? (sum / metrics.mesiTrascorsi) * 12 : 0);

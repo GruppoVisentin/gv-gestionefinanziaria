@@ -311,10 +311,17 @@ const SPView: React.FC<SPViewProps> = ({
   }, [rimanenze, targetYear]);
 
   const autoFixedAssets = useMemo(() => {
+    // Il fallback a generateDefault2025Snapshot ha senso SOLO quando l'anno precedente mancante e'
+    // davvero il 2025 (bilancio ufficiale noto): usarlo per qualunque altro anno senza snapshot
+    // proponeva sempre i dati di chiusura 2025 come base, qualunque fosse l'anno target - bug
+    // trovato in audit il 2026-09-14 (es. proponeva di caricare 449.000 euro di "acquisto
+    // terreni/immobili" nel 2026 basandosi sulla chiusura 2025, dove quei terreni sono
+    // correttamente rimanenze, non immobilizzazioni). Per ogni altro anno senza uno snapshot reale
+    // dell'anno precedente, prevYearSnap resta undefined e i tre valori restano a 0 sotto.
     const prevYearSnap = snapshots.find(s => {
       const d = parseUTCDate(s.dataRiferimento);
       return d.getUTCFullYear() === targetYear - 1 && d.getUTCMonth() === 11 && d.getUTCDate() === 31;
-    }) || generateDefault2025Snapshot(transactions, initialData);
+    }) || (targetYear - 1 === 2025 ? generateDefault2025Snapshot(transactions, initialData) : undefined);
 
     let immobiliTerreni = prevYearSnap ? (prevYearSnap.immobiliTerreni || 0) : 0;
     let immMateriali = prevYearSnap ? (prevYearSnap.immMateriali || 0) : 0;
@@ -748,12 +755,26 @@ const SPView: React.FC<SPViewProps> = ({
                       </button>
                     )}
                   </div>
-                  <ManualInput 
-                    label="Crediti Tributari" 
-                    value={currentSnap.creditiTributari} 
-                    onChange={v => setCurrentSnap(s => ({...s, creditiTributari: v}))} 
-                    isManual={true} 
+                  <ManualInput
+                    label="Crediti Tributari"
+                    value={currentSnap.creditiTributari}
+                    onChange={v => setCurrentSnap(s => ({...s, creditiTributari: v}))}
+                    isManual={true}
                     tooltipText="Crediti vantati nei confronti dell'Erario o di altri enti impositori. Comprende l'eccedenza IVA a credito compensabile o a rimborso, crediti d'imposta per investimenti."
+                  />
+                  <ManualInput
+                    label="Crediti Finanziari"
+                    value={currentSnap.creditiFinanziari || 0}
+                    onChange={v => setCurrentSnap(s => ({...s, creditiFinanziari: v}))}
+                    isManual={true}
+                    tooltipText="Crediti finanziari e finanziamenti concessi (es. a società collegate), diversi dai crediti commerciali verso clienti."
+                  />
+                  <ManualInput
+                    label="Investimenti a Breve Termine"
+                    value={currentSnap.investimentiBT || 0}
+                    onChange={v => setCurrentSnap(s => ({...s, investimentiBT: v}))}
+                    isManual={true}
+                    tooltipText="Titoli e altri investimenti finanziari a breve termine, prontamente liquidabili."
                   />
                   <div className="space-y-2">
                     <ManualInput 

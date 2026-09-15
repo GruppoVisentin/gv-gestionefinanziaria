@@ -8,7 +8,7 @@ import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
 import { exportMonthlyReportPDF } from '../utils/monthlyPdfExport';
 import { exportCashFlowProjectionPDF } from '../utils/cashFlowPdfExport';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate, calculateRepayment } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, calcPosizIoneIVA, parseUTCDate, calculateRepayment, calcolaSaldoInizialeCassaConsuntivo } from '../utils/gasCoreEngine';
 
 interface CashFlowTimelineProps {
   transactions: Transaction[];
@@ -312,34 +312,10 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   // --- Initial Balance Calculations ---
   const ANNO_BASE = saldoInizialeCF.annoBase; // 2026
 
-  // Calcola il saldo iniziale CONSUNTIVO per l'anno corrente
-  const calcolaSaldoInizialeConsuntivo = (): number => {
-    // SE ESISTONO CONTI SPECIFICI PER QUESTO ANNO, USA QUELLI
-    const contiAnno = saldoInizialeCF.contiPerAnno?.[String(currentYear)];
-    if (contiAnno && contiAnno.length > 0) {
-      return contiAnno.reduce((sum, acc) => sum + acc.balance, 0);
-    }
-
-    if (currentYear <= ANNO_BASE) {
-      return saldoInizialeCF.saldoManualeConsuntivo;
-    }
-    // Accumula tutti i flussi consuntivi reali dal 2026 a currentYear-1
-    let saldo = saldoInizialeCF.saldoManualeConsuntivo;
-    for (let anno = ANNO_BASE; anno < currentYear; anno++) {
-      transactions.forEach(t => {
-        if (!!t.isForecast) return;
-        if (parseUTCDate(t.date).getUTCFullYear() !== anno) return;
-        if (t.type === TransactionType.INCOME) {
-          saldo += getGrossAmount(t);
-        } else if (t.ceType !== 'ammortamento') {
-          // Gli ammortamenti sono costi non monetari: non movimentano cassa e vanno esclusi dal
-          // saldo di cassa accumulato (coerente con calculateMonthlyFlow).
-          saldo -= getGrossAmount(t);
-        }
-      });
-    }
-    return saldo;
-  };
+  // Calcola il saldo iniziale CONSUNTIVO per l'anno corrente — logica condivisa con l'export PDF,
+  // vedi utils/gasCoreEngine.calcolaSaldoInizialeCassaConsuntivo.
+  const calcolaSaldoInizialeConsuntivo = (): number =>
+    calcolaSaldoInizialeCassaConsuntivo(saldoInizialeCF, transactions, currentYear);
 
   // Calcola il saldo iniziale PREVISIONALE per l'anno corrente
   const calcolaSaldoInizialePrevisionale = (): number => {
@@ -970,6 +946,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
         transactions,
         currentYear,
         projects,
+        saldoInizialeCF,
         initialData: {
           accounts: initialData.accounts,
           loans: initialData.loans,
@@ -1829,7 +1806,7 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
                           {month}
                         </span>
                         <button
-                          onClick={() => exportMonthlyReportPDF({ monthIndex, year: currentYear, transactions })}
+                          onClick={() => exportMonthlyReportPDF({ monthIndex, year: currentYear, transactions, projects })}
                           className="p-1 rounded-md hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
                           title={`Esporta Report Mensile ${month}`}
                         >

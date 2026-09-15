@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { parseUTCDate } from '../utils/gasCoreEngine';
+import { parseUTCDate, getDynamicCEType, computeCommesseCompletate } from '../utils/gasCoreEngine';
 import { Transaction, TransactionType, Project } from '../types';
 import { CURRENCY_FORMATTER } from '../constants';
 import { 
@@ -299,14 +299,25 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ transactions, projects, f
       return { data, keys: [...topCategories, 'Altro'] };
   }, [actualsForYear, expenseBreakdown, selectedYear]);
 
+  // Commesse completate (criterio OIC 23): serve a getDynamicCEType per sapere se un acconto da
+  // cliente su una commessa ad "acconto" e' gia' diventato ricavo o e' ancora debito - stessa
+  // funzione usata da AnalisiView/CEView/SPView, includeForecast=true per coerenza con quei moduli.
+  const commesseCompletate = useMemo(() => computeCommesseCompletate(transactions, projects, true), [transactions, projects]);
+
   // KPIs
   // INC-06 Fix: Exclude financing/capital/non-operative flows (ceType: solo_cashflow, capex, distribuzione_utile) from the main cash flow KPIs to show operational net flow.
+  // Bug trovato in audit il 2026-09-14: qui si filtrava sul ceType CONGELATO al momento
+  // dell'importazione invece che sulla riclassificazione dinamica - un acconto cliente su una
+  // commessa non ancora completata restava classificato come ricavo_core (congelato) invece di
+  // solo_cashflow (corretto), gonfiando il Flusso Netto. Impatto verificato sui dati reali 2026:
+  // circa 21.000 euro (2 transazioni su 18 in "[CANTIERE] Anticipi da Clienti su Commessa"
+  // cambiano davvero conteggio; le altre passano a ricavo_immobiliare, gia' incluso comunque).
   const totalIncome = actualsForPeriod
-    .filter(t => t.type === TransactionType.INCOME && !['solo_cashflow', 'capex', 'distribuzione_utile'].includes(t.ceType ?? ''))
+    .filter(t => t.type === TransactionType.INCOME && !['solo_cashflow', 'capex', 'distribuzione_utile'].includes(getDynamicCEType(t, projects, commesseCompletate, selectedYear)))
     .reduce((acc, t) => acc + (t.amount * (1 + (t.vatRate || 0)/100)), 0);
 
   const totalExpense = actualsForPeriod
-    .filter(t => t.type === TransactionType.EXPENSE && !['solo_cashflow', 'capex', 'distribuzione_utile'].includes(t.ceType ?? ''))
+    .filter(t => t.type === TransactionType.EXPENSE && !['solo_cashflow', 'capex', 'distribuzione_utile'].includes(getDynamicCEType(t, projects, commesseCompletate, selectedYear)))
     .reduce((acc, t) => acc + (t.amount * (1 + (t.vatRate || 0)/100)), 0);
 
   const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;

@@ -19,7 +19,8 @@ import {
   BankAccount,
   ImportSession,
   Client,
-  Fornitore
+  Fornitore,
+  CEType
 } from './types';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
@@ -695,6 +696,19 @@ const App: React.FC = () => {
 
   const [incomeCategories, setIncomeCategories] = useState<string[]>([...INCOME_CATEGORIES]);
 
+  // ceType delle categorie personalizzate create dall'utente (non presenti nella mappa statica
+  // CATEGORY_TO_CE_TYPE): senza questo cadevano sempre su 'solo_cashflow' e sparivano dal Conto
+  // Economico (bug trovato in audit il 2026-09-14). Viene unito a CATEGORY_TO_CE_TYPE (oggetto
+  // mutabile condiviso) cosi' ogni punto dell'app che gia' legge CATEGORY_TO_CE_TYPE[categoria]
+  // vede automaticamente la mappatura corretta, senza dover toccare ogni singolo punto di lettura.
+  const [customCategoryCeTypes, setCustomCategoryCeTypes] = useState<Record<string, CEType>>({});
+  useEffect(() => {
+    Object.assign(CATEGORY_TO_CE_TYPE, customCategoryCeTypes);
+  }, [customCategoryCeTypes]);
+  const handleSetCategoryCeType = useCallback((category: string, ceType: CEType) => {
+    setCustomCategoryCeTypes(prev => ({ ...prev, [category]: ceType }));
+  }, []);
+
   // Dynamic Supplier Presets
   const [supplierPresets, setSupplierPresets] = useState<Record<string, string[]>>({...SUPPLIER_PRESETS});
 
@@ -883,12 +897,13 @@ const App: React.FC = () => {
     saldiApertiPuntaNet,
     clients,
     fornitori,
+    customCategoryCeTypes,
   }), [
     transactions, projects, fixedCategories, variableCategories, incomeCategories,
     supplierPresets, initialData, responsiblesList, ceManualData, spSnapshots,
     budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze,
     regolePuntaNet, mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
-    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet, clients, fornitori
+    storicoCantierePuntaNet, logImportAutomatico, saldiApertiPuntaNet, clients, fornitori, customCategoryCeTypes
   ]);
 
   // Ref che mantiene sempre l'ultima versione di buildBackupData
@@ -997,18 +1012,34 @@ const App: React.FC = () => {
     if (data.storicoCantierePuntaNet) setStoricoCantierePuntaNet(data.storicoCantierePuntaNet);
     if (data.clients) setClients(data.clients);
     if (data.fornitori) setFornitori(data.fornitori);
+    if (data.customCategoryCeTypes) setCustomCategoryCeTypes(data.customCategoryCeTypes);
     if (data.aliquoteFiscali) {
       setAliquotaIRES(data.aliquoteFiscali.ires);
       setAliquotaIRAP(data.aliquoteFiscali.irap);
     }
   }, []);
 
-  const saveToFile = useCallback(async (handle: FileSystemFileHandle, backupHandle?: FileSystemFileHandle | null) => {
+  // Coda dei salvataggi: autosave (debounce 1.5s), triggerImmediateSave (~25 punti dell'app) e
+  // Ctrl+S possono partire quasi in contemporanea. Senza serializzarli, due scritture potrebbero
+  // aprire due stream indipendenti sullo stesso file (comportamento non garantito dall'API File
+  // System Access) — un salvataggio con dati leggermente piu' vecchi potrebbe "vincere" su uno piu'
+  // recente (rischio strutturale segnalato in audit il 2026-09-14, mai riprodotto ma plausibile).
+  // Ogni nuovo salvataggio aspetta che quello in corso finisca prima di leggere lo stato piu'
+  // recente (tramite buildBackupDataRef) e scrivere: non e' un semplice ritardo, perche' la lettura
+  // dello stato avviene solo quando il task parte davvero, quindi arriva sempre coi dati piu' freschi.
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueueSave = useCallback((task: () => Promise<void>): Promise<void> => {
+    const run = saveQueueRef.current.then(task, task);
+    saveQueueRef.current = run.catch(() => {}); // un errore nel singolo salvataggio non deve bloccare i successivi
+    return run;
+  }, []);
+
+  const saveToFile = useCallback((handle: FileSystemFileHandle, backupHandle?: FileSystemFileHandle | null) => enqueueSave(async () => {
     try {
       setSaveStatus('saving');
       const data = buildBackupDataRef.current(); // ← legge sempre l'ultima versione
       await writeFile(handle, data);
-      
+
       // Salva in parallelo sul file di backup su Drive se configurato
       if (backupHandle) {
         try {
@@ -1017,7 +1048,7 @@ const App: React.FC = () => {
           console.error("Errore scrittura file di backup di sicurezza", err);
         }
       }
-      
+
       setLastSaved(new Date());
       setSaveStatus('saved');
       hasUnsavedChangesRef.current = false;
@@ -1026,7 +1057,7 @@ const App: React.FC = () => {
       console.error('Save failed', e);
       setSaveStatus('error');
     }
-  }, []); // ← array vuoto: saveToFile non cambia mai → interval non si resetta mai
+  }), [enqueueSave]); // ← saveToFile non cambia mai → interval non si resetta mai
 
   const triggerImmediateSave = useCallback(async (
     updatedTxs?: Transaction[], 
@@ -1052,67 +1083,61 @@ const App: React.FC = () => {
     }
   ) => {
     if (!fileHandle) return;
-    try {
-      setSaveStatus('saving');
-      const data: BackupData = {
-        version: '4.0',
-        timestamp: new Date().toISOString(),
-        transactions: updatedTxs || transactions,
-        projects,
-        fixedCategories: overrides?.fixedCategories || fixedCategories,
-        variableCategories: overrides?.variableCategories || variableCategories,
-        incomeCategories: overrides?.incomeCategories || incomeCategories,
-        supplierPresets,
-        initialData,
-        saldoInizialeCF: overrides?.saldoInizialeCF || saldoInizialeCF,
-        operators: overrides?.operators || responsiblesList,
-        ceManualData: overrides?.ceManualData || ceManualData,
-        spSnapshots: overrides?.spSnapshots || spSnapshots,
-        budgetData: overrides?.budgetData || budgetData,
-        oreCantiereStorico: overrides?.oreStorico || oreStorico,
-        oreOperaiStorico: overrides?.oreOperaiStorico || oreOperaiStorico,
-        tipologieCantiere: overrides?.tipologieCantiere || tipologieCantiere,
-        cantieriPrev: updatedCantieriPrev || cantieriPrev,
-        rimanenze: overrides?.rimanenze || rimanenze,
-        regolePuntaNet,
-        mappingContiPuntaNet,
-        bozzaImportPuntaNet: overrides?.bozzaImportPuntaNet ?? bozzaImportPuntaNet,
-        importSessions: updatedSessions || importSessions,
-        storicoExcelImportato: updatedStoricoImportato !== undefined ? updatedStoricoImportato : storicoImportato,
-        aliquoteFiscali: {
-          ires: overrides?.aliquotaIRES !== undefined ? overrides.aliquotaIRES : aliquotaIRES,
-          irap: overrides?.aliquotaIRAP !== undefined ? overrides.aliquotaIRAP : aliquotaIRAP
-        },
-        storicoCantierePuntaNet,
-        logImportAutomatico,
-        saldiApertiPuntaNet,
-      };
+    return enqueueSave(async () => {
+      try {
+        setSaveStatus('saving');
+        // Parte SEMPRE da buildBackupData() (che include TUTTI i campi di BackupData, es. clients/
+        // fornitori) e applica sopra solo gli override espliciti passati a questa funzione — invece di
+        // ricostruire l'oggetto campo per campo a mano, elenco che in passato e' rimasto indietro rispetto
+        // al tipo BackupData e ha causato la perdita silenziosa di clients/fornitori ad ogni salvataggio
+        // immediato (bug trovato in audit il 2026-09-14).
+        const base = buildBackupDataRef.current();
+        const data: BackupData = {
+          ...base,
+          timestamp: new Date().toISOString(),
+          transactions: updatedTxs || base.transactions,
+          fixedCategories: overrides?.fixedCategories || base.fixedCategories,
+          variableCategories: overrides?.variableCategories || base.variableCategories,
+          incomeCategories: overrides?.incomeCategories || base.incomeCategories,
+          saldoInizialeCF: overrides?.saldoInizialeCF || base.saldoInizialeCF,
+          operators: overrides?.operators || base.operators,
+          ceManualData: overrides?.ceManualData || base.ceManualData,
+          spSnapshots: overrides?.spSnapshots || base.spSnapshots,
+          budgetData: overrides?.budgetData || base.budgetData,
+          oreCantiereStorico: overrides?.oreStorico || base.oreCantiereStorico,
+          oreOperaiStorico: overrides?.oreOperaiStorico || base.oreOperaiStorico,
+          tipologieCantiere: overrides?.tipologieCantiere || base.tipologieCantiere,
+          cantieriPrev: updatedCantieriPrev || base.cantieriPrev,
+          rimanenze: overrides?.rimanenze || base.rimanenze,
+          bozzaImportPuntaNet: overrides?.bozzaImportPuntaNet ?? base.bozzaImportPuntaNet,
+          importSessions: updatedSessions || base.importSessions,
+          storicoExcelImportato: updatedStoricoImportato !== undefined ? updatedStoricoImportato : base.storicoExcelImportato,
+          aliquoteFiscali: {
+            ires: overrides?.aliquotaIRES !== undefined ? overrides.aliquotaIRES : base.aliquoteFiscali.ires,
+            irap: overrides?.aliquotaIRAP !== undefined ? overrides.aliquotaIRAP : base.aliquoteFiscali.irap
+          },
+        };
 
-      await writeFile(fileHandle, data);
-      if (backupFileHandle) {
-        try {
-          await writeFile(backupFileHandle, data);
-        } catch (e) {
-          console.error('Backup write failed', e);
+        await writeFile(fileHandle, data);
+        if (backupFileHandle) {
+          try {
+            await writeFile(backupFileHandle, data);
+          } catch (e) {
+            console.error('Backup write failed', e);
+          }
         }
+        setLastSaved(new Date());
+        setSaveStatus('saved');
+        // I dati sono stati persistiti: azzera il flag così l'autosave periodico non riscrive inutilmente
+        // (coerente con saveToFile). Prima restava true e provocava un save ridondante al tick successivo.
+        hasUnsavedChangesRef.current = false;
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (e) {
+        console.error('Immediate save failed', e);
+        setSaveStatus('error');
       }
-      setLastSaved(new Date());
-      setSaveStatus('saved');
-      // I dati sono stati persistiti: azzera il flag così l'autosave periodico non riscrive inutilmente
-      // (coerente con saveToFile). Prima restava true e provocava un save ridondante al tick successivo.
-      hasUnsavedChangesRef.current = false;
-      setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch (e) {
-      console.error('Immediate save failed', e);
-      setSaveStatus('error');
-    }
-  }, [
-    fileHandle, backupFileHandle, transactions, projects, fixedCategories, variableCategories,
-    incomeCategories, supplierPresets, initialData, saldoInizialeCF, responsiblesList, ceManualData,
-    spSnapshots, budgetData, oreStorico, oreOperaiStorico, tipologieCantiere, cantieriPrev, rimanenze, regolePuntaNet,
-    mappingContiPuntaNet, bozzaImportPuntaNet, importSessions, storicoImportato, aliquotaIRES, aliquotaIRAP,
-    storicoCantierePuntaNet
-  ]);
+    });
+  }, [fileHandle, backupFileHandle, enqueueSave]);
 
   // --- INITIALIZATION ---
   useEffect(() => {
@@ -1745,7 +1770,12 @@ const App: React.FC = () => {
     // 1. Calcola i nuovi stati usando i valori correnti
     const newSessions = importSessions.map(s => s.id === sessionId ? { ...s, annullata: true } : s);
     
-    const storicoTxs = transactions.filter(t => (t.importSessionId === sessionId) || (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel")));
+    // Solo le transazioni DAVVERO rimosse da questa operazione: stesso sessionId, oppure (per lo
+    // storico legacy senza importSessionId) righe "Storico Excel" non taggate con NESSUNA sessione.
+    // Prima includeva qui TUTTE le transazioni "Storico Excel" di QUALSIASI sessione, quindi
+    // annullare un import poteva cancellare previsionali collegati a un'ALTRA sessione storico
+    // ancora valida, solo perche' la descrizione coincideva (bug trovato in audit il 2026-09-14).
+    const storicoTxs = transactions.filter(t => (t.importSessionId === sessionId) || (isStorico && t.sourceRef && t.sourceRef.startsWith("Storico Excel") && !t.importSessionId));
     const storicoDescSet = new Set(storicoTxs.map(t => t.description?.trim().toLowerCase()).filter(Boolean));
 
     const newTxs = transactions.filter(t => {
@@ -1792,22 +1822,48 @@ const App: React.FC = () => {
 
   // NEW: Update existing project (for estimates)
   const handleUpdateProject = (updatedProject: Project) => {
+      // Transaction.project e' il NOME della commessa (stringa libera, non l'id): senza questa
+      // propagazione, rinominare una commessa lasciava tutte le transazioni collegate orfane
+      // (riferite a un nome che non esiste piu' in nessuna commessa) - bug trovato in audit il
+      // 2026-09-14.
+      const old = projects.find(p => p.id === updatedProject.id);
+      if (old && old.name !== updatedProject.name) {
+        setTransactions(prev => prev.map(t => t.project === old.name ? { ...t, project: updatedProject.name } : t));
+      }
       setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
   };
 
   const handleDeleteProject = (id: string) => {
-    setProjects(prev => {
-      const project = prev.find(p => p.id === id);
-      // Solo una commessa di proprietà di questa app va rimossa anche dal
-      // registro condiviso: una commessa importata da DirettoreCantiere non
-      // va cancellata lì, altrimenti si perderebbe il cantiere originale.
-      if (project && !project.externalSource) {
-        deleteSharedCantiere('gestione_finanziaria', project.id).catch(e =>
-          console.error('Cancellazione commessa dal registro condiviso fallita', e)
-        );
-      }
-      return prev.filter(p => p.id !== id);
-    });
+    const project = projects.find(p => p.id === id);
+    if (!project) return;
+
+    // Stesso motivo della rename: le transazioni collegate lo sono per NOME, non per id - senza
+    // avviso restavano orfane silenziosamente alla cancellazione (bug trovato in audit il
+    // 2026-09-14). Qui non si cancellano le transazioni: si scollega solo il riferimento al
+    // cantiere ormai inesistente, dopo conferma esplicita dell'utente.
+    const linkedCount = transactions.filter(t => t.project === project.name).length;
+    if (linkedCount > 0) {
+      const ok = window.confirm(
+        `"${project.name}" ha ${linkedCount} transazioni collegate. Cancellando la commessa, quelle transazioni NON verranno cancellate ma perderanno il riferimento al cantiere. Continuare?`
+      );
+      if (!ok) return;
+      setTransactions(prev => prev.map(t => t.project === project.name ? { ...t, project: undefined } : t));
+    }
+
+    // Solo una commessa di proprietà di questa app va rimossa anche dal
+    // registro condiviso: una commessa importata da DirettoreCantiere non
+    // va cancellata lì, altrimenti si perderebbe il cantiere originale.
+    // Se la chiamata di rete fallisce, la riga resta orfana sul registro condiviso e il pull
+    // periodico (syncFromRegistry) potrebbe far ricomparire la commessa qui - prima l'unico segnale
+    // era un log in console, invisibile all'utente (gap trovato in audit il 2026-09-14). Ora si
+    // avvisa esplicitamente, cosi' l'utente sa che deve ritentare se la commessa ricompare.
+    if (!project.externalSource) {
+      deleteSharedCantiere('gestione_finanziaria', project.id).catch(e => {
+        console.error('Cancellazione commessa dal registro condiviso fallita', e);
+        alert(`"${project.name}" è stata rimossa da questa app, ma la cancellazione dal registro condiviso con le altre app GV non è riuscita (problema di rete). Se la commessa dovesse ricomparire dopo un aggiornamento automatico, cancellala di nuovo.`);
+      });
+    }
+    setProjects(prev => prev.filter(p => p.id !== id));
   };
 
   // --- CROSS-APP SYNC (registro condiviso cantieri/commesse con DirettoreCantiere) ---
@@ -2737,7 +2793,13 @@ const App: React.FC = () => {
                     transactions={transactions}
                     onRenameCategory={(oldName, newName) => {
                       setTransactions(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
+                      setCustomCategoryCeTypes(prev => {
+                        if (!(oldName in prev)) return prev;
+                        const { [oldName]: ceType, ...rest } = prev;
+                        return { ...rest, [newName]: ceType };
+                      });
                     }}
+                    onSetCategoryCeType={handleSetCategoryCeType}
                 />
             </div>
         );

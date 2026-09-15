@@ -1,4 +1,4 @@
-import { Transaction, CEData, SPSnapshot, BudgetData, RimanenzeAnno, Project, InitialBalanceBreakdown } from '../types';
+import { Transaction, CEData, SPSnapshot, BudgetData, RimanenzeAnno, Project, InitialBalanceBreakdown, SaldoInizialeCashFlow } from '../types';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 /**
@@ -13,7 +13,16 @@ export const parseUTCDate = (dateStr: any): Date => {
     const y = parseInt(parts[0], 10);
     const m = parseInt(parts[1], 10) - 1; // 0-indexed
     const d = parseInt(parts[2], 10);
-    return new Date(Date.UTC(y, m, d));
+    const result = new Date(Date.UTC(y, m, d));
+    // JS normalizza silenziosamente una data impossibile (es. 29 febbraio su anno non bisestile,
+    // o giorno 31 su un mese che non arriva a 31) spostandola al giorno successivo, senza errore.
+    // Il valore restituito resta invariato (per non rischiare regressioni sui moltissimi punti
+    // dell'app che si aspettano sempre una Date valida), ma viene segnalato in console per non
+    // restare invisibile - rischio puramente teorico, mai osservato nei dati reali (audit 2026-09-14).
+    if (result.getUTCFullYear() !== y || result.getUTCMonth() !== m || result.getUTCDate() !== d) {
+      console.warn(`parseUTCDate: data non valida "${dateStr}" normalizzata silenziosamente a ${result.toISOString().slice(0, 10)}`);
+    }
+    return result;
   }
   return new Date(dateStr);
 };
@@ -31,7 +40,63 @@ export const getLocalYMD = (d?: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+/**
+ * Saldo di cassa CONSUNTIVO a inizio anno per un dato anno target: se esiste un override
+ * esplicito per l'anno (contiPerAnno) lo usa, altrimenti riparte dal saldo manuale dell'anno
+ * base e accumula i flussi di cassa consuntivi reali (esclusi gli ammortamenti, non monetari)
+ * anno per anno fino a targetYear-1. Unica fonte di verità condivisa da schermo
+ * (CashFlowTimeline) ed export PDF (cashFlowPdfExport): prima il PDF ripartiva sempre dal
+ * saldo dell'anno base, indipendentemente dall'anno esportato (bug trovato in audit il
+ * 2026-09-14 — stesso meccanismo del "contava due volte la storia pre-2026" già corretto
+ * a schermo, mai applicato al PDF).
+ */
+export const calcolaSaldoInizialeCassaConsuntivo = (
+  saldoInizialeCF: SaldoInizialeCashFlow,
+  transactions: Transaction[],
+  targetYear: number
+): number => {
+  const annoBase = saldoInizialeCF.annoBase;
+
+  const contiAnno = saldoInizialeCF.contiPerAnno?.[String(targetYear)];
+  if (contiAnno && contiAnno.length > 0) {
+    return contiAnno.reduce((sum, acc) => sum + acc.balance, 0);
+  }
+
+  if (targetYear <= annoBase) {
+    return saldoInizialeCF.saldoManualeConsuntivo;
+  }
+
+  let saldo = saldoInizialeCF.saldoManualeConsuntivo;
+  for (let anno = annoBase; anno < targetYear; anno++) {
+    transactions.forEach(t => {
+      if (t.isForecast) return;
+      if (parseUTCDate(t.date).getUTCFullYear() !== anno) return;
+      const gross = typeof t.grossAmount === 'number' ? t.grossAmount : t.amount * (1 + (t.vatRate || 0) / 100);
+      if (t.type === 'INCOME') {
+        saldo += gross;
+      } else if (t.ceType !== 'ammortamento') {
+        // Gli ammortamenti sono costi non monetari: non movimentano cassa.
+        saldo -= gross;
+      }
+    });
+  }
+  return saldo;
+};
+
 // ─── AGGREGAZIONE MENSILE ────────────────────────────────────────
+
+// Quanto di un previsionale NON è ancora stato realizzato da consuntivi collegati
+// (linkedForecastId). Se nessun consuntivo lo collega, l'intera previsione è residua (0 realizzato).
+// Se un consuntivo lo collega ma per un importo inferiore (es. previsione 1.650€ realizzata da un
+// acconto di soli 25€), il residuo (1.625€) resta un valore atteso, non deve sparire per intero dal
+// previsionale/proiezione — bug trovato in audit il 2026-09-14: prima bastava un SOLO consuntivo
+// collegato, di qualunque importo, per escludere l'intera previsione ovunque nel motore.
+export const residuoPrevisioneNonRealizzata = (tx: Transaction, transactions: Transaction[]): number => {
+  const realizzato = transactions
+    .filter(act => !act.isForecast && act.linkedForecastId === tx.id)
+    .reduce((s, act) => s + Math.abs(act.amount), 0);
+  return Math.max(0, Math.abs(tx.amount) - realizzato);
+};
 
 // Helper to determine ceType dynamically if it's an INCOME and linked to a project
 // Attribuisce un INCASSO a una commessa. Regola generale: per link diretto (tx.project), usato dal 2026 in
@@ -193,10 +258,19 @@ export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesse
         return proj.jobType === 'Immobiliare' ? 'ricavo_immobiliare' : 'ricavo_core';
       }
       const isImmobiliare = proj.jobType === 'Immobiliare';
+      // '[CANTIERE] Anticipi da Clienti su Commessa' è incluso qui SOLO per progetti NON ad acconto
+      // (il ramo sopra, per metodoPagamento === 'acconto', è già uscito con `return` prima di
+      // arrivare qui): per una commessa a SAL un anticipo cliente è comunque ricavo dell'anno in cui
+      // arriva, non un debito da differire — non esiste per queste commesse un criterio di
+      // completamento che lo rilascerebbe in futuro. Senza questo, un incasso categorizzato come
+      // "Anticipi da Clienti" su un progetto non ad acconto restava `solo_cashflow` per sempre, un
+      // buco nero di ricavo permanente e silenzioso (bug trovato in audit il 2026-09-15: verificato
+      // sui dati reali su "Entrata da Rottami").
       const isOperationalRevenue = type === 'ricavo_core' || type === 'ricavo_immobiliare' ||
         tx.category === '[CANTIERE] SAL — Stato Avanzamento Lavori' ||
         tx.category === '[CANTIERE] Saldo Finale Commessa' ||
         tx.category === '[CANTIERE] Manutenzioni e Piccoli Lavori' ||
+        tx.category === '[CANTIERE] Anticipi da Clienti su Commessa' ||
         tx.category === '[IMMOBILIARE] Vendita Immobili e Terreni';
 
       if (isOperationalRevenue) {
@@ -779,12 +853,13 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
         parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
         (isRicavo || parseUTCDate(tx.date).getUTCMonth() > oggi.getMonth()) &&
         type && types.includes(type) &&
-        !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
+        residuoPrevisioneNonRealizzata(tx, transactions) > 0;
       })
       .reduce((s, tx) => {
         const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
         const isIncome = type.startsWith('ricavo') || type === 'provento_finanziario' || (type === 'straordinario' && tx.type === 'INCOME');
-        return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
+        const residuo = residuoPrevisioneNonRealizzata(tx, transactions);
+        return s + (isIncome ? residuo : -residuo);
       }, 0);
 
     // 2. Auto-simulated Project Costs & Revenues
@@ -869,30 +944,34 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   const dynamicInterests = getDynamicLoansInterests(transactions, ce.anno, initialData);
 
   // Get monthly transaction-based forecasts for onere_finanziario
+  // Solo per l'anno corrente: come tutti gli altri campi "Proiezione", un anno futuro deve mostrare
+  // solo il consuntivo (che per un anno non ancora iniziato e' zero), non anticipare il piano di
+  // ammortamento mutui — altrimenti si crea un EBT Proiezione negativo "fantasma" per anni futuri
+  // senza alcun ricavo/costo proiettato a bilanciarlo (bug trovato con stress test su 1000 scenari).
   const forecastOneriFinByMonth = Array(12).fill(0);
-  if (isCurrentYear || ce.anno > oggi.getFullYear()) {
+  if (isCurrentYear) {
     transactions
       .filter(tx => {
         const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
         return tx.isForecast &&
         parseUTCDate(tx.date).getUTCFullYear() === ce.anno &&
         type === 'onere_finanziario' &&
-        !transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id);
+        residuoPrevisioneNonRealizzata(tx, transactions) > 0;
       })
       .forEach(tx => {
         const m = parseUTCDate(tx.date).getUTCMonth();
-        forecastOneriFinByMonth[m] += Math.abs(tx.amount);
+        forecastOneriFinByMonth[m] += residuoPrevisioneNonRealizzata(tx, transactions);
       });
   }
 
   let proiezioneOneriFin = 0;
   for (let m = 0; m < 12; m++) {
-    if (ce.anno < oggi.getFullYear()) {
-      proiezioneOneriFin += ce.oneriFin[m];
-    } else {
-      proiezioneOneriFin += ce.oneriFin[m] > 0 
-        ? ce.oneriFin[m] 
+    if (isCurrentYear) {
+      proiezioneOneriFin += ce.oneriFin[m] > 0
+        ? ce.oneriFin[m]
         : (forecastOneriFinByMonth[m] + (dynamicInterests[m] || 0));
+    } else {
+      proiezioneOneriFin += ce.oneriFin[m];
     }
   }
 
@@ -937,8 +1016,14 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     ? imposteManualiYtd / ebtYtd          // aliquota reale dai dati inseriti
     : 0.279;                               // fallback: IRES 24% + IRAP 3.9%
 
-  const forecastUtile = isCurrentYear ? (proiezioneEbt - ebtYtd) * (1 - aliquotaEffettiva) + forecastStraordinario : 0;
-  const proiezioneUtile = isCurrentYear ? utileNettoTot + forecastUtile : utileNettoTot;
+  // NOTA: l'Utile Netto Proiezione NON va calcolato qui con `aliquotaEffettiva` (una stima
+  // approssimata, valida solo come fallback per la vista "Previsionale puro" — vedi CEView.tsx dove
+  // e' ancora usata a quello scopo). Ogni vista che mostra un Utile Netto Proiezione lo ricalcola
+  // da se' con `calcPrevisioneFiscale` (imponibile IRES/IRAP pieno, non un'aliquota media) e non
+  // legge un campo `proiezioneUtile` da qui: prima esisteva un campo con quel nome calcolato con la
+  // sola aliquotaEffettiva, mai letto da nessuna vista attiva ma comunque sbagliato (scostamento di
+  // ~344.000 euro sui dati reali del 2026-09-15 rispetto al calcolo pieno) — rimosso per non
+  // lasciare un valore silenziosamente errato pronto per essere riusato per sbaglio in futuro.
 
   // mesiTrascorsi dichiarato a linea 601
 
@@ -991,8 +1076,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     // Proiezioni a fine anno
     proiezioneFatturato,
     proiezioneEbitda,
-    proiezioneUtile,
-    proiezioneBreakEven:     breakEven, 
+    proiezioneBreakEven:     breakEven,
     mesiTrascorsi,
     aliquotaEffettiva,
     ricaviConInvoiceDate,
@@ -1358,7 +1442,8 @@ export const calcScostamenti = (
   mese: number | null,  // null = YTD (tutti i mesi), 0-11 = mese specifico
   budgetData?: BudgetData,
   manualOverrides?: Partial<CEData>,
-  projects?: Project[]
+  projects?: Project[],
+  modalita: 'cassa' | 'competenza' = 'cassa'
 ): ScostamentoRiga[] => {
 
   // Riclassificazione dinamica (come nel CE): il tx.ceType statico non riflette un metodoPagamento
@@ -1369,13 +1454,22 @@ export const calcScostamenti = (
   const commesseCompletatePrevisionale = computeCommesseCompletate(transactions, projects, true);
   const oggi = new Date();
 
+  // Stessa base di aggregateByMonthAndType (usata da BudgetView, sempre in modalita' competenza):
+  // in competenza si usa invoiceDate quando disponibile - prima calcScostamenti usava sempre
+  // tx.date, quindi Budget e Scostamenti potevano mostrare un totale annuo diverso per fatture a
+  // cavallo di fine anno con invoiceDate in un anno diverso da tx.date (bug trovato in audit il
+  // 2026-09-14).
   const filtra = (tx: Transaction, isForecast: boolean) => {
-    const d = parseUTCDate(tx.date);
+    const dataRiferimento = (modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date;
+    const d = parseUTCDate(dataRiferimento);
     if (d.getUTCFullYear() !== anno) return false;
     if (mese !== null && d.getUTCMonth() !== mese) return false;
     if (!!tx.isForecast !== isForecast) return false;
-    // N11 fix: esclude forecast già liquidati (linkedForecastId) per non gonfiare il previsionale
-    if (isForecast && transactions.some(act => !act.isForecast && act.linkedForecastId === tx.id)) return false;
+    // N11 fix: esclude forecast già liquidati (linkedForecastId) per non gonfiare il previsionale.
+    // Se il consuntivo collegato lo realizza solo in parte, il residuo resta (fix in audit
+    // 2026-09-14: prima un SOLO consuntivo collegato, di qualunque importo, escludeva l'intera
+    // previsione anche se ne copriva solo una piccola parte).
+    if (isForecast && residuoPrevisioneNonRealizzata(tx, transactions) <= 0) return false;
     return true;
   };
 
@@ -1399,7 +1493,8 @@ export const calcScostamenti = (
         // 2026-09-14: un rimborso assicurativo di €3.500 (INCOME su costo_fisso) veniva sommato come
         // se fosse un ulteriore costo invece di nettare quello esistente.
         const isIncome = tx.type === 'INCOME';
-        return s + (isIncome ? Math.abs(tx.amount) : -Math.abs(tx.amount));
+        const importo = isForecast ? residuoPrevisioneNonRealizzata(tx, transactions) : Math.abs(tx.amount);
+        return s + (isIncome ? importo : -importo);
       }, 0);
 
   const getBudget = (ceType: string): number => {
@@ -1553,15 +1648,20 @@ export const calcPosizIoneIVA = (
     return { mese, ivaIncassata, ivaPagata, saldoIVA, versamentoIVA };
   });
 
-  // Rileva frequenza in modo robusto (se ci sono pagamenti in mesi consecutivi in tutta la storia, è mensile)
-  const paymentsAllYears = transactions.filter(tx =>
+  // Rileva la frequenza per l'ANNO richiesto (se ci sono pagamenti in mesi consecutivi in
+  // quell'anno, è mensile) - prima si guardava tutta la storia insieme: se il regime fiscale
+  // fosse cambiato negli anni (es. per superamento/rientro sotto soglia di volume d'affari),
+  // sarebbe stato rilevato lo stesso regime per ogni anno, indipendentemente da quale fosse
+  // davvero in vigore quell'anno (bug trovato in audit il 2026-09-14).
+  const paymentsAnno = transactions.filter(tx =>
     tx.type === 'EXPENSE' &&
     tx.category === '[FISCO] Versamento IVA' &&
-    !tx.isForecast
+    !tx.isForecast &&
+    parseUTCDate(tx.date).getUTCFullYear() === anno
   );
 
   let hasConsecutivePayments = false;
-  const sortedPayments = [...paymentsAllYears].sort((a, b) => parseUTCDate(a.date).getTime() - parseUTCDate(b.date).getTime());
+  const sortedPayments = [...paymentsAnno].sort((a, b) => parseUTCDate(a.date).getTime() - parseUTCDate(b.date).getTime());
   for (let i = 0; i < sortedPayments.length - 1; i++) {
     const d1 = parseUTCDate(sortedPayments[i].date);
     const d2 = parseUTCDate(sortedPayments[i+1].date);
@@ -1607,11 +1707,17 @@ export const calcPosizIoneIVA = (
     } else {
       let creditoQ = 0;
 
-      // Q1 (Jan, Feb, Mar) -> Paid in May (month 4)
+      // Un versamento reale puo' non cadere esattamente nel mese "canonico" di scadenza (ravvedimento,
+      // ritardi bancari): prima si leggeva/scriveva un SOLO mese fisso, quindi un versamento registrato
+      // nel mese immediatamente precedente spariva dal totale annuale pur essendo gia' stato pagato
+      // (bug trovato in audit il 2026-09-14). Qui si somma/verifica su tutta la finestra di competenza.
+      const finestraHaVersamento = (mesi: number[]) => mesi.some(m => mensileCalcolato[m].versamentoIVA > 0);
+
+      // Q1 (Jan, Feb, Mar) -> Paid in Apr/May (mesi 3-4)
       const saldoQ1 = mensileCalcolato[0].saldoIVA + mensileCalcolato[1].saldoIVA + mensileCalcolato[2].saldoIVA;
       const posQ1 = saldoQ1 - creditoQ;
       if (posQ1 > 0) {
-        if (mensileCalcolato[4].isForecastMese || mensileCalcolato[4].versamentoIVA === 0) {
+        if (mensileCalcolato[4].isForecastMese || !finestraHaVersamento([3, 4])) {
           mensileCalcolato[4].versamentoIVA = posQ1;
         }
         creditoQ = 0;
@@ -1619,11 +1725,11 @@ export const calcPosizIoneIVA = (
         creditoQ = Math.abs(posQ1);
       }
 
-      // Q2 (Apr, May, Jun) -> Paid in Aug (month 7)
+      // Q2 (Apr, May, Jun) -> Paid in Jul/Aug (mesi 6-7)
       const saldoQ2 = mensileCalcolato[3].saldoIVA + mensileCalcolato[4].saldoIVA + mensileCalcolato[5].saldoIVA;
       const posQ2 = saldoQ2 - creditoQ;
       if (posQ2 > 0) {
-        if (mensileCalcolato[7].isForecastMese || mensileCalcolato[7].versamentoIVA === 0) {
+        if (mensileCalcolato[7].isForecastMese || !finestraHaVersamento([6, 7])) {
           mensileCalcolato[7].versamentoIVA = posQ2;
         }
         creditoQ = 0;
@@ -1631,11 +1737,11 @@ export const calcPosizIoneIVA = (
         creditoQ = Math.abs(posQ2);
       }
 
-      // Q3 (Jul, Aug, Sep) -> Paid in Nov (month 10)
+      // Q3 (Jul, Aug, Sep) -> Paid in Oct/Nov (mesi 9-10)
       const saldoQ3 = mensileCalcolato[6].saldoIVA + mensileCalcolato[7].saldoIVA + mensileCalcolato[8].saldoIVA;
       const posQ3 = saldoQ3 - creditoQ;
       if (posQ3 > 0) {
-        if (mensileCalcolato[10].isForecastMese || mensileCalcolato[10].versamentoIVA === 0) {
+        if (mensileCalcolato[10].isForecastMese || !finestraHaVersamento([9, 10])) {
           mensileCalcolato[10].versamentoIVA = posQ3;
         }
         creditoQ = 0;
@@ -1702,18 +1808,20 @@ export const calcPosizIoneIVA = (
     // Q4 versamento avviene a Marzo (mese 2), Febbraio (mese 1) o Gennaio (mese 0) del prossimo anno
     const q4VersamentoNextYear = getVersamentoMeseNextYear(2) + getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0);
 
+    const sommaVersamentoFinestra = (mesi: number[]) => mesi.reduce((s, m) => s + mensileCalcolato[m].versamentoIVA, 0);
+
     mensileCalcolato.forEach((m, idx) => {
       if (idx === 2) {
         const q1Saldo = mensileCalcolato[0].saldoIVA + mensileCalcolato[1].saldoIVA + mensileCalcolato[2].saldoIVA;
-        const q1Versamenti = mensileCalcolato[4].versamentoIVA;
+        const q1Versamenti = sommaVersamentoFinestra([3, 4]);
         m.posizionNetta = q1Saldo - q1Versamenti;
       } else if (idx === 5) {
         const q2Saldo = mensileCalcolato[3].saldoIVA + mensileCalcolato[4].saldoIVA + mensileCalcolato[5].saldoIVA;
-        const q2Versamenti = mensileCalcolato[7].versamentoIVA;
+        const q2Versamenti = sommaVersamentoFinestra([6, 7]);
         m.posizionNetta = q2Saldo - q2Versamenti;
       } else if (idx === 8) {
         const q3Saldo = mensileCalcolato[6].saldoIVA + mensileCalcolato[7].saldoIVA + mensileCalcolato[8].saldoIVA;
-        const q3Versamenti = mensileCalcolato[10].versamentoIVA;
+        const q3Versamenti = sommaVersamentoFinestra([9, 10]);
         m.posizionNetta = q3Saldo - q3Versamenti;
       } else if (idx === 11) {
         const q4Saldo = mensileCalcolato[9].saldoIVA + mensileCalcolato[10].saldoIVA + mensileCalcolato[11].saldoIVA;
@@ -1735,9 +1843,9 @@ export const calcPosizIoneIVA = (
     const decVersamentoNextYear = getVersamentoMeseNextYear(0);
     totaleVersato = activeMonthsVersato + decVersamentoNextYear;
   } else {
-    const q1Payment = mensileCalcolato[4].versamentoIVA;
-    const q2Payment = mensileCalcolato[7].versamentoIVA;
-    const q3Payment = mensileCalcolato[10].versamentoIVA;
+    const q1Payment = mensileCalcolato[3].versamentoIVA + mensileCalcolato[4].versamentoIVA;
+    const q2Payment = mensileCalcolato[6].versamentoIVA + mensileCalcolato[7].versamentoIVA;
+    const q3Payment = mensileCalcolato[9].versamentoIVA + mensileCalcolato[10].versamentoIVA;
     const q4Payment = (getVersamentoMeseNextYear(2) + getVersamentoMeseNextYear(1) + getVersamentoMeseNextYear(0)) || mensileCalcolato[11].versamentoIVA;
     totaleVersato = q1Payment + q2Payment + q3Payment + q4Payment;
   }
