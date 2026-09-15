@@ -2076,8 +2076,9 @@ const App: React.FC = () => {
   // --- REGISTRO FORNITORI CONDIVISO (stesso registro condiviso dei cantieri/clienti) ---
   // Solo pubblicazione: qui non serve leggere indietro nulla, il "mestiere" (unico
   // campo scritto da Direttore Cantiere, dalla sua sezione di categorizzazione) non
-  // ci interessa. Basta tenere il registro allineato ai dati anagrafici di ogni
-  // fornitore, sia inseriti a mano sia importati da PuntaNet.
+  // ci interessa. Basta tenere il registro allineato ai dati anagrafici e al
+  // riepilogo economico PuntaNet di ogni fornitore, sia inseriti a mano sia
+  // importati da PuntaNet (il riepilogo economico resta assente per i primi).
   useEffect(() => {
     if (appState !== 'ready') return;
     const timer = setTimeout(() => {
@@ -2092,6 +2093,10 @@ const App: React.FC = () => {
           email: f.email || null,
           pec: f.pec || null,
           puntaNetIdCliFor: f.puntaNetIdCliFor ? String(f.puntaNetIdCliFor) : null,
+          numeroFatture: f.numeroFatturePuntaNet ?? null,
+          fatturatoAnnoCorrente: f.fatturatoAnnoCorrente ?? null,
+          fatturatoTotale: f.fatturatoTotalePuntaNet ?? null,
+          ultimaFattura: f.ultimaFatturaPuntaNet ?? null,
         }).catch(e => console.error('Pubblicazione fornitore sul registro fallita', e));
       });
     }, 1500);

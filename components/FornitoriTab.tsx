@@ -140,7 +140,7 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [importPreview, setImportPreview] = useState<Omit<Fornitore, 'id'>[] | null>(null);
+  const [importPreview, setImportPreview] = useState<{ nuovi: Omit<Fornitore, 'id'>[]; aggiornamenti: { id: string; ragioneSociale: string; data: Omit<Fornitore, 'id'> }[] } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
   const grouped = useMemo(() => {
@@ -181,10 +181,11 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
         const parsed = JSON.parse(String(reader.result));
         const rows = Array.isArray(parsed) ? parsed : parsed.fornitori;
         if (!Array.isArray(rows)) throw new Error('Formato non riconosciuto: atteso un array di fornitori');
-        const existingIds = new Set(fornitori.map(f => f.puntaNetIdCliFor).filter(Boolean));
+        const existingByPuntaNetId = new Map(fornitori.filter(f => f.puntaNetIdCliFor).map(f => [f.puntaNetIdCliFor, f]));
         const existingNames = new Set(fornitori.map(f => f.ragioneSociale.toLowerCase().trim()));
-        const toImport: Omit<Fornitore, 'id'>[] = rows
-          .filter((r: any) => r.ragioneSociale && !existingIds.has(r.puntaNetIdCliFor) && !existingNames.has(String(r.ragioneSociale).toLowerCase().trim()))
+
+        const nuovi: Omit<Fornitore, 'id'>[] = rows
+          .filter((r: any) => r.ragioneSociale && !existingByPuntaNetId.has(r.puntaNetIdCliFor) && !existingNames.has(String(r.ragioneSociale).toLowerCase().trim()))
           .map((r: any) => ({
             ragioneSociale: r.ragioneSociale,
             macroCategoria: 'non_categorizzato' as const,
@@ -194,8 +195,34 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
             email: r.email || undefined,
             pec: r.pec || undefined,
             puntaNetIdCliFor: r.puntaNetIdCliFor || undefined,
+            numeroFatturePuntaNet: r.numeroFatturePuntaNet || undefined,
+            fatturatoAnnoCorrente: r.fatturatoAnnoCorrente || undefined,
+            fatturatoTotalePuntaNet: r.fatturatoTotalePuntaNet || undefined,
+            ultimaFatturaPuntaNet: r.ultimaFatturaPuntaNet || undefined,
           }));
-        setImportPreview(toImport);
+
+        // Per i fornitori già presenti (collegati via puntaNetIdCliFor), un
+        // re-import aggiorna SOLO il riepilogo economico — mai macroCategoria,
+        // sottoCategoria o note, che restano scelte dell'utente.
+        const aggiornamenti = rows
+          .filter((r: any) => r.ragioneSociale && r.puntaNetIdCliFor && existingByPuntaNetId.has(r.puntaNetIdCliFor))
+          .map((r: any) => {
+            const esistente = existingByPuntaNetId.get(r.puntaNetIdCliFor)!;
+            const { id, ...rest } = esistente;
+            return {
+              id,
+              ragioneSociale: esistente.ragioneSociale,
+              data: {
+                ...rest,
+                numeroFatturePuntaNet: r.numeroFatturePuntaNet || undefined,
+                fatturatoAnnoCorrente: r.fatturatoAnnoCorrente || undefined,
+                fatturatoTotalePuntaNet: r.fatturatoTotalePuntaNet || undefined,
+                ultimaFatturaPuntaNet: r.ultimaFatturaPuntaNet || undefined,
+              },
+            };
+          });
+
+        setImportPreview({ nuovi, aggiornamenti });
       } catch (e: any) {
         setImportError(e.message || 'File non valido');
       }
@@ -204,7 +231,10 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
   };
 
   const confirmImport = () => {
-    if (importPreview && importPreview.length > 0) onImportBatch(importPreview);
+    if (importPreview) {
+      if (importPreview.nuovi.length > 0) onImportBatch(importPreview.nuovi);
+      importPreview.aggiornamenti.forEach(a => onUpdateFornitore(a.id, a.data));
+    }
     setImportPreview(null);
   };
 
@@ -253,20 +283,24 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-bold text-amber-800">
-              {importPreview.length === 0
-                ? 'Nessun fornitore nuovo da importare (gia\' tutti presenti).'
-                : `${importPreview.length} fornitori pronti da importare, categoria "Da Categorizzare" — assegna Grezzo/Finiture dopo.`}
+              {importPreview.nuovi.length === 0 && importPreview.aggiornamenti.length === 0
+                ? 'Nessuna novità da importare (report identico ai dati già presenti).'
+                : [
+                    importPreview.nuovi.length > 0 ? `${importPreview.nuovi.length} fornitori nuovi (categoria "Da Categorizzare")` : null,
+                    importPreview.aggiornamenti.length > 0 ? `${importPreview.aggiornamenti.length} con fatturato/numero fatture aggiornati` : null,
+                  ].filter(Boolean).join(' · ')}
             </p>
             <div className="flex gap-2 shrink-0">
-              {importPreview.length > 0 && (
+              {(importPreview.nuovi.length > 0 || importPreview.aggiornamenti.length > 0) && (
                 <button onClick={confirmImport} className="p-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600"><Check size={16} /></button>
               )}
               <button onClick={() => setImportPreview(null)} className="p-2 bg-slate-200 text-slate-600 rounded-xl hover:bg-slate-300"><X size={16} /></button>
             </div>
           </div>
-          {importPreview.length > 0 && (
+          {(importPreview.nuovi.length > 0 || importPreview.aggiornamenti.length > 0) && (
             <ul className="text-xs text-amber-700 max-h-32 overflow-y-auto list-disc list-inside">
-              {importPreview.map((f, i) => <li key={i}>{f.ragioneSociale}{f.pIvaCf ? ` — ${f.pIvaCf}` : ''}</li>)}
+              {importPreview.nuovi.map((f, i) => <li key={`n${i}`}>{f.ragioneSociale}{f.pIvaCf ? ` — ${f.pIvaCf}` : ''} (nuovo)</li>)}
+              {importPreview.aggiornamenti.map((a, i) => <li key={`a${i}`}>{a.ragioneSociale} (aggiornamento)</li>)}
             </ul>
           )}
         </div>

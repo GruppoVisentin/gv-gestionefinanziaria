@@ -14,6 +14,12 @@ export interface SharedFornitore {
   // Mestiere/categoria (es. "Elettricista") — scritto solo da Direttore Cantiere,
   // che ha la sezione dedicata a categorizzare i fornitori del registro condiviso.
   mestiere: string | null;
+  // Riepilogo economico da PuntaNet (Documenti, Tipo=1) — scritto solo da Gestione
+  // Finanziaria, presente solo per i fornitori con puntaNetIdCliFor noto.
+  numeroFatture: number | null;
+  fatturatoAnnoCorrente: number | null;
+  fatturatoTotale: number | null;
+  ultimaFattura: string | null; // ISO date
   updatedAt: string;
 }
 
@@ -27,6 +33,10 @@ export interface SharedFornitoreInput {
   email?: string | null;
   pec?: string | null;
   puntaNetIdCliFor?: string | null;
+  numeroFatture?: number | null;
+  fatturatoAnnoCorrente?: number | null;
+  fatturatoTotale?: number | null;
+  ultimaFattura?: string | null;
 }
 
 export async function fetchSharedFornitori(): Promise<SharedFornitore[]> {
