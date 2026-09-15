@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Project, IntestatarioFattura } from '../types';
 import {
   Briefcase, MapPin, User, Calendar, HardHat, Plus,
-  Trash2, X, Save, Wallet, Shield, Pencil, Building, UserCheck, ChevronDown, Clock
+  Trash2, X, Save, Wallet, Shield, Pencil, Building, UserCheck, ChevronDown, Clock, AlertTriangle
 } from 'lucide-react';
 import { DATE_FORMATTER } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
@@ -51,6 +51,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
 }) => {
   const [mode, setMode] = useState<'list' | 'new' | 'edit'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
   // Cantieri futuri (preventivo) creati su DirettoreCantiere: sola lettura,
   // non diventano commesse finché non vengono attivati là.
@@ -361,7 +362,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
                     title="Modifica">
                     <Pencil size={15} />
                   </button>
-                  <button onClick={() => onDelete(project.id)}
+                  <button onClick={() => setProjectToDelete(project)}
                     className="p-1.5 hover:bg-red-50 rounded-lg text-slate-300 hover:text-red-500 transition-colors"
                     title="Elimina">
                     <Trash2 size={15} />
@@ -464,6 +465,43 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
           <p className="text-[11px] text-slate-400 mt-2">
             Preventivi non ancora attivati — diventano commesse automaticamente quando vengono attivati su DirettoreCantiere.
           </p>
+        </div>
+      )}
+
+      {/* CONFERMA ELIMINAZIONE */}
+      {projectToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4">
+          <div className="bg-white border border-slate-100 rounded-3xl w-full max-w-sm p-6 shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-500 mb-4 mx-auto">
+              <AlertTriangle size={24} />
+            </div>
+            <h3 className="text-lg font-extrabold text-slate-900 mb-2 text-center tracking-tight">Elimina Commessa</h3>
+            <p className="text-slate-500 text-xs text-center mb-3 font-medium leading-relaxed">
+              Sei sicuro di voler eliminare definitivamente <strong className="text-slate-800 font-bold">"{projectToDelete.name}"</strong>? Questa operazione non può essere annullata.
+            </p>
+            <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-[11px] text-center mb-6 font-semibold leading-relaxed">
+              {projectToDelete.externalSource
+                ? 'Questa commessa proviene da Direttore Cantiere: eliminandola da qui verrà rimossa solo temporaneamente — al prossimo aggiornamento ricomparirà, perché la copia originale resta su Direttore Cantiere. Per eliminarla definitivamente va cancellata da lì.'
+                : 'Se sincronizzata, verrà eliminata anche dal registro condiviso e quindi da Direttore Cantiere (e da altre app collegate in futuro) — l\'eliminazione è bidirezionale.'}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setProjectToDelete(null)}
+                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border border-slate-200/80 shadow-sm"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={() => {
+                  onDelete(projectToDelete.id);
+                  setProjectToDelete(null);
+                }}
+                className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl text-xs font-bold uppercase tracking-wider transition-all shadow-md"
+              >
+                Elimina
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
