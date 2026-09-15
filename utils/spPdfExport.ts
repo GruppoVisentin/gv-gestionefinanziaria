@@ -5,6 +5,7 @@ import { SPSnapshot } from '../types';
 interface SPPdfOptions {
   snapshot: SPSnapshot;
   metrics: any;
+  ebitdaTot: number;
 }
 
 const formatEuro = (val: number) => 
@@ -15,7 +16,8 @@ const formatPercent = (val: number) =>
 
 export const exportSPPDF = ({
   snapshot,
-  metrics
+  metrics,
+  ebitdaTot
 }: SPPdfOptions) => {
   const pdf = new jsPDF('p', 'mm', 'a4');
   const pdfW = pdf.internal.pageSize.getWidth();
@@ -178,9 +180,13 @@ export const exportSPPDF = ({
     pfnJudgement
   ]);
 
-  // PFN / EBITDA
+  // PFN / EBITDA — con EBITDA nullo o negativo il rapporto non ha senso (segno invertito o
+  // indeterminato): SPView.tsx mostra "N/A" in quel caso, ma questo export leggeva solo
+  // `metrics.pfnSuEbitda !== undefined` (sempre vero: calcSPMetrics restituisce 0, mai undefined),
+  // applicando comunque le soglie e mostrando un giudizio "OTTIMO"/"BUONO" fasullo su un documento
+  // destinato alle banche (bug trovato in audit il 2026-09-15).
   let pfnEbitdaJudgement = 'N.D.';
-  if (metrics.pfnSuEbitda !== undefined) {
+  if (ebitdaTot > 0) {
     if (metrics.pfnSuEbitda < 1.5) { pfnEbitdaJudgement = 'OTTIMO (<1.5x)'; }
     else if (metrics.pfnSuEbitda <= 3) { pfnEbitdaJudgement = 'BUONO (1.5x - 3.0x)'; }
     else if (metrics.pfnSuEbitda <= 5) { pfnEbitdaJudgement = 'ATTENZIONE (3.0x - 5.0x)'; }
@@ -188,7 +194,7 @@ export const exportSPPDF = ({
   }
   indexRows.push([
     'PFN / EBITDA',
-    `${metrics.pfnSuEbitda.toFixed(2)}x`,
+    ebitdaTot > 0 ? `${metrics.pfnSuEbitda.toFixed(2)}x` : 'N/A (EBITDA ≤ 0)',
     'Target Settoriale: < 3.00x',
     pfnEbitdaJudgement
   ]);
