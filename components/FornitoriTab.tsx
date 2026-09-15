@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles } from 'lucide-react';
 import { Fornitore, FornitoreMacroCategoria } from '../types';
 import { FORNITORI_TAXONOMY } from '../constants';
+import { parseContractPaymentTerms } from '../services/geminiService';
 
 interface FornitoriTabProps {
   fornitori: Fornitore[];
@@ -21,11 +22,14 @@ type FormState = {
   email: string;
   pec: string;
   note: string;
+  pagamentoAFineLavorazione: boolean;
+  terminiPagamentoNote: string;
 };
 
 const EMPTY_FORM: FormState = {
   ragioneSociale: '', macroCategoria: 'grezzo', sottoCategoria: '',
   pIvaCf: '', indirizzo: '', telefono: '', email: '', pec: '', note: '',
+  pagamentoAFineLavorazione: false, terminiPagamentoNote: '',
 };
 
 const MACRO_LABEL: Record<FornitoreMacroCategoria, string> = {
@@ -45,6 +49,8 @@ function toFornitoreInput(f: FormState): Omit<Fornitore, 'id'> {
     email: f.email.trim() || undefined,
     pec: f.pec.trim() || undefined,
     note: f.note.trim() || undefined,
+    pagamentoAFineLavorazione: f.pagamentoAFineLavorazione || undefined,
+    terminiPagamentoNote: f.terminiPagamentoNote.trim() || undefined,
   };
 }
 
@@ -59,6 +65,8 @@ function fromFornitore(f: Fornitore): FormState {
     email: f.email || '',
     pec: f.pec || '',
     note: f.note || '',
+    pagamentoAFineLavorazione: f.pagamentoAFineLavorazione || false,
+    terminiPagamentoNote: f.terminiPagamentoNote || '',
   };
 }
 
@@ -131,6 +139,97 @@ function FornitoreForm({ value, onChange }: { value: FormState; onChange: (v: Fo
         rows={2}
         className="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-200 text-sm resize-none"
       />
+
+      <div className="sm:col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={value.pagamentoAFineLavorazione}
+            onChange={e => onChange({ ...value, pagamentoAFineLavorazione: e.target.checked })}
+            className="rounded"
+          />
+          Pagamento legato al completamento di una lavorazione
+        </label>
+        <p className="text-[11px] text-slate-400 pl-6">
+          Se attivo, Direttore Cantiere avvisa l'amministrazione qui quando una lavorazione assegnata a questo fornitore viene segnata come finita.
+        </p>
+        <textarea
+          value={value.terminiPagamentoNote}
+          onChange={e => onChange({ ...value, terminiPagamentoNote: e.target.value })}
+          placeholder="Termini di pagamento da contratto (es. acconto 30% a fine grezzo, saldo a fine finiture)"
+          rows={2}
+          className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm resize-none"
+        />
+        <ContractExtractPanel onExtracted={(res) => onChange({ ...value, pagamentoAFineLavorazione: res.pagamentoAFineLavorazione, terminiPagamentoNote: res.note })} />
+      </div>
+    </div>
+  );
+}
+
+function ContractExtractPanel({ onExtracted }: { onExtracted: (res: { pagamentoAFineLavorazione: boolean; note: string }) => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const analizza = async () => {
+    if (!text.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await parseContractPaymentTerms(text);
+      if (!result) {
+        setError('Nessun termine riconosciuto. Verifica il testo incollato o riprova.');
+        return;
+      }
+      onExtracted(result);
+      setOpen(false);
+      setText('');
+    } catch (e: any) {
+      setError(e.message || 'Errore durante l\'analisi.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-700"
+      >
+        <FileSearch size={14} /> Estrai termini da contratto (AI)
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 pt-1">
+      <p className="text-[11px] text-slate-500">
+        Incolla qui il testo del contratto (o solo la clausola sui pagamenti) — l'AI propone i due campi sopra, da rivedere prima di salvare.
+      </p>
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        rows={5}
+        placeholder="Incolla qui il testo del contratto..."
+        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono resize-none"
+      />
+      {error && <div className="text-xs text-red-600 font-bold">{error}</div>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={analizza}
+          disabled={loading || !text.trim()}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors"
+        >
+          <Sparkles size={14} /> {loading ? 'Analisi in corso...' : 'Analizza'}
+        </button>
+        <button type="button" onClick={() => { setOpen(false); setError(null); }} className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded-lg text-xs font-bold transition-colors">
+          Annulla
+        </button>
+      </div>
     </div>
   );
 }
@@ -346,7 +445,14 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                       {list.map(f => (
                         <div key={f.id} className="flex items-center gap-3 px-4 py-3">
                           <div className="flex-1 min-w-0">
-                            <div className="font-bold text-sm text-slate-800 truncate">{f.ragioneSociale}</div>
+                            <div className="font-bold text-sm text-slate-800 truncate flex items-center gap-2">
+                              {f.ragioneSociale}
+                              {f.pagamentoAFineLavorazione && (
+                                <span title={f.terminiPagamentoNote || 'Pagamento legato a fine lavorazione'} className="text-[9px] font-bold uppercase tracking-wide text-amber-600 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-full shrink-0">
+                                  Pagamento a fine lavorazione
+                                </span>
+                              )}
+                            </div>
                             <div className="flex flex-wrap gap-x-3 text-[11px] text-slate-400">
                               {f.pIvaCf && <span>{f.pIvaCf}</span>}
                               {f.telefono && <span>{f.telefono}</span>}

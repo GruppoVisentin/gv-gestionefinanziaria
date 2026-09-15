@@ -339,6 +339,54 @@ export const generateCardInsight = async (
   }
 };
 
+export const parseContractPaymentTerms = async (contractText: string): Promise<{ pagamentoAFineLavorazione: boolean; note: string } | null> => {
+  if (!apiKey) {
+    console.warn("API Key is missing for Gemini.");
+    return null;
+  }
+  if (!contractText.trim()) return null;
+
+  try {
+    const prompt = `
+      Sei un esperto di contratti di subappalto/fornitura per un'impresa edile italiana.
+      Analizza il seguente testo (contratto o clausola sui pagamenti con un fornitore/subappaltatore)
+      e determina se il pagamento (acconto, SAL, saldo) è legato al COMPLETAMENTO di una lavorazione
+      o fase di lavoro (es. "saldo a fine lavori", "acconto 30% a completamento del grezzo",
+      "pagamento a consuntivo lavorazione"), oppure se segue invece scadenze puramente temporali
+      slegate dall'avanzamento (es. "30 giorni data fattura fine mese", rate mensili fisse).
+
+      Testo da analizzare:
+      ---
+      ${contractText.slice(0, 8000)}
+      ---
+
+      Rispondi ESCLUSIVAMENTE con questo JSON, senza markdown:
+      {
+        "pagamentoAFineLavorazione": true/false,
+        "note": "riassunto breve e concreto dei termini di pagamento trovati, in italiano, max 2-3 frasi"
+      }
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+    });
+
+    const text = response.text?.trim();
+    if (!text) return null;
+    const match = text.match(/\{[\s\S]+\}/);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]);
+    return {
+      pagamentoAFineLavorazione: !!parsed.pagamentoAFineLavorazione,
+      note: String(parsed.note || '').trim(),
+    };
+  } catch (error) {
+    console.error("Gemini contract parse error:", error);
+    return null;
+  }
+};
+
 export const generateFinancialReportPDFAnalysis = async (data: any): Promise<string> => {
   if (!apiKey) {
     return "API Key mancante per l'analisi AI.";

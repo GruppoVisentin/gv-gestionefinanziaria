@@ -66,6 +66,7 @@ import {
 } from './components/Wizards';
 import { ClientiManager } from './components/ClientiManager';
 import { FornitoriTab } from './components/FornitoriTab';
+import { PagamentiFornitoriTab } from './components/PagamentiFornitoriTab';
 import { 
   LayoutDashboard, 
   LayoutGrid,
@@ -96,7 +97,8 @@ import {
   CheckCircle2,
   Loader2,
   Receipt,
-  Copy
+  Copy,
+  BellRing
 } from 'lucide-react';
 import { 
   getHandleFromIDB, 
@@ -2097,6 +2099,8 @@ const App: React.FC = () => {
           fatturatoAnnoCorrente: f.fatturatoAnnoCorrente ?? null,
           fatturatoTotale: f.fatturatoTotalePuntaNet ?? null,
           ultimaFattura: f.ultimaFatturaPuntaNet ?? null,
+          pagamentoAFineLavorazione: f.pagamentoAFineLavorazione ?? null,
+          terminiPagamentoNote: f.terminiPagamentoNote ?? null,
         }).catch(e => console.error('Pubblicazione fornitore sul registro fallita', e));
       });
     }, 1500);
@@ -2726,6 +2730,8 @@ const App: React.FC = () => {
             onImportBatch={handleImportFornitoriBatch}
           />
         );
+      case AppView.PAGAMENTI_FORNITORI:
+        return <PagamentiFornitoriTab />;
       case AppView.SETTINGS:
         return (
             <div className="space-y-8 animate-in fade-in duration-500">
@@ -2962,6 +2968,7 @@ const App: React.FC = () => {
     { view: AppView.BILANCIO_RIEPILOGO, label: 'Bilancio', icon: Building2 },
     { view: AppView.PROJECTS, label: 'Commesse', icon: Briefcase },
     { view: AppView.FORNITORI, label: 'Fornitori', icon: HardHat },
+    { view: AppView.PAGAMENTI_FORNITORI, label: 'Pagamenti', icon: BellRing },
     { view: AppView.GUIDA_KPI, label: 'Guida', icon: BookOpen },
     { view: AppView.SETTINGS, label: 'Config.', icon: Settings },
   ];
