@@ -2794,8 +2794,18 @@ const App: React.FC = () => {
                     onRenameCategory={(oldName, newName) => {
                       setTransactions(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
                       setCustomCategoryCeTypes(prev => {
-                        if (!(oldName in prev)) return prev;
-                        const { [oldName]: ceType, ...rest } = prev;
+                        // Il ceType da preservare per il nuovo nome può venire da un override custom
+                        // GIA' presente (oldName in prev) o, per una categoria di default, dalla mappa
+                        // statica CATEGORY_TO_CE_TYPE (constants.ts) — che però non viene mai
+                        // popolata qui sotto il nome VECCHIO. Senza questo fallback, rinominare una
+                        // categoria di default lasciava il nome nuovo privo di qualunque mapping:
+                        // CATEGORY_TO_CE_TYPE[nuovoNome] restava undefined, e ogni transazione NUOVA
+                        // creata con quella categoria prendeva ceType undefined, sparendo dal CE
+                        // (bug trovato in audit il 2026-09-15, stessa classe già corretta per la
+                        // creazione di categorie nuove).
+                        const ceType = prev[oldName] ?? CATEGORY_TO_CE_TYPE[oldName];
+                        if (!ceType) return prev;
+                        const { [oldName]: _dropped, ...rest } = prev;
                         return { ...rest, [newName]: ceType };
                       });
                     }}
