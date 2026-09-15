@@ -292,7 +292,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({ transactions, budgetData, onBud
               ceType: r.ceType,
               budgetAnnuo: r.budgetAnnuo,
               actualTotal: Math.abs(actuals[r.ceType].reduce((a, b) => a + b, 0)),
-              termId: r.ceType === 'costo_variabile' ? 'primo_margine' as const : 'ebitda' as const,
+              // 'scostamento_budget', non 'primo_margine'/'ebitda' (bug trovato in audit tooltip il
+              // 2026-09-15): questa card mostra un confronto Consuntivo/Budget/Scostamento per la
+              // singola voce di costo, non l'indice di redditività Primo Margine o EBITDA — il
+              // tooltip mostrava la formula e le soglie sbagliate.
+              termId: 'scostamento_budget' as const,
             }));
           return [fatturatoRow, ...altreRighe];
         })().map(r => {
