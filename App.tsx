@@ -118,6 +118,7 @@ import {
 } from './services/fileStorage';
 import { fetchSharedCantieri, pushSharedCantiere, deleteSharedCantiere } from './services/cantieriSync';
 import { fetchSharedClienti, pushSharedCliente, deleteSharedCliente } from './services/clientiSync';
+import { pushSharedFornitore, deleteSharedFornitore } from './services/fornitoriSync';
 
 interface WelcomeScreenProps {
   pendingHandleFromIDB: FileSystemFileHandle | null;
@@ -2072,6 +2073,31 @@ const App: React.FC = () => {
     });
   }, []);
 
+  // --- REGISTRO FORNITORI CONDIVISO (stesso registro condiviso dei cantieri/clienti) ---
+  // Solo pubblicazione: qui non serve leggere indietro nulla, il "mestiere" (unico
+  // campo scritto da Direttore Cantiere, dalla sua sezione di categorizzazione) non
+  // ci interessa. Basta tenere il registro allineato ai dati anagrafici di ogni
+  // fornitore, sia inseriti a mano sia importati da PuntaNet.
+  useEffect(() => {
+    if (appState !== 'ready') return;
+    const timer = setTimeout(() => {
+      fornitori.forEach(f => {
+        pushSharedFornitore({
+          source: 'gestione_finanziaria',
+          sourceId: f.id,
+          ragioneSociale: f.ragioneSociale,
+          pIvaCf: f.pIvaCf || null,
+          indirizzo: f.indirizzo || null,
+          telefono: f.telefono || null,
+          email: f.email || null,
+          pec: f.pec || null,
+          puntaNetIdCliFor: f.puntaNetIdCliFor ? String(f.puntaNetIdCliFor) : null,
+        }).catch(e => console.error('Pubblicazione fornitore sul registro fallita', e));
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [fornitori, appState]);
+
   const handleAddFornitore = useCallback((data: Omit<Fornitore, 'id'>) => {
     setFornitori(prev => [...prev, { ...data, id: crypto.randomUUID() }]);
   }, []);
@@ -2082,6 +2108,9 @@ const App: React.FC = () => {
 
   const handleDeleteFornitore = useCallback((id: string) => {
     setFornitori(prev => prev.filter(f => f.id !== id));
+    deleteSharedFornitore('gestione_finanziaria', id).catch(e =>
+      console.error('Cancellazione fornitore dal registro condiviso fallita', e)
+    );
   }, []);
 
   const handleImportFornitoriBatch = useCallback((data: Omit<Fornitore, 'id'>[]) => {
