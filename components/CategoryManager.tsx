@@ -33,6 +33,7 @@ interface CategoryManagerProps {
   storicoImportato?: boolean;
   transactions?: any[];
   onRenameCategory?: (oldName: string, newName: string) => void;
+  onSetCategoryCeType?: (category: string, ceType: string) => void;
 }
 
 const CategoryManager: React.FC<CategoryManagerProps> = ({ 
@@ -61,7 +62,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   onImportStorico,
   storicoImportato,
   transactions = [],
-  onRenameCategory
+  onRenameCategory,
+  onSetCategoryCeType
 }) => {
   const [activeTab, setActiveTab] = useState<'fixed' | 'variable' | 'income' | 'tipologie' | 'data'>('fixed');
   const [newCategory, setNewCategory] = useState('');
@@ -84,12 +86,18 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCategory.trim()) return;
-    if (currentList.includes(newCategory.trim())) {
+    const categoria = newCategory.trim();
+    if (!categoria) return;
+    if (currentList.includes(categoria)) {
         alert('Questa categoria esiste già.');
         return;
     }
-    updateList([...currentList, newCategory.trim()]);
+    updateList([...currentList, categoria]);
+    // Assegna subito il ceType coerente con la lista in cui e' stata creata - senza questo la
+    // categoria cadrebbe sempre su 'solo_cashflow' (esclusa dal CE) al primo utilizzo, perche' non
+    // presente nella mappa statica CATEGORY_TO_CE_TYPE (bug trovato in audit il 2026-09-14).
+    const ceTypePerTab = activeTab === 'fixed' ? 'costo_fisso' : activeTab === 'variable' ? 'costo_variabile' : 'ricavo_altro';
+    onSetCategoryCeType?.(categoria, ceTypePerTab);
     setNewCategory('');
   };
 

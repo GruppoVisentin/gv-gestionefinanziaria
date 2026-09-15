@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, CEData, AppView, RimanenzeData, InitialBalanceBreakdown, Project } from '../types';
-import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, parseUTCDate, getDynamicCEType, computeCommesseCompletate } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcPrevisioneFiscale, parseUTCDate, getDynamicCEType, computeCommesseCompletate, getDynamicLoansPrincipals } from '../utils/gasCoreEngine';
 import { CATEGORY_TO_CE_TYPE } from '../constants';
 
 const getCeType = (tx: Transaction): string => {
@@ -443,9 +443,15 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     const pctCostiVar = fatturato > 0 ? costiVariabili / fatturato : 0;
     const breakEven = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + ammortamenti) / (1 - pctCostiVar) : 0;
 
+    // Oltre alle transazioni previsionali esplicite, il motore CE reale (calcCEMetrics) somma anche
+    // la quota capitale simulata dal piano di ammortamento dei mutui esistenti - senza questa il
+    // "Di cassa" qui sotto risultava sottostimato ogni volta che nessuna transazione previsionale
+    // esplicita di quota capitale era presente (bug trovato in audit il 2026-09-14: verificato sui
+    // dati reali 2026, sottostima di 162.181 euro).
     const costiCapitaleRate = txPrev
       .filter(tx => getCeType(tx) === 'capex' && tx.category?.includes('[FINANZA] Quota Capitale Rate Finanziamenti'))
-      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+      + getDynamicLoansPrincipals(transactions, anno, initialData).reduce((s, v) => s + v, 0);
     const breakEvenCassa = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + costiCapitaleRate) / (1 - pctCostiVar) : 0;
 
     return {
@@ -459,7 +465,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
       breakEven,
       breakEvenCassa
     };
-  }, [transactions, anno]);
+  }, [transactions, anno, initialData]);
 
   // Versione "pura" (tutto l'anno, senza esclusione dei previsionali gia' realizzati) per la card
   // "Previsionale" dei 7+1 Numeri Sacri: rappresenta il piano/budget impostato a inizio anno, stessa
@@ -517,9 +523,12 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
     const pctCostiVar = fatturato > 0 ? costiVariabili / fatturato : 0;
     const breakEven = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + ammortamenti) / (1 - pctCostiVar) : 0;
 
+    // Vedi nota identica in metricsPrev sopra: la quota capitale simulata dal piano di
+    // ammortamento dei mutui va sommata anche qui, coerente col motore CE reale.
     const costiCapitaleRate = txPrev
       .filter(tx => getCeType(tx) === 'capex' && tx.category?.includes('[FINANZA] Quota Capitale Rate Finanziamenti'))
-      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+      + getDynamicLoansPrincipals(transactions, anno, initialData).reduce((s, v) => s + v, 0);
     const breakEvenCassa = (1 - pctCostiVar) > 0 ? (costiFissi + costiStudio + costiCapitaleRate) / (1 - pctCostiVar) : 0;
 
     return {
@@ -533,7 +542,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
       breakEven,
       breakEvenCassa
     };
-  }, [transactions, anno, projects, commesseCompletatePrevisionaleAnalisi]);
+  }, [transactions, anno, projects, commesseCompletatePrevisionaleAnalisi, initialData]);
 
   const rimanenzeAnno = rimanenze?.[anno.toString()];
 
@@ -1771,7 +1780,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Margine dopo costi diretti',
                   status: 'emerald',
                   icon: Target,
-                  proj: formatPercent(metrics.primoMarginePercent),
+                  proj: formatPercent(proiezionePrimoMarginePercent),
                   calculatedValues: `Primo Margine:\n- Consuntivo YTD: ${formatEuro(metrics.primoMargineTot)} (${formatPercent(metrics.primoMarginePercent)})\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.primoMargine)} (${formatPercent(metricsPrevPuro.primoMarginePercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneFatturato - metrics.proiezioneCostiVariabili)} (${formatPercent(proiezionePrimoMarginePercent)})`,
                   soglie: {
                     valore: metrics.primoMarginePercent,
@@ -1816,7 +1825,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Margine operativo lordo',
                   status: 'indigo',
                   icon: TrendingUp,
-                  proj: formatPercent(metrics.ebitdaPercent),
+                  proj: formatPercent(proiezioneEbitdaPercent),
                   calculatedValues: `EBITDA:\n- Consuntivo YTD: ${formatEuro(metrics.ebitdaTot)} (${formatPercent(metrics.ebitdaPercent)})\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.ebitda)} (${formatPercent(metricsPrevPuro.ebitdaPercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneEbitda)} (${formatPercent(proiezioneEbitdaPercent)})`,
                   soglie: {
                     valore: metrics.ebitdaPercent,
@@ -1861,7 +1870,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Utile dopo tasse e ammortamenti',
                   status: 'violet',
                   icon: Zap,
-                  proj: formatPercent(metrics.utileNettoPercent),
+                  proj: formatPercent(proiezioneUtileNettoPercent),
                   calculatedValues: `Utile Netto:\n- Consuntivo YTD: ${formatEuro(metrics.utileNettoTot)} (${formatPercent(metrics.utileNettoPercent)})\n- Previsionale (piano intero anno): ${formatEuro(metricsPrevPuro.utileNetto)} (${formatPercent(metricsPrevPuro.utileNettoPercent)})\n- Proiezione a fine anno: ${formatEuro(metrics.proiezioneUtile)} (${formatPercent(proiezioneUtileNettoPercent)})`,
                   soglie: {
                     valore: metrics.utileNettoPercent,
@@ -1904,7 +1913,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Fatturato minimo per pareggio',
                   status: 'rose',
                   icon: AlertCircle,
-                  proj: formatEuro(metrics.breakEven),
+                  proj: formatEuro(projBreakEven),
                   extra: formatEuro(metrics.breakEvenCassa),
                   extraLabel: 'Di cassa',
                   prevExtra: formatEuro(metricsPrevPuro.breakEvenCassa),
@@ -1953,7 +1962,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Costo tecnici su fatturato',
                   status: 'sky',
                   icon: Calculator,
-                  proj: formatPercent(rates.incidenzaStudioFatturato),
+                  proj: formatPercent(incidenzeProiezione.incidenzaStudioFatturato),
                   calculatedValues: `Incidenza Studio sul Fatturato:\n- Consuntivo: Costi Studio ${formatEuro(rates.totaleCostiStudio)} / Fatturato ${formatEuro(rates.fatturato)} = ${formatPercent(rates.incidenzaStudioFatturato)}\n- Previsionale: Costi Studio Target ${formatEuro(rates.totaleCostiStudioPrev)} / Fatturato Target ${formatEuro(rates.fatturatoPrev)} = ${formatPercent(rates.incidenzaStudioFatturatoPrev)}\n- Proiezione a fine anno: ${formatPercent(incidenzeProiezione.incidenzaStudioFatturato)}`,
                   soglie: {
                     valore: rates.incidenzaStudioFatturato,
@@ -1998,7 +2007,7 @@ const AnalisiView: React.FC<AnalisiViewProps> = ({
                   desc: 'Costi struttura su fatturato',
                   status: 'amber',
                   icon: BarChart2,
-                  proj: formatPercent(rates.incidenzaFissiFatturato),
+                  proj: formatPercent(incidenzeProiezione.incidenzaFissiFatturato),
                   calculatedValues: `Incidenza Costi Fissi (escl. Studio):\n- Consuntivo: Costi Fissi Puri ${formatEuro(rates.totaleOverheadPuro)} / Fatturato ${formatEuro(rates.fatturato)} = ${formatPercent(rates.incidenzaFissiFatturato)}\n- Previsionale: Costi Fissi Target ${formatEuro(rates.totaleOverheadPuroPrev)} / Fatturato Target ${formatEuro(rates.fatturatoPrev)} = ${formatPercent(rates.incidenzaFissiFatturatoPrev)}\n- Proiezione a fine anno: ${formatPercent(incidenzeProiezione.incidenzaFissiFatturato)}`,
                   soglie: {
                     valore: rates.incidenzaFissiFatturato,

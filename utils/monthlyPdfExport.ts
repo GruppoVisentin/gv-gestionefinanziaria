@@ -1,16 +1,26 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Transaction, TransactionType } from '../types';
+import { Transaction, TransactionType, Project } from '../types';
 import { CURRENCY_FORMATTER } from '../constants';
+import { getDynamicCEType, computeCommesseCompletate } from './gasCoreEngine';
 
 export interface MonthlyReportConfig {
   monthIndex: number;
   year: number;
   transactions: Transaction[];
+  projects?: Project[];
 }
 
 export const exportMonthlyReportPDF = async (config: MonthlyReportConfig): Promise<void> => {
-  const { monthIndex, year, transactions } = config;
+  const { monthIndex, year, transactions, projects } = config;
+  // ceType e' congelato sulla transazione al momento della creazione: se la classificazione di una
+  // categoria cambia dopo, le transazioni vecchie restano con il valore vecchio. getDynamicCEType
+  // rilegge sempre la classificazione attuale (gia' usato dal motore CE principale) - prima questo
+  // export filtrava su tx.ceType grezzo, escludendo/includendo voci in modo disallineato da CEView
+  // per le transazioni con classificazione cambiata dopo la creazione (bug trovato in audit il
+  // 2026-09-14: 8.488 euro su 2 transazioni reali 2026 escluse sia da Costi Variabili sia Fissi).
+  const commesseCompletate = computeCommesseCompletate(transactions, projects);
+  const dyn = (t: Transaction) => getDynamicCEType(t, projects, commesseCompletate, year);
   const months = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
                    'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
   const monthName = months[monthIndex];
@@ -60,14 +70,14 @@ export const exportMonthlyReportPDF = async (config: MonthlyReportConfig): Promi
   });
 
   // Escludi ammortamenti (costi non monetari) dal flusso di cassa
-  const income       = txMese.filter(t => t.type === TransactionType.INCOME && !t.isForecast && t.ceType !== 'ammortamento');
-  const expense      = txMese.filter(t => t.type === TransactionType.EXPENSE && !t.isForecast && t.ceType !== 'ammortamento');
-  const forecIncome  = txMese.filter(t => t.type === TransactionType.INCOME && t.isForecast && t.ceType !== 'ammortamento');
-  const forecExpense = txMese.filter(t => t.type === TransactionType.EXPENSE && t.isForecast && t.ceType !== 'ammortamento');
+  const income       = txMese.filter(t => t.type === TransactionType.INCOME && !t.isForecast && dyn(t) !== 'ammortamento');
+  const expense      = txMese.filter(t => t.type === TransactionType.EXPENSE && !t.isForecast && dyn(t) !== 'ammortamento');
+  const forecIncome  = txMese.filter(t => t.type === TransactionType.INCOME && t.isForecast && dyn(t) !== 'ammortamento');
+  const forecExpense = txMese.filter(t => t.type === TransactionType.EXPENSE && t.isForecast && dyn(t) !== 'ammortamento');
 
-  const costiVariabili = expense.filter(t => t.ceType === 'costo_variabile');
-  const costiFissi     = expense.filter(t => t.ceType === 'costo_fisso' || t.ceType === 'costo_studio');
-  const altreUscite    = expense.filter(t => !['costo_variabile','costo_fisso','costo_studio'].includes(t.ceType ?? ''));
+  const costiVariabili = expense.filter(t => dyn(t) === 'costo_variabile');
+  const costiFissi     = expense.filter(t => dyn(t) === 'costo_fisso' || dyn(t) === 'costo_studio');
+  const altreUscite    = expense.filter(t => !['costo_variabile','costo_fisso','costo_studio'].includes(dyn(t)));
 
   const sumGross = (arr: Transaction[]) => arr.reduce((s, t) => s + getGrossAmount(t), 0);
   const sumNet   = (arr: Transaction[]) => arr.reduce((s, t) => s + t.amount, 0);
@@ -81,13 +91,13 @@ export const exportMonthlyReportPDF = async (config: MonthlyReportConfig): Promi
 
   // Calcolo Flusso Operativo / Netto da CE (escludendo capex, solo_cashflow, ed escludendo finanziamenti/prelievi soci)
   // Per entrate: ricavo_core, ricavo_immobiliare, ricavo_altro, provento_finanziario, straordinario
-  const entrateOperative = income.filter(t => ['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+  const entrateOperative = income.filter(t => ['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(dyn(t)));
   // Per uscite: costo_variabile, costo_fisso, costo_studio, onere_finanziario, straordinario
-  const usciteOperative = expense.filter(t => ['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+  const usciteOperative = expense.filter(t => ['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(dyn(t)));
 
   // Calcoli previsionali
-  const prevEntrateOperative = forecIncome.filter(t => ['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(t.ceType ?? ''));
-  const prevUsciteOperative = forecExpense.filter(t => ['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+  const prevEntrateOperative = forecIncome.filter(t => ['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(dyn(t)));
+  const prevUsciteOperative = forecExpense.filter(t => ['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(dyn(t)));
 
   const totConsEntrate = sumGross(entrateOperative);
   const totConsUscite  = sumGross(usciteOperative);
@@ -96,10 +106,10 @@ export const exportMonthlyReportPDF = async (config: MonthlyReportConfig): Promi
   const flussoNetto    = totConsEntrate - totConsUscite;
 
   // Flusso finanziario/patrimoniale non operativo (CAPEX, Mutui, Prelievi, Versamenti F24/IVA ecc.)
-  const entrateNonOp = income.filter(t => !['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(t.ceType ?? ''));
-  const usciteNonOp = expense.filter(t => !['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(t.ceType ?? ''));
-  const prevEntrateNonOp = forecIncome.filter(t => !['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(t.ceType ?? ''));
-  const prevUsciteNonOp = forecExpense.filter(t => !['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(t.ceType ?? ''));
+  const entrateNonOp = income.filter(t => !['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(dyn(t)));
+  const usciteNonOp = expense.filter(t => !['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(dyn(t)));
+  const prevEntrateNonOp = forecIncome.filter(t => !['ricavo_core', 'ricavo_immobiliare', 'ricavo_altro', 'provento_finanziario', 'straordinario'].includes(dyn(t)));
+  const prevUsciteNonOp = forecExpense.filter(t => !['costo_variabile', 'costo_fisso', 'costo_studio', 'onere_finanziario', 'straordinario'].includes(dyn(t)));
 
   const totConsEntrateNonOp = sumGross(entrateNonOp);
   const totConsUsciteNonOp  = sumGross(usciteNonOp);

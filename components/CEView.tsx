@@ -270,10 +270,16 @@ const CEView: React.FC<CEViewProps> = ({
     };
   }, [rawMetrics, previsioneFiscale.totaleImposteStimate, varRim, modalita, rimanenzeAnno]);
 
-  const txAnno = useMemo(() => 
+  const txAnno = useMemo(() =>
     (transactions || []).filter(tx => parseUTCDate((modalita === 'competenza' && tx.invoiceDate) ? tx.invoiceDate : tx.date).getUTCFullYear() === selectedYear),
     [transactions, selectedYear, modalita]
   );
+
+  // Calcolato una sola volta (e' lo stesso per ogni riga: "esiste almeno una previsione
+  // nell'anno selezionato") - usato sia da renderRow sia dall'export PDF, cosi' i due restano
+  // sempre allineati invece di ricalcolare la condizione con logiche diverse (bug trovato in
+  // audit il 2026-09-14: il PDF usava un'euristica diversa e piu' debole).
+  const hasForecastsAnno = useMemo(() => txAnno.some(tx => tx.isForecast), [txAnno]);
 
   const scostamenti = useMemo(() => {
     return calcScostamenti(
@@ -282,9 +288,10 @@ const CEView: React.FC<CEViewProps> = ({
       meseScostamento,
       budgetData?.[selectedYear.toString()],
       manualData[selectedYear.toString()],
-      projects
+      projects,
+      modalita
     );
-  }, [transactions, selectedYear, meseScostamento, budgetData, manualData, projects]);
+  }, [transactions, selectedYear, meseScostamento, budgetData, manualData, projects, modalita]);
 
   const effettoRimanenze = useMemo(() => {
     if (!rimanenzeAnno) return null;
@@ -749,17 +756,15 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'EBIT', valore: ebit2, isPositivo: true, percentualeSu: fat },
           { label: 'Oneri Finanziari', valore: onFin, isPositivo: false, indent: true },
           { label: 'Proventi Finanziari', valore: prFin, isPositivo: true, indent: true },
-          { label: 'Risultato Straordinario', valore: str, isPositivo: str > 0, indent: true },
           { label: 'EBT', valore: ebt, isPositivo: ebt > 0, isRisultato: true, percentualeSu: fat },
         ],
-        ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio', 'ammortamento', 'onere_finanziario', 'provento_finanziario', 'straordinario'],
+        ceTypes: ['ricavo_core', 'ricavo_altro', 'ricavo_immobiliare', 'costo_variabile', 'costo_fisso', 'costo_studio', 'ammortamento', 'onere_finanziario', 'provento_finanziario'],
         proiezioneValore: metrics.proiezioneEbt,
         proiezionePercentuale: metrics.proiezioneFatturato > 0 ? metrics.proiezioneEbt / metrics.proiezioneFatturato : 0,
         proiezioneSteps: [
           { label: 'EBIT [Proiezione]', valore: metrics.proiezioneEbit, isPositivo: true, percentualeSu: metrics.proiezioneFatturato },
           { label: 'Oneri Finanziari [Proiezione]', valore: metrics.proiezioneOneriFin, isPositivo: false, indent: true },
           { label: 'Proventi Finanziari [Proiezione]', valore: metrics.proiezioneProventiFin, isPositivo: true, indent: true },
-          { label: 'Risultato Straordinario [Proiezione]', valore: metrics.proiezioneStraordinario, isPositivo: metrics.proiezioneStraordinario > 0, indent: true },
           { label: 'EBT [Proiezione]', valore: metrics.proiezioneEbt, isPositivo: metrics.proiezioneEbt > 0, isRisultato: true, percentualeSu: metrics.proiezioneFatturato },
         ],
         soloPrevisionaleValore: prevEbt,
@@ -768,7 +773,6 @@ const CEView: React.FC<CEViewProps> = ({
           { label: 'EBIT [Previsionale]', valore: prevEbit, isPositivo: true, percentualeSu: prevFat },
           { label: 'Oneri Finanziari [Previsionale]', valore: prevOnFin, isPositivo: false, indent: true },
           { label: 'Proventi Finanziari [Previsionale]', valore: prevPrFin, isPositivo: true, indent: true },
-          { label: 'Risultato Straordinario [Previsionale]', valore: prevStr, isPositivo: prevStr > 0, indent: true },
           { label: 'EBT [Previsionale]', valore: prevEbt, isPositivo: prevEbt > 0, isRisultato: true, percentualeSu: prevFat }
         ]
       },
@@ -776,8 +780,13 @@ const CEView: React.FC<CEViewProps> = ({
         nome: 'Utile Netto',
         valore: utile,
         percentuale: fat > 0 ? utile / fat : 0,
+        // Il Risultato Straordinario NON entra nell'EBT (vedi drawer 'ebt' sopra): entra qui, tra
+        // EBT e Imposte, prima dell'Utile Netto - corretto in audit il 2026-09-14 (prima la riga
+        // era mostrata come se confluisse nell'EBT, ma esclusa dal suo calcolo, e qui mancava del
+        // tutto: il totale mostrato non tornava con le righe sopra in nessuna delle due tabelle).
         steps: [
           { label: 'EBT', valore: ebt, isPositivo: true, percentualeSu: fat },
+          { label: 'Risultato Straordinario', valore: str, isPositivo: str > 0, indent: true },
           { label: 'Imposte stimate (IRES + IRAP)', valore: imp, isPositivo: false, indent: true },
           { label: 'Utile Netto', valore: utile, isPositivo: utile > 0, isRisultato: true, percentualeSu: fat },
         ],
@@ -795,6 +804,7 @@ const CEView: React.FC<CEViewProps> = ({
         soloPrevisionalePercentuale: prevFat > 0 ? prevUtile / prevFat : 0,
         soloPrevisionaleSteps: [
           { label: 'EBT [Previsionale]', valore: prevEbt, isPositivo: true, percentualeSu: prevFat },
+          { label: 'Risultato Straordinario [Previsionale]', valore: prevStr, isPositivo: prevStr > 0, indent: true },
           { label: 'Imposte stimate [Previsionale]', valore: prevTaxes, isPositivo: false, indent: true },
           { label: 'Utile Netto [Previsionale]', valore: prevUtile, isPositivo: prevUtile > 0, isRisultato: true, percentualeSu: prevFat }
         ]
@@ -1176,8 +1186,7 @@ const CEView: React.FC<CEViewProps> = ({
     const sum = data.reduce((a, b) => a + b, 0);
     const pct = activeMetrics.fatturato > 0 ? sum / activeMetrics.fatturato : 0;
     
-    // Check if there are forecasts in the current year
-    const hasForecasts = txAnno.some(tx => tx.isForecast);
+    const hasForecasts = hasForecastsAnno;
     const projection = (hasForecasts && projOverride !== undefined)
       ? projOverride
       : (metrics.mesiTrascorsi > 0 ? (sum / metrics.mesiTrascorsi) * 12 : 0);
@@ -1359,7 +1368,8 @@ const CEView: React.FC<CEViewProps> = ({
               metrics: activeTab === 'previsionale' ? metricsPrevisionale : metrics,
               ceData: activeTab === 'previsionale' ? cePrevisionale : ceData,
               activeTab,
-              scostamenti
+              scostamenti,
+              hasForecasts: hasForecastsAnno
             })}
             className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-all shadow-sm"
           >
@@ -1368,6 +1378,22 @@ const CEView: React.FC<CEViewProps> = ({
           </button>
         </div>
       </div>
+
+      {modalita === 'competenza' && !rimanenzeAnno && txAnno.some(tx => !tx.isForecast) && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+          <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-600" />
+          <div className="text-[11px] leading-relaxed text-amber-900 space-y-1">
+            <p>
+              <span className="font-black uppercase tracking-wide">Rimanenze {selectedYear} non inserite</span> —
+              EBITDA, EBIT e Utile Netto qui sotto NON includono la variazione delle rimanenze
+              (lavori in corso, materiali, terreni edificabili) perché per il {selectedYear} non è stato
+              inserito nessun valore in "Rettifiche di Fine Anno — Rimanenze" più in basso. Restano calcolati
+              per pura cassa, anche se la modalità selezionata è "Per competenza": possono discostarsi in
+              modo rilevante dal bilancio ufficiale.
+            </p>
+          </div>
+        </div>
+      )}
 
       {modalita === 'competenza' && (
         <div className={`flex items-start gap-3 rounded-2xl border p-4 ${
@@ -1811,7 +1837,6 @@ const CEView: React.FC<CEViewProps> = ({
               <tr className="bg-slate-50/50"><td colSpan={colSpanSezione} className="py-2 px-4 text-[10px] font-black text-slate-600 uppercase">④ Oneri, Proventi e Imposte</td></tr>
               {renderRow('Oneri Finanziari', activeCeData.oneriFin, 'auto', undefined, metrics.proiezioneOneriFin)}
               {renderRow('Proventi Finanziari', activeCeData.proventiFin, 'auto', undefined, metrics.proiezioneProventiFin)}
-              {renderRow('Risultato Straordinario', activeCeData.straordinario, 'auto', undefined, metrics.proiezioneStraordinario)}
 
               <tr className="bg-slate-100 font-bold">
                 <td className="py-3 px-4 text-xs sticky left-0 bg-slate-100 z-10">
@@ -1839,6 +1864,10 @@ const CEView: React.FC<CEViewProps> = ({
                 )}
               </tr>
 
+              {/* Il Risultato Straordinario non entra nell'EBT (vedi drawer 'ebt'): sta qui, dopo l'EBT e
+                  prima delle Imposte, coerente col ponte a Utile Netto (bug di posizionamento trovato in
+                  audit il 2026-09-14 - prima era disegnato sopra il totale EBT, come se vi confluisse). */}
+              {renderRow('Risultato Straordinario', activeCeData.straordinario, 'auto', undefined, metrics.proiezioneStraordinario)}
               {renderRow('Imposte Stimate (Manuale)', activeCeData.imposte, 'manual', 'imposte', previsioneFiscale.totaleImposteStimate)}
 
               <tr className="bg-slate-900 text-white font-black">

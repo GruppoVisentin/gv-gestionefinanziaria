@@ -74,6 +74,8 @@ export const exportSPPDF = ({
   tableBody.push(['Rimanenze di Magazzino e WIP (lavori in corso su commessa)', formatEuro(snapshot.rimanenze)]);
   tableBody.push(['Crediti commerciali v/Clienti (SAL certificati e fatture attive)', formatEuro(snapshot.creditiClienti)]);
   tableBody.push(['Crediti Tributari ed Erariali (IVA a credito, ritenute e imposte)', formatEuro(snapshot.creditiTributari)]);
+  tableBody.push(['Crediti Finanziari (finanziamenti concessi a terzi/collegate)', formatEuro(snapshot.creditiFinanziari || 0)]);
+  tableBody.push(['Investimenti a Breve Termine (titoli prontamente liquidabili)', formatEuro(snapshot.investimentiBT || 0)]);
   tableBody.push(['Disponibilità Liquide (cassa e saldi attivi conti correnti)', formatEuro(snapshot.liquidita)]);
   tableBody.push([
     { content: 'TOTALE ATTIVO CIRCOLANTE (B)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } }, 
