@@ -26,6 +26,11 @@ async function ensureSchema() {
   await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS fatturato_anno_corrente NUMERIC`;
   await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS fatturato_totale NUMERIC`;
   await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS ultima_fattura DATE`;
+  // Termini di pagamento da contratto — scritti solo da Gestione Finanziaria (mai
+  // da Direttore Cantiere, che li legge soltanto per decidere quando avvisare
+  // l'amministrazione di un pagamento in arrivo).
+  await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS pagamento_a_fine_lavorazione BOOLEAN`;
+  await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS termini_pagamento_note TEXT`;
 }
 
 function rowToFornitore(row: any) {
@@ -45,6 +50,8 @@ function rowToFornitore(row: any) {
     fatturatoAnnoCorrente: row.fatturato_anno_corrente !== null ? Number(row.fatturato_anno_corrente) : null,
     fatturatoTotale: row.fatturato_totale !== null ? Number(row.fatturato_totale) : null,
     ultimaFattura: toDateStr(row.ultima_fattura),
+    pagamentoAFineLavorazione: row.pagamento_a_fine_lavorazione,
+    terminiPagamentoNote: row.termini_pagamento_note,
     updatedAt: row.updated_at,
   };
 }
@@ -73,14 +80,15 @@ export default async function handler(req: any, res: any) {
       const {
         source, sourceId, ragioneSociale, pIvaCf, indirizzo, telefono, email, pec, puntaNetIdCliFor,
         numeroFatture, fatturatoAnnoCorrente, fatturatoTotale, ultimaFattura,
+        pagamentoAFineLavorazione, terminiPagamentoNote,
       } = req.body || {};
       if (!source || !sourceId || !ragioneSociale) {
         return res.status(400).json({ error: 'Campi obbligatori mancanti: source, sourceId, ragioneSociale' });
       }
       const id = `${source}:${sourceId}`;
       const rows = await sql`
-        INSERT INTO fornitori_registry (id, source, source_id, ragione_sociale, piva_cf, indirizzo, telefono, email, pec, punta_net_id_cli_for, numero_fatture, fatturato_anno_corrente, fatturato_totale, ultima_fattura, updated_at)
-        VALUES (${id}, ${source}, ${sourceId}, ${ragioneSociale}, ${pIvaCf ?? null}, ${indirizzo ?? null}, ${telefono ?? null}, ${email ?? null}, ${pec ?? null}, ${puntaNetIdCliFor ?? null}, ${numeroFatture ?? null}, ${fatturatoAnnoCorrente ?? null}, ${fatturatoTotale ?? null}, ${ultimaFattura ?? null}, now())
+        INSERT INTO fornitori_registry (id, source, source_id, ragione_sociale, piva_cf, indirizzo, telefono, email, pec, punta_net_id_cli_for, numero_fatture, fatturato_anno_corrente, fatturato_totale, ultima_fattura, pagamento_a_fine_lavorazione, termini_pagamento_note, updated_at)
+        VALUES (${id}, ${source}, ${sourceId}, ${ragioneSociale}, ${pIvaCf ?? null}, ${indirizzo ?? null}, ${telefono ?? null}, ${email ?? null}, ${pec ?? null}, ${puntaNetIdCliFor ?? null}, ${numeroFatture ?? null}, ${fatturatoAnnoCorrente ?? null}, ${fatturatoTotale ?? null}, ${ultimaFattura ?? null}, ${pagamentoAFineLavorazione ?? null}, ${terminiPagamentoNote ?? null}, now())
         ON CONFLICT (id) DO UPDATE SET
           ragione_sociale = EXCLUDED.ragione_sociale,
           piva_cf = EXCLUDED.piva_cf,
@@ -93,6 +101,8 @@ export default async function handler(req: any, res: any) {
           fatturato_anno_corrente = EXCLUDED.fatturato_anno_corrente,
           fatturato_totale = EXCLUDED.fatturato_totale,
           ultima_fattura = EXCLUDED.ultima_fattura,
+          pagamento_a_fine_lavorazione = EXCLUDED.pagamento_a_fine_lavorazione,
+          termini_pagamento_note = EXCLUDED.termini_pagamento_note,
           updated_at = now()
         RETURNING *
       `;

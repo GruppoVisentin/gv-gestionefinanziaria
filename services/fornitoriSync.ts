@@ -20,6 +20,11 @@ export interface SharedFornitore {
   fatturatoAnnoCorrente: number | null;
   fatturatoTotale: number | null;
   ultimaFattura: string | null; // ISO date
+  // Termini di pagamento da contratto — scritti solo da Gestione Finanziaria.
+  // Direttore Cantiere li legge soltanto, per decidere quando una lavorazione
+  // finita di questo fornitore genera un avviso per l'amministrazione.
+  pagamentoAFineLavorazione: boolean | null;
+  terminiPagamentoNote: string | null;
   updatedAt: string;
 }
 
@@ -37,6 +42,8 @@ export interface SharedFornitoreInput {
   fatturatoAnnoCorrente?: number | null;
   fatturatoTotale?: number | null;
   ultimaFattura?: string | null;
+  pagamentoAFineLavorazione?: boolean | null;
+  terminiPagamentoNote?: string | null;
 }
 
 export async function fetchSharedFornitori(): Promise<SharedFornitore[]> {

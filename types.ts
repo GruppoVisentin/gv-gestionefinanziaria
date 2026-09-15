@@ -142,6 +142,14 @@ export interface Fornitore {
   fatturatoAnnoCorrente?: number;
   fatturatoTotalePuntaNet?: number;
   ultimaFatturaPuntaNet?: string; // ISO date string
+  // Termini di pagamento da contratto (estratti con l'AI da un testo incollato,
+  // sempre da confermare/correggere prima di salvare — vedi FornitoriTab).
+  // Se true, quando una lavorazione di Direttore Cantiere assegnata a questo
+  // fornitore viene segnata come finita, arriva un avviso qui in "Pagamenti
+  // Fornitori in Arrivo" — non tutte le lavorazioni finite corrispondono a un
+  // pagamento, solo quelle il cui fornitore ha questo flag.
+  pagamentoAFineLavorazione?: boolean;
+  terminiPagamentoNote?: string;
 }
 
 export interface BankAccount {
@@ -394,4 +402,5 @@ export enum AppView {
   GUIDA_KPI = 'GUIDA_KPI',
   IVA_POSIZIONE = 'IVA_POSIZIONE',
   FORNITORI = 'FORNITORI',
+  PAGAMENTI_FORNITORI = 'PAGAMENTI_FORNITORI',
 }
