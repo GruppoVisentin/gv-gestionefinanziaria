@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Transaction, SPSnapshot, CEData, AppView, Project, InitialBalanceBreakdown, RimanenzeData } from '../types';
-import { buildCEData, calcCEMetrics, calcSPMetrics, calcRollingDSODPO, calcPrevisioneFiscale } from '../utils/gasCoreEngine';
+import { buildCEData, calcCEMetrics, calcSPMetrics, calcRollingDSODPO, calcPrevisioneFiscale, parseUTCDate } from '../utils/gasCoreEngine';
 import { DSCR_MIN_THRESHOLD } from '../constants';
 import PDFExportButton from './PDFExportButton';
 import InfoTooltip, { InfoTooltipWrapper } from './InfoTooltip';
@@ -64,8 +64,12 @@ const RatingView: React.FC<RatingViewProps> = ({
     return sortedSnapshots[0];
   }, [sortedSnapshots, selectedDate]);
 
-  const ratingYear = useMemo(() => 
-    activeSP ? new Date(activeSP.dataRiferimento).getFullYear() : new Date().getFullYear(),
+  // parseUTCDate/getUTCFullYear, non new Date().getFullYear() (locale): coerente con Dashboard.tsx e
+  // SPView.tsx, che calcolano lo stesso anno dallo stesso campo — altrimenti in un fuso orario dietro
+  // UTC un dataRiferimento vicino al 1° gennaio può risultare nell'anno sbagliato (bug trovato in
+  // audit delle viste il 2026-09-15).
+  const ratingYear = useMemo(() =>
+    activeSP ? parseUTCDate(activeSP.dataRiferimento).getUTCFullYear() : new Date().getFullYear(),
     [activeSP]
   );
 
