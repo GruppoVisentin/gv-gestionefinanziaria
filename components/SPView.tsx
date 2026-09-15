@@ -556,7 +556,7 @@ const SPView: React.FC<SPViewProps> = ({
           </button>
 
           <button
-            onClick={() => exportSPPDF({ snapshot: currentSnap, metrics })}
+            onClick={() => exportSPPDF({ snapshot: currentSnap, metrics, ebitdaTot: ceMetrics.ebitdaTot })}
             className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-800 text-xs font-black rounded-xl transition-all active:scale-95 shadow-sm bg-white"
             title="Esporta Bilancio e Analisi Indici in PDF Tecnico"
           >
