@@ -935,8 +935,12 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
   const dynamicInterests = getDynamicLoansInterests(transactions, ce.anno, initialData);
 
   // Get monthly transaction-based forecasts for onere_finanziario
+  // Solo per l'anno corrente: come tutti gli altri campi "Proiezione", un anno futuro deve mostrare
+  // solo il consuntivo (che per un anno non ancora iniziato e' zero), non anticipare il piano di
+  // ammortamento mutui — altrimenti si crea un EBT Proiezione negativo "fantasma" per anni futuri
+  // senza alcun ricavo/costo proiettato a bilanciarlo (bug trovato con stress test su 1000 scenari).
   const forecastOneriFinByMonth = Array(12).fill(0);
-  if (isCurrentYear || ce.anno > oggi.getFullYear()) {
+  if (isCurrentYear) {
     transactions
       .filter(tx => {
         const type = getDynamicCEType(tx, projects, commesseCompletate, ce.anno);
@@ -953,12 +957,12 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
 
   let proiezioneOneriFin = 0;
   for (let m = 0; m < 12; m++) {
-    if (ce.anno < oggi.getFullYear()) {
-      proiezioneOneriFin += ce.oneriFin[m];
-    } else {
-      proiezioneOneriFin += ce.oneriFin[m] > 0 
-        ? ce.oneriFin[m] 
+    if (isCurrentYear) {
+      proiezioneOneriFin += ce.oneriFin[m] > 0
+        ? ce.oneriFin[m]
         : (forecastOneriFinByMonth[m] + (dynamicInterests[m] || 0));
+    } else {
+      proiezioneOneriFin += ce.oneriFin[m];
     }
   }
 
