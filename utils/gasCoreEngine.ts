@@ -258,10 +258,19 @@ export const getDynamicCEType = (tx: Transaction, projects?: Project[], commesse
         return proj.jobType === 'Immobiliare' ? 'ricavo_immobiliare' : 'ricavo_core';
       }
       const isImmobiliare = proj.jobType === 'Immobiliare';
+      // '[CANTIERE] Anticipi da Clienti su Commessa' è incluso qui SOLO per progetti NON ad acconto
+      // (il ramo sopra, per metodoPagamento === 'acconto', è già uscito con `return` prima di
+      // arrivare qui): per una commessa a SAL un anticipo cliente è comunque ricavo dell'anno in cui
+      // arriva, non un debito da differire — non esiste per queste commesse un criterio di
+      // completamento che lo rilascerebbe in futuro. Senza questo, un incasso categorizzato come
+      // "Anticipi da Clienti" su un progetto non ad acconto restava `solo_cashflow` per sempre, un
+      // buco nero di ricavo permanente e silenzioso (bug trovato in audit il 2026-09-15: verificato
+      // sui dati reali su "Entrata da Rottami").
       const isOperationalRevenue = type === 'ricavo_core' || type === 'ricavo_immobiliare' ||
         tx.category === '[CANTIERE] SAL — Stato Avanzamento Lavori' ||
         tx.category === '[CANTIERE] Saldo Finale Commessa' ||
         tx.category === '[CANTIERE] Manutenzioni e Piccoli Lavori' ||
+        tx.category === '[CANTIERE] Anticipi da Clienti su Commessa' ||
         tx.category === '[IMMOBILIARE] Vendita Immobili e Terreni';
 
       if (isOperationalRevenue) {
@@ -1007,16 +1016,14 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     ? imposteManualiYtd / ebtYtd          // aliquota reale dai dati inseriti
     : 0.279;                               // fallback: IRES 24% + IRAP 3.9%
 
-  // Le imposte proiettate vanno stimate sull'INTERO imponibile dell'anno (EBT + straordinario
-  // proiettati), non solo sull'incremento rispetto a oggi. La vecchia formula sommava l'utile YTD
-  // (gia' al netto delle imposte reali versate finora) a un incremento tassato separatamente:
-  // un'approssimazione che diventa molto imprecisa quando l'utile YTD e' fortemente negativo -
-  // tipico a meta' anno per un'edile, dove i ricavi da SAL/saldo commessa arrivano tardi. Bug
-  // trovato confrontando col calcolo fiscale vero del pannello "CE Rettificato" di CEView.tsx
-  // (calcPrevisioneFiscale): differenza di ~726.000 euro sui dati reali del 2026-09-15.
-  const baseImponibileProiezione = proiezioneEbt + proiezioneStraordinario;
-  const imposteProiezioneStimate = Math.max(0, baseImponibileProiezione) * aliquotaEffettiva;
-  const proiezioneUtile = isCurrentYear ? (baseImponibileProiezione - imposteProiezioneStimate) : utileNettoTot;
+  // NOTA: l'Utile Netto Proiezione NON va calcolato qui con `aliquotaEffettiva` (una stima
+  // approssimata, valida solo come fallback per la vista "Previsionale puro" — vedi CEView.tsx dove
+  // e' ancora usata a quello scopo). Ogni vista che mostra un Utile Netto Proiezione lo ricalcola
+  // da se' con `calcPrevisioneFiscale` (imponibile IRES/IRAP pieno, non un'aliquota media) e non
+  // legge un campo `proiezioneUtile` da qui: prima esisteva un campo con quel nome calcolato con la
+  // sola aliquotaEffettiva, mai letto da nessuna vista attiva ma comunque sbagliato (scostamento di
+  // ~344.000 euro sui dati reali del 2026-09-15 rispetto al calcolo pieno) — rimosso per non
+  // lasciare un valore silenziosamente errato pronto per essere riusato per sbaglio in futuro.
 
   // mesiTrascorsi dichiarato a linea 601
 
@@ -1069,8 +1076,7 @@ export const calcCEMetrics = (ce: CEData, transactions: Transaction[] = [], proj
     // Proiezioni a fine anno
     proiezioneFatturato,
     proiezioneEbitda,
-    proiezioneUtile,
-    proiezioneBreakEven:     breakEven, 
+    proiezioneBreakEven:     breakEven,
     mesiTrascorsi,
     aliquotaEffettiva,
     ricaviConInvoiceDate,
