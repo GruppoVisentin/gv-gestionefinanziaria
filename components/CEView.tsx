@@ -212,18 +212,24 @@ const CEView: React.FC<CEViewProps> = ({
            ((rimanenzeAnno.terreniFine || 0) - (rimanenzeAnno.terreniInizio || 0));
   }, [rimanenzeAnno]);
 
+  // In modalità "cassa" l'EBT mostrato esclude deliberatamente l'effetto rimanenze (varRimEffettivo
+  // sotto è 0): le imposte stimate devono usare la STESSA base, altrimenti la schermata mostra un
+  // utile "per cassa" (senza rimanenze) e delle imposte calcolate come se fossero "per competenza"
+  // (con rimanenze) — basi diverse fianco a fianco (bug trovato in audit fiscale il 2026-09-15).
+  const rimanenzeAnnoPerFiscale = modalita === 'competenza' ? rimanenzeAnno : undefined;
+
   const previsioneFiscale = useMemo(() =>
     calcPrevisioneFiscale(
       transactions,
       selectedYear,
       rawMetrics,
-      rimanenzeAnno,
+      rimanenzeAnnoPerFiscale,
       aliquotaIRES / 100,
       aliquotaIRAP / 100,
       true,
       initialData
     ),
-    [transactions, selectedYear, rawMetrics, rimanenzeAnno, aliquotaIRES, aliquotaIRAP, initialData]
+    [transactions, selectedYear, rawMetrics, rimanenzeAnnoPerFiscale, aliquotaIRES, aliquotaIRAP, initialData]
   );
 
   const metrics = useMemo(() => {
