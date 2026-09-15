@@ -1853,10 +1853,15 @@ const App: React.FC = () => {
     // Solo una commessa di proprietà di questa app va rimossa anche dal
     // registro condiviso: una commessa importata da DirettoreCantiere non
     // va cancellata lì, altrimenti si perderebbe il cantiere originale.
+    // Se la chiamata di rete fallisce, la riga resta orfana sul registro condiviso e il pull
+    // periodico (syncFromRegistry) potrebbe far ricomparire la commessa qui - prima l'unico segnale
+    // era un log in console, invisibile all'utente (gap trovato in audit il 2026-09-14). Ora si
+    // avvisa esplicitamente, cosi' l'utente sa che deve ritentare se la commessa ricompare.
     if (!project.externalSource) {
-      deleteSharedCantiere('gestione_finanziaria', project.id).catch(e =>
-        console.error('Cancellazione commessa dal registro condiviso fallita', e)
-      );
+      deleteSharedCantiere('gestione_finanziaria', project.id).catch(e => {
+        console.error('Cancellazione commessa dal registro condiviso fallita', e);
+        alert(`"${project.name}" è stata rimossa da questa app, ma la cancellazione dal registro condiviso con le altre app GV non è riuscita (problema di rete). Se la commessa dovesse ricomparire dopo un aggiornamento automatico, cancellala di nuovo.`);
+      });
     }
     setProjects(prev => prev.filter(p => p.id !== id));
   };
