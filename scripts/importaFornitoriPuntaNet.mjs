@@ -257,6 +257,94 @@ if (mapping.puntaNetIdCliFor) {
   }
 }
 
+// ─── Statistiche per la scheda fornitore e l'analisi spesa (tab Fornitori di GF) ──────────
+// Tutto per IDCliFor reale, in SQL. Tipo 1 = fattura fornitore (FEP), Tipo 3 = nota di credito
+// passiva: sottratta, stessa convenzione dei "Debiti Fornitori aperti" di importaPuntaNet.mjs.
+// Importi in IMPONIBILE (il costo vero, senza IVA). Verificato il 2026-09-16: tutte le 4921 FEP
+// hanno la ripartizione in [Documenti Imponibili Cantiere] e la somma coincide con l'imponibile
+// totale, quindi la spesa per cantiere e' completa.
+const round2 = n => Math.round((n || 0) * 100) / 100;
+const statistichePerId = new Map();
+let statisticheOk = false; // se le query falliscono, NON si toccano le statistiche gia' salvate
+const statPer = id => {
+  const k = String(id);
+  if (!statistichePerId.has(k)) statistichePerId.set(k, { perAnno: [], perCantiere: [], scadenzeAperte: [] });
+  return statistichePerId.get(k);
+};
+try {
+  const nomeProgettoPerCantiere = new Map(
+    (JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8')).projects || [])
+      .filter(p => p.puntaNetCantiereId != null)
+      .map(p => [p.puntaNetCantiereId, p.name])
+  );
+
+  const perAnno = runSql(DB_IMPRESA, `SET NOCOUNT ON;
+    SELECT IDCliFor, YEAR(Data) AS Anno,
+      SUM(CASE WHEN Tipo = 1 THEN Imponibile ELSE -Imponibile END) AS Imponibile,
+      SUM(CASE WHEN Tipo = 1 THEN Totale ELSE -Totale END) AS Totale,
+      SUM(CASE WHEN Tipo = 1 THEN 1 ELSE 0 END) AS Fatture,
+      SUM(CASE WHEN Tipo = 3 THEN 1 ELSE 0 END) AS NoteCredito
+    FROM Documenti WHERE Tipo IN (1, 3) AND IDCliFor IS NOT NULL GROUP BY IDCliFor, YEAR(Data) FOR JSON PATH`);
+  for (const r of perAnno) {
+    statPer(r.IDCliFor).perAnno.push({ anno: r.Anno, imponibile: round2(r.Imponibile), totale: round2(r.Totale), fatture: r.Fatture, noteCredito: r.NoteCredito });
+  }
+
+  const perCantiere = runSql(DB_IMPRESA, `SET NOCOUNT ON;
+    SELECT d.IDCliFor, dic.IDCantiere, MAX(c.Descrizione) AS Descrizione,
+      SUM(CASE WHEN d.Tipo = 1 THEN dic.Imponibile ELSE -dic.Imponibile END) AS Imponibile,
+      MIN(d.Data) AS Prima, MAX(d.Data) AS Ultima
+    FROM [Documenti Imponibili Cantiere] dic
+    JOIN Documenti d ON d.IDDocumento = dic.IDDocumento
+    LEFT JOIN Cantieri c ON c.IDCantiere = dic.IDCantiere
+    WHERE d.Tipo IN (1, 3) AND d.IDCliFor IS NOT NULL
+    GROUP BY d.IDCliFor, dic.IDCantiere FOR JSON PATH`);
+  for (const r of perCantiere) {
+    if (Math.abs(r.Imponibile || 0) < 0.01) continue;
+    statPer(r.IDCliFor).perCantiere.push({
+      idCantiere: r.IDCantiere,
+      nome: nomeProgettoPerCantiere.get(r.IDCantiere) || r.Descrizione || `Cantiere ${r.IDCantiere}`,
+      imponibile: round2(r.Imponibile),
+      primaFattura: String(r.Prima).slice(0, 10),
+      ultimaFattura: String(r.Ultima).slice(0, 10),
+    });
+  }
+
+  // Rate non pagate (Pagato = 0) su tutta la storia, come i saldi aperti per lo Stato Patrimoniale.
+  const scadenze = runSql(DB_IMPRESA, `SET NOCOUNT ON;
+    SELECT d.IDCliFor, ds.[Data Rata] AS DataRata, ds.[Importo Rata] AS Importo, d.Tipo, d.Data AS DataDocumento
+    FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento
+    WHERE ds.Pagato = 0 AND d.Tipo IN (1, 3) AND d.IDCliFor IS NOT NULL FOR JSON PATH`);
+  for (const r of scadenze) {
+    statPer(r.IDCliFor).scadenzeAperte.push({
+      data: String(r.DataRata).slice(0, 10),
+      importo: round2(r.Tipo === 3 ? -r.Importo : r.Importo),
+      dataDocumento: String(r.DataDocumento).slice(0, 10),
+    });
+  }
+
+  // Dilazione concordata media (giorni fra data fattura e scadenza rata), pesata sull'importo,
+  // sulle fatture degli ultimi 24 mesi. [Documenti Scadenze] non ha la data di pagamento
+  // effettiva, quindi i giorni REALI di pagamento non sono ricavabili: solo quelli concordati.
+  const dilazioni = runSql(DB_IMPRESA, `SET NOCOUNT ON;
+    SELECT d.IDCliFor,
+      SUM(CAST(DATEDIFF(day, d.Data, ds.[Data Rata]) AS float) * ds.[Importo Rata]) / NULLIF(SUM(ds.[Importo Rata]), 0) AS Giorni
+    FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento
+    WHERE d.Tipo = 1 AND ds.[Importo Rata] > 0 AND d.Data >= DATEADD(month, -24, GETDATE()) AND d.IDCliFor IS NOT NULL
+    GROUP BY d.IDCliFor FOR JSON PATH`);
+  for (const r of dilazioni) {
+    if (r.Giorni != null) statPer(r.IDCliFor).dilazioneMediaGiorni = Math.max(0, Math.round(r.Giorni));
+  }
+
+  for (const s of statistichePerId.values()) {
+    s.perAnno.sort((a, b) => a.anno - b.anno);
+    s.perCantiere.sort((a, b) => b.imponibile - a.imponibile);
+    s.scadenzeAperte.sort((a, b) => a.data.localeCompare(b.data));
+  }
+  statisticheOk = true;
+} catch (e) {
+  console.log(`\nImpossibile calcolare le statistiche fornitore (${e.message}) — l'anagrafica viene comunque aggiornata.`);
+}
+
 const fornitori = righe
   .map(r => {
     const out = {};
@@ -326,6 +414,8 @@ const fornitori = righe
     if (idModPagamento != null && terminiPagamentoPerId.has(idModPagamento)) {
       out.condizionePagamentoPuntaNet = terminiPagamentoPerId.get(idModPagamento);
     }
+    const statistiche = out.puntaNetIdCliFor !== undefined ? statistichePerId.get(String(out.puntaNetIdCliFor)) : undefined;
+    if (statistiche) out.statistichePuntaNet = statistiche;
     return out;
   })
   .filter(f => f.ragioneSociale);
@@ -374,13 +464,15 @@ for (const f of fornitori) {
       esistente.numeroFatturePuntaNet !== f.numeroFatturePuntaNet ||
       esistente.fatturatoAnnoCorrente !== f.fatturatoAnnoCorrente ||
       esistente.fatturatoTotalePuntaNet !== f.fatturatoTotalePuntaNet ||
-      esistente.ultimaFatturaPuntaNet !== f.ultimaFatturaPuntaNet;
+      esistente.ultimaFatturaPuntaNet !== f.ultimaFatturaPuntaNet ||
+      (statisticheOk && JSON.stringify(esistente.statistichePuntaNet ?? null) !== JSON.stringify(f.statistichePuntaNet ?? null));
     if (cambiato) {
       Object.assign(esistente, {
         numeroFatturePuntaNet: f.numeroFatturePuntaNet,
         fatturatoAnnoCorrente: f.fatturatoAnnoCorrente,
         fatturatoTotalePuntaNet: f.fatturatoTotalePuntaNet,
         ultimaFatturaPuntaNet: f.ultimaFatturaPuntaNet,
+        ...(statisticheOk ? { statistichePuntaNet: f.statistichePuntaNet } : {}),
       });
       aggiornati.push(esistente.ragioneSociale);
     }

@@ -1,8 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles, Truck, Briefcase, Zap, UtensilsCrossed, Users, Landmark, Wand2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles, Truck, Briefcase, Zap, UtensilsCrossed, Users, Landmark, Wand2, BarChart3, List } from 'lucide-react';
 import { Fornitore, FornitoreMacroCategoria } from '../types';
 import { FORNITORI_TAXONOMY, suggerisciCategoriaFornitore } from '../constants';
 import { parseContractPaymentTerms } from '../services/geminiService';
+import FornitoreSchedaNumeri from './FornitoreSchedaNumeri';
+import FornitoriAnalisiSpesa from './FornitoriAnalisiSpesa';
+import { formatEuro } from '../utils/formatters';
 
 interface FornitoriTabProps {
   fornitori: Fornitore[];
@@ -284,6 +287,18 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [vista, setVista] = useState<'anagrafica' | 'analisi'>('anagrafica');
+  const [espansoId, setEspansoId] = useState<string | null>(null);
+
+  // Dall'analisi spesa: torna all'anagrafica, apre il gruppo del fornitore e la sua scheda numeri.
+  const apriFornitore = (id: string) => {
+    const f = fornitori.find(x => x.id === id);
+    if (!f) return;
+    setVista('anagrafica');
+    setCollapsed(prev => ({ ...prev, [`${f.macroCategoria}::${f.sottoCategoria || '(senza sottocategoria)'}`]: false }));
+    setEspansoId(id);
+    setTimeout(() => document.getElementById(`fornitore-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  };
   const [importPreview, setImportPreview] = useState<{ nuovi: Omit<Fornitore, 'id'>[]; aggiornamenti: { id: string; ragioneSociale: string; data: Omit<Fornitore, 'id'> }[] } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -385,6 +400,8 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
             fatturatoAnnoCorrente: r.fatturatoAnnoCorrente || undefined,
             fatturatoTotalePuntaNet: r.fatturatoTotalePuntaNet || undefined,
             ultimaFatturaPuntaNet: r.ultimaFatturaPuntaNet || undefined,
+            condizionePagamentoPuntaNet: r.condizionePagamentoPuntaNet || undefined,
+            statistichePuntaNet: r.statistichePuntaNet || undefined,
           }));
 
         // Per i fornitori già presenti (collegati via puntaNetIdCliFor), un
@@ -404,6 +421,7 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                 fatturatoAnnoCorrente: r.fatturatoAnnoCorrente || undefined,
                 fatturatoTotalePuntaNet: r.fatturatoTotalePuntaNet || undefined,
                 ultimaFatturaPuntaNet: r.ultimaFatturaPuntaNet || undefined,
+                statistichePuntaNet: r.statistichePuntaNet || rest.statistichePuntaNet,
               },
             };
           });
@@ -517,11 +535,22 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
         </div>
       )}
 
-      {fornitori.length === 0 && !isAdding && (
+      <div className="inline-flex p-1 bg-slate-100 rounded-xl gap-1">
+        <button onClick={() => setVista('anagrafica')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${vista === 'anagrafica' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <List size={14} /> Anagrafica
+        </button>
+        <button onClick={() => setVista('analisi')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${vista === 'analisi' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <BarChart3 size={14} /> Analisi spesa
+        </button>
+      </div>
+
+      {vista === 'analisi' && <FornitoriAnalisiSpesa fornitori={fornitori} macroLabel={MACRO_LABEL} onApriFornitore={apriFornitore} />}
+
+      {vista === 'anagrafica' && fornitori.length === 0 && !isAdding && (
         <div className="p-10 text-center text-sm text-slate-400 bg-white border border-slate-200 rounded-2xl">Nessun fornitore registrato.</div>
       )}
 
-      <div className="space-y-6">
+      {vista === 'anagrafica' && <div className="space-y-6">
         {macroOrder.filter(macro => Object.keys(grouped[macro]).length > 0).map(macro => (
           <div key={macro} className="space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -556,9 +585,12 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                     <div className="divide-y divide-slate-100 border-t border-slate-100">
                       {list.map(f => {
                         const suggerito = suggerimenti.get(f.id);
+                        const espanso = espansoId === f.id;
+                        const spesaAnno = f.statistichePuntaNet?.perAnno.find(a => a.anno === new Date().getFullYear())?.imponibile;
                         return (
-                        <div key={f.id} className="flex items-center gap-3 px-4 py-3">
-                          <div className="flex-1 min-w-0">
+                        <div key={f.id} id={`fornitore-${f.id}`}>
+                        <div className={`flex items-center gap-3 px-4 py-3 ${espanso ? 'bg-slate-50' : ''}`}>
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setEspansoId(espanso ? null : f.id)}>
                             <div className="font-bold text-sm text-slate-800 truncate flex items-center gap-2">
                               {f.ragioneSociale}
                               {f.pagamentoAFineLavorazione && (
@@ -590,8 +622,20 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                               </button>
                             </div>
                           )}
+                          {spesaAnno != null && spesaAnno !== 0 && (
+                            <span title={`Spesa ${new Date().getFullYear()} (imponibile)`} className="hidden sm:inline text-xs font-bold text-slate-600 shrink-0">{formatEuro(spesaAnno)}</span>
+                          )}
+                          <button
+                            onClick={() => setEspansoId(espanso ? null : f.id)}
+                            title="Numeri del fornitore: spesa, cantieri, scadenze"
+                            className={`p-1.5 rounded-lg transition-all ${espanso ? 'text-white bg-indigo-600' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                          >
+                            <BarChart3 size={14} />
+                          </button>
                           <button onClick={() => startEdit(f)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all"><Edit2 size={14} /></button>
                           <button onClick={() => onDeleteFornitore(f.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={14} /></button>
+                        </div>
+                        {espanso && <FornitoreSchedaNumeri fornitore={f} />}
                         </div>
                       );})}
                     </div>
@@ -601,7 +645,7 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
             })}
           </div>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }

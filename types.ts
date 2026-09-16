@@ -165,6 +165,19 @@ export interface Fornitore {
   // pagamento, solo quelle il cui fornitore ha questo flag.
   pagamentoAFineLavorazione?: boolean;
   terminiPagamentoNote?: string;
+  // Numeri per la scheda fornitore e l'analisi spesa, calcolati in SQL per IDCliFor da
+  // scripts/importaFornitoriPuntaNet.mjs (fatture fornitore meno note di credito passive,
+  // in imponibile). Sola lettura in app, riscritti a ogni import.
+  statistichePuntaNet?: StatisticheFornitorePuntaNet;
+}
+
+export interface StatisticheFornitorePuntaNet {
+  perAnno: { anno: number; imponibile: number; totale: number; fatture: number; noteCredito: number }[];
+  perCantiere: { idCantiere: number; nome: string; imponibile: number; primaFattura: string; ultimaFattura: string }[];
+  // Rate non ancora segnate pagate in PuntaNet (importo negativo = nota di credito).
+  scadenzeAperte: { data: string; importo: number; dataDocumento: string }[];
+  // Giorni fra data fattura e scadenza rata, pesati sull'importo, ultimi 24 mesi (concordati, non effettivi).
+  dilazioneMediaGiorni?: number;
 }
 
 export interface BankAccount {
