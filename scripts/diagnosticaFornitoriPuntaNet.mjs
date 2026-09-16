@@ -83,4 +83,31 @@ try {
   console.error(`Errore cercando la tabella pagamenti in ${DB_COMUNE}:`, e.message);
 }
 
+console.log('\n\n=== 4) Verifica mirata: CliFor su nomi che sappiamo per certo essere CLIENTI (acquirenti immobili) o FORNITORI ===\n');
+try {
+  // Acquirenti di commesse ad acconto gia' noti da un audit precedente — sono CLIENTI (pagano GV),
+  // non fornitori (GV non paga loro). Se il loro CliFor e' diverso da quello dei fornitori certi
+  // sotto, abbiamo la conferma di quale valore escludere dall'anagrafica Fornitori.
+  const clientiNoti = ['BONAN GIANFRANCO', 'COLLET PIERANGELA', 'ZORZETTO ENRICA', 'PANIGHEL PAOLA',
+    'BALDISSERA LUCA', 'LAZZARI STEFANO', 'RAGUSO MIRKO', 'ZOGAJ FLAMUR'];
+  // Fornitori certi (GV paga loro: software, calcestruzzo, energia).
+  const fornitoriNoti = ['Puntanet', 'BETONROSSI', 'SUPERBETON', 'Enel Energia'];
+
+  console.log('CLIENTI noti (acquirenti immobili — GV incassa da loro, non li paga):');
+  for (const nome of clientiNoti) {
+    const righe = runSql(DB_IMPRESA,
+      `SET NOCOUNT ON; SELECT [Ragione Sociale], CliFor FROM [Clienti Fornitori] WHERE [Ragione Sociale] LIKE '%${nome.replace(/'/g, "''")}%' FOR JSON PATH`);
+    righe.forEach(r => console.log(`  ${r['Ragione Sociale']} -> CliFor = ${r.CliFor}`));
+  }
+
+  console.log('\nFORNITORI certi (GV li paga per beni/servizi):');
+  for (const nome of fornitoriNoti) {
+    const righe = runSql(DB_IMPRESA,
+      `SET NOCOUNT ON; SELECT [Ragione Sociale], CliFor FROM [Clienti Fornitori] WHERE [Ragione Sociale] LIKE '%${nome.replace(/'/g, "''")}%' FOR JSON PATH`);
+    righe.forEach(r => console.log(`  ${r['Ragione Sociale']} -> CliFor = ${r.CliFor}`));
+  }
+} catch (e) {
+  console.error('Errore nella verifica mirata:', e.message);
+}
+
 console.log('\n\n=== Fine diagnostica — nessun dato e\' stato modificato ===');
