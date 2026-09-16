@@ -58,10 +58,13 @@ const OGGI = new Date().toISOString().slice(0, 10);
 const COLONNE_PATH = path.join(AUTO_DIR, `fornitori-colonne_${OGGI}.json`);
 const REPORT_PATH = path.join(AUTO_DIR, `fornitori-report_${OGGI}.json`);
 
+// -f 65001: output SQLCMD in UTF-8. Senza, la codepage OEM corrompe le lettere accentate (la
+// colonna 'Città' arrivava come 'Citt?' e non poteva nemmeno essere riusata nella SELECT —
+// verificato sui dati reali il 2026-09-16).
 function runSql(database, query) {
   const tmpFile = path.join(os.tmpdir(), `sqlout_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
   try {
-    execFileSync(SQLCMD, ['-S', INSTANCE, '-d', database, '-E', '-y', '0', '-Q', query, '-o', tmpFile], { stdio: 'pipe' });
+    execFileSync(SQLCMD, ['-S', INSTANCE, '-d', database, '-E', '-y', '0', '-f', '65001', '-Q', query, '-o', tmpFile], { stdio: 'pipe' });
     if (!fs.existsSync(tmpFile)) return [];
     let raw;
     try { raw = fs.readFileSync(tmpFile, 'utf16le').replace(/\r?\n/g, '').trim(); JSON.parse(raw || '[]'); }
@@ -294,6 +297,8 @@ const esistentiPerNome = new Set(fornitoriEsistenti.map(f => (f.ragioneSociale |
 
 const nuovi = [];
 const aggiornati = [];
+const completati = [];
+const CAMPI_ANAGRAFICI_COMPLETABILI = ['pIvaCf', 'indirizzo', 'telefono', 'pec', 'email', 'sitoInternet', 'iban', 'condizionePagamentoPuntaNet'];
 for (const f of fornitori) {
   const chiaveId = f.puntaNetIdCliFor != null ? String(f.puntaNetIdCliFor) : null;
   const esistente = chiaveId ? esistentiPerPuntaNetId.get(chiaveId) : null;
@@ -314,6 +319,29 @@ for (const f of fornitori) {
       });
       aggiornati.push(esistente.ragioneSociale);
     }
+    // Campi anagrafici estratti solo dopo il primo import (IBAN, sito, condizione pagamento,
+    // indirizzo completo, cellulare, CF): i fornitori importati prima li avrebbero lasciati vuoti
+    // per sempre. Si COMPLETANO senza mai sovrascrivere una scelta fatta a mano: un campo vuoto
+    // viene riempito; un campo gia' valorizzato viene esteso solo se il nuovo valore PuntaNet
+    // inizia esattamente con quello vecchio (es. "Via Roma 1" -> "Via Roma 1, 31100 Treviso (TV)"),
+    // cioe' se e' ancora il dato parziale del vecchio import e non una correzione in app.
+    // Un valore con il carattere di sostituzione U+FFFD viene dagli import fatti prima del fix
+    // -f 65001 (lettere accentate corrotte, es. "Societ�"): nessuno lo scrive a mano, quindi si
+    // sostituisce col valore corretto — ragioneSociale compresa, ma SOLO in questo caso.
+    let completato = false;
+    for (const campo of ['ragioneSociale', ...CAMPI_ANAGRAFICI_COMPLETABILI]) {
+      const nuovo = f[campo];
+      if (nuovo === undefined) continue;
+      const attuale = esistente[campo];
+      const vuoto = attuale === undefined || attuale === null || String(attuale).trim() === '';
+      const corrotto = !vuoto && String(attuale).includes('�') && String(nuovo) !== String(attuale);
+      const estendibile = campo !== 'ragioneSociale' && !vuoto && String(nuovo) !== String(attuale) && String(nuovo).startsWith(String(attuale));
+      if ((vuoto && campo !== 'ragioneSociale') || corrotto || estendibile) {
+        esistente[campo] = nuovo;
+        completato = true;
+      }
+    }
+    if (completato) completati.push(esistente.ragioneSociale);
   } else if (!chiaveId || !esistentiPerNome.has((f.ragioneSociale || '').toLowerCase().trim())) {
     // Fornitore nuovo: dato anagrafico/economico affidabile al 100% (chiave IDCliFor
     // reale, non un fuzzy match), quindi si scrive subito — solo la categoria resta
@@ -326,7 +354,7 @@ for (const f of fornitori) {
   }
 }
 
-if (nuovi.length === 0 && aggiornati.length === 0 && rimossiClienti.length === 0) {
+if (nuovi.length === 0 && aggiornati.length === 0 && completati.length === 0 && rimossiClienti.length === 0) {
   console.log('\nNessuna novita\' da scrivere (anagrafica e fatturato gia\' allineati — probabile doppia esecuzione nella stessa giornata).');
   process.exit(0);
 }
@@ -355,5 +383,6 @@ if (rimossiClienti.length > 0) {
   console.log(`✔ Rimossi ${rimossiClienti.length} clienti finiti per errore nell'anagrafica fornitori prima del filtro CliFor: ${rimossiClienti.map(f => f.ragioneSociale).join(', ')}`);
 }
 console.log(`✔ Aggiornato il fatturato/numero fatture di ${aggiornati.length} fornitori gia' presenti.`);
+console.log(`✔ Completati i dati anagrafici mancanti (IBAN, sito, pagamento, indirizzo...) di ${completati.length} fornitori gia' presenti.`);
 console.log(`  Backup pre-scrittura: ${backupPath}`);
 console.log('=== Scrittura completata ===');
