@@ -48,6 +48,7 @@ const SQLCMD = String.raw`C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\
 const INSTANCE = String.raw`localhost\SQLEXPRESS`;
 const DB_IMPRESA = 'GC_Impresa2_RO'; // GRUPPO VISENTIN SRL
 const DB_COMUNE = 'GC_Comune_RO';
+const DB_IMPRESA_SORELLA = 'GC_Impresa1_RO'; // VISENTIN COSTRUZIONI SRL (da GC_Comune_RO.TAB_Imprese)
 const TABELLA = 'Clienti Fornitori';
 
 const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV\35_APP GV ECOSISTEM\04-GV GestioneFINANZIARIA\DATI SALVATI`;
@@ -192,6 +193,45 @@ try {
   console.log(`\nImpossibile risolvere i termini di pagamento (${e.message}) — l'anagrafica includerà comunque tutto il resto.`);
 }
 
+// Condizione di pagamento dall'ULTIMA fattura fornitore (Documenti.IDModPagamento), usata solo
+// se l'anagrafica non ne ha una: in GRUPPO VISENTIN SRL l'anagrafica ce l'ha per 15 fornitori su
+// 450, le fatture per 447 (verificato 2026-09-16).
+let modPagamentoUltimaFatturaPerId = new Map();
+try {
+  const ultime = runSql(
+    DB_IMPRESA,
+    `SET NOCOUNT ON; SELECT IDCliFor, IDModPagamento FROM (
+       SELECT IDCliFor, IDModPagamento, ROW_NUMBER() OVER (PARTITION BY IDCliFor ORDER BY Data DESC, IDDocumento DESC) rn
+       FROM Documenti WHERE Tipo = 1 AND IDModPagamento IS NOT NULL) x WHERE rn = 1 FOR JSON PATH`
+  );
+  modPagamentoUltimaFatturaPerId = new Map(ultime.map(u => [String(u.IDCliFor), u.IDModPagamento]));
+} catch (e) {
+  console.log(`\nImpossibile leggere la condizione di pagamento dalle fatture (${e.message}).`);
+}
+
+// Contatti dall'anagrafica di VISENTIN COSTRUZIONI SRL (GC_Impresa1_RO, societa' sorella, stessa
+// struttura di tabella): l'anagrafica di GRUPPO VISENTIN SRL e' quasi vuota (telefono 4, email 1,
+// PEC 0 su 450), quella di Visentin Costruzioni ha i contatti di molti degli STESSI fornitori.
+// Abbinamento SOLO per Partita IVA / Codice Fiscale identici (mai per nome), usato SOLO per
+// riempire campi vuoti — il dato di GRUPPO VISENTIN SRL, se presente, vince sempre.
+const chiaveFiscale = (piva, cf) => String((piva && String(piva).trim()) || cf || '').toUpperCase().replace(/\s/g, '');
+let contattiSorellaPerChiave = new Map();
+try {
+  const sorella = runSql(
+    DB_IMPRESA_SORELLA,
+    `SET NOCOUNT ON; SELECT [Partita Iva] AS piva, [Codice Fiscale] AS cf, Indirizzo, [Città] AS citta, Provincia, Cap,
+       Telefono, Cellulare, [E-Mail] AS email, PEC, [Sito Internet] AS sito, IBAN
+     FROM [${TABELLA}] WHERE ISNULL(Eliminato, 0) = 0 FOR JSON PATH`
+  );
+  for (const s of sorella) {
+    const k = chiaveFiscale(s.piva, s.cf);
+    if (k.length >= 11 && !contattiSorellaPerChiave.has(k)) contattiSorellaPerChiave.set(k, s);
+  }
+} catch (e) {
+  console.log(`\nImpossibile leggere i contatti da ${DB_IMPRESA_SORELLA} (${e.message}) — si usa solo GRUPPO VISENTIN SRL.`);
+}
+let arricchitiDaSorella = 0;
+
 // Riepilogo economico per fornitore, per le insight della tab "Mestieri Fornitori"
 // di Direttore Cantiere (fatturato, numero fatture, ultimo utilizzo). A differenza
 // dell'anagrafica sopra, qui l'aggregazione è per IDCliFor via chiave numerica reale
@@ -223,6 +263,29 @@ const fornitori = righe
     for (const [campo, colonna] of Object.entries(mapping)) {
       const v = r[colonna];
       if (v !== null && v !== undefined && String(v).trim() !== '') out[campo] = typeof v === 'string' ? v.trim() : v;
+    }
+
+    const sorella = contattiSorellaPerChiave.get(chiaveFiscale(out.partitaIva, out.codiceFiscale));
+    if (sorella) {
+      const vuoto = v => v === undefined || v === null || String(v).trim() === '';
+      const pulito = v => (vuoto(v) ? undefined : String(v).trim());
+      let usato = false;
+      const riempi = (campo, valore) => { if (vuoto(out[campo]) && pulito(valore)) { out[campo] = pulito(valore); usato = true; } };
+      // L'indirizzo si prende in blocco (via+CAP+citta'+provincia) solo se manca la via: mai
+      // mescolare via di una anagrafica con citta' dell'altra.
+      if (vuoto(out.indirizzo)) {
+        riempi('indirizzo', sorella.Indirizzo);
+        riempi('citta', sorella.citta);
+        riempi('provincia', sorella.Provincia);
+        riempi('cap', sorella.Cap);
+      }
+      riempi('telefono', sorella.Telefono);
+      riempi('cellulare', sorella.Cellulare);
+      riempi('email', sorella.email);
+      riempi('pec', sorella.PEC);
+      riempi('sitoInternet', sorella.sito);
+      riempi('iban', sorella.IBAN);
+      if (usato) arricchitiDaSorella++;
     }
 
     // Partita IVA (aziende) con fallback su Codice Fiscale (persone fisiche, che non hanno
@@ -259,8 +322,9 @@ const fornitori = righe
         out.ultimaFatturaPuntaNet = r2.UltimaFattura ? String(r2.UltimaFattura).slice(0, 10) : undefined;
       }
     }
-    if (r.IDModPagamento != null && terminiPagamentoPerId.has(r.IDModPagamento)) {
-      out.condizionePagamentoPuntaNet = terminiPagamentoPerId.get(r.IDModPagamento);
+    const idModPagamento = r.IDModPagamento ?? (out.puntaNetIdCliFor !== undefined ? modPagamentoUltimaFatturaPerId.get(String(out.puntaNetIdCliFor)) : undefined);
+    if (idModPagamento != null && terminiPagamentoPerId.has(idModPagamento)) {
+      out.condizionePagamentoPuntaNet = terminiPagamentoPerId.get(idModPagamento);
     }
     return out;
   })
@@ -269,6 +333,7 @@ const fornitori = righe
 fs.mkdirSync(AUTO_DIR, { recursive: true });
 fs.writeFileSync(REPORT_PATH, JSON.stringify({ fornitori }, null, 2));
 console.log(`\n${fornitori.length} fornitori estratti da [${TABELLA}].`);
+console.log(`${arricchitiDaSorella} completati con contatti da VISENTIN COSTRUZIONI SRL (stessa P.IVA/CF).`);
 console.log(`Report scritto in:\n  ${REPORT_PATH}`);
 
 if (!SCRIVI) {
