@@ -151,6 +151,10 @@ export interface Fornitore {
   fatturatoAnnoCorrente?: number;
   fatturatoTotalePuntaNet?: number;
   ultimaFatturaPuntaNet?: string; // ISO date string
+  // Condizione di pagamento gia' impostata su PuntaNet (es. "BONIFICO", "30 Giorni D.F.F.M."),
+  // risolta da IDModPagamento — impostata solo alla creazione del fornitore, come gli altri
+  // campi anagrafici sopra: mai sovrascritta su un fornitore gia' presente in app.
+  condizionePagamentoPuntaNet?: string;
   // Termini di pagamento da contratto (estratti con l'AI da un testo incollato,
   // sempre da confermare/correggere prima di salvare — vedi FornitoriTab).
   // Se true, quando una lavorazione di Direttore Cantiere assegnata a questo

@@ -47,6 +47,7 @@ const SCRIVI = process.argv.includes('--scrivi');
 const SQLCMD = String.raw`C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\110\Tools\Binn\SQLCMD.EXE`;
 const INSTANCE = String.raw`localhost\SQLEXPRESS`;
 const DB_IMPRESA = 'GC_Impresa2_RO'; // GRUPPO VISENTIN SRL
+const DB_COMUNE = 'GC_Comune_RO';
 const TABELLA = 'Clienti Fornitori';
 
 const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV\35_APP GV ECOSISTEM\04-GV GestioneFINANZIARIA\DATI SALVATI`;
@@ -137,8 +138,37 @@ if (!mapping.ragioneSociale) {
   process.exit(1);
 }
 
-const colonneSelect = Object.values(mapping).map(c => `[${c}]`).join(', ');
-const righe = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT ${colonneSelect} FROM [${TABELLA}] FOR JSON PATH`);
+// [CliFor] e [IDModPagamento] sono sempre selezionate esplicitamente (non fanno parte del
+// riconoscimento per sinonimi sopra, sono nomi di colonna gia' verificati con la diagnostica
+// scripts/diagnosticaFornitoriPuntaNet.mjs il 2026-09-16):
+//   CliFor = 0 -> CLIENTE (incassa da GV, non e' un fornitore)
+//   CliFor = 1 -> FORNITORE
+//   CliFor = 2 -> FORNITORE (professionisti/erario: GV paga loro comunque)
+// "Clienti Fornitori" e' un'anagrafica UNICA condivisa fra clienti e fornitori: senza questo
+// filtro l'import scriveva anche gli acquirenti di immobili (es. BONAN GIANFRANCO, RAGUSO MIRKO)
+// dentro l'Anagrafica Fornitori (bug segnalato dall'utente 2026-09-16, verificato sui dati reali:
+// 129 clienti su 579 righe totali).
+const colonneSelect = [...Object.values(mapping), 'CliFor', 'IDModPagamento'].map(c => `[${c}]`).join(', ');
+const righeGrezze = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT ${colonneSelect} FROM [${TABELLA}] FOR JSON PATH`);
+
+const colonnaId = mapping.puntaNetIdCliFor;
+const idClientiDaEscludere = new Set(
+  righeGrezze.filter(r => r.CliFor === 0 && colonnaId).map(r => String(r[colonnaId]))
+);
+const righe = righeGrezze.filter(r => r.CliFor !== 0);
+console.log(`\nEsclusi ${righeGrezze.length - righe.length} clienti (CliFor = 0) dall'anagrafica fornitori.`);
+
+// Termini di pagamento leggibili (es. "BONIFICO", "30 Giorni D.F.") dalla tabella di lookup
+// comune GC_Comune_RO.TAB_Modalita Pagamento, risolti per IDModPagamento — niente indovinato,
+// niente ricerche su internet: e' un dato gia' presente nel gestionale (trovato con
+// scripts/diagnosticaFornitoriPuntaNet.mjs il 2026-09-16).
+let terminiPagamentoPerId = new Map();
+try {
+  const termini = runSql(DB_COMUNE, `SET NOCOUNT ON; SELECT IDModPagamento, Pagamento FROM [TAB_Modalita Pagamento] FOR JSON PATH`);
+  terminiPagamentoPerId = new Map(termini.map(t => [t.IDModPagamento, t.Pagamento]));
+} catch (e) {
+  console.log(`\nImpossibile risolvere i termini di pagamento (${e.message}) — l'anagrafica includerà comunque tutto il resto.`);
+}
 
 // Riepilogo economico per fornitore, per le insight della tab "Mestieri Fornitori"
 // di Direttore Cantiere (fatturato, numero fatture, ultimo utilizzo). A differenza
@@ -181,6 +211,9 @@ const fornitori = righe
         out.ultimaFatturaPuntaNet = r2.UltimaFattura ? String(r2.UltimaFattura).slice(0, 10) : undefined;
       }
     }
+    if (r.IDModPagamento != null && terminiPagamentoPerId.has(r.IDModPagamento)) {
+      out.condizionePagamentoPuntaNet = terminiPagamentoPerId.get(r.IDModPagamento);
+    }
     return out;
   })
   .filter(f => f.ragioneSociale);
@@ -201,7 +234,14 @@ if (!SCRIVI) {
 // minimizza la finestra in cui un'altra scrittura (l'app stessa, o l'import automatico
 // dei movimenti) potrebbe andare persa con una sovrascrittura cieca.
 const gvDataFresh = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
-const fornitoriEsistenti = gvDataFresh.fornitori || [];
+const fornitoriEsistentiGrezzi = gvDataFresh.fornitori || [];
+
+// Rimuove eventuali clienti finiti nell'anagrafica fornitori PRIMA che questo filtro esistesse
+// (bug corretto il 2026-09-16 — vedi sopra): riconosciuti per puntaNetIdCliFor, mai per nome, cosi'
+// non si tocca un fornitore inserito a mano con un nome simile a un cliente.
+const rimossiClienti = fornitoriEsistentiGrezzi.filter(f => f.puntaNetIdCliFor != null && idClientiDaEscludere.has(String(f.puntaNetIdCliFor)));
+const fornitoriEsistenti = fornitoriEsistentiGrezzi.filter(f => !(f.puntaNetIdCliFor != null && idClientiDaEscludere.has(String(f.puntaNetIdCliFor))));
+
 const esistentiPerPuntaNetId = new Map(
   fornitoriEsistenti.filter(f => f.puntaNetIdCliFor != null).map(f => [String(f.puntaNetIdCliFor), f])
 );
@@ -241,7 +281,7 @@ for (const f of fornitori) {
   }
 }
 
-if (nuovi.length === 0 && aggiornati.length === 0) {
+if (nuovi.length === 0 && aggiornati.length === 0 && rimossiClienti.length === 0) {
   console.log('\nNessuna novita\' da scrivere (anagrafica e fatturato gia\' allineati — probabile doppia esecuzione nella stessa giornata).');
   process.exit(0);
 }
@@ -266,6 +306,9 @@ fs.writeFileSync(tmpPath, JSON.stringify(gvDataFresh, null, 2));
 fs.renameSync(tmpPath, GVCF_PATH);
 
 console.log(`\n✔ Aggiunti ${nuovi.length} fornitori nuovi (categoria "Da Categorizzare").`);
+if (rimossiClienti.length > 0) {
+  console.log(`✔ Rimossi ${rimossiClienti.length} clienti finiti per errore nell'anagrafica fornitori prima del filtro CliFor: ${rimossiClienti.map(f => f.ragioneSociale).join(', ')}`);
+}
 console.log(`✔ Aggiornato il fatturato/numero fatture di ${aggiornati.length} fornitori gia' presenti.`);
 console.log(`  Backup pre-scrittura: ${backupPath}`);
 console.log('=== Scrittura completata ===');
