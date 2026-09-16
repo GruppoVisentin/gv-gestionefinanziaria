@@ -2,6 +2,10 @@
 # Esegue l'estrazione/classificazione PuntaNet in modalita SCRITTURA (--scrivi): i movimenti ad
 # alta confidenza vengono scritti direttamente nel file dati reale, gli altri finiscono in
 # bozzaImportPuntaNet per la revisione manuale in app (banner giallo "movimenti da classificare").
+# Esegue anche l'estrazione dell'anagrafica fornitori (tab "Fornitori"), sempre alla stessa ora:
+# quello script e' sola lettura (non tocca mai il file dati reale), scrive solo un report JSON in
+# DATI SALVATI/AUTO da rivedere/confermare a mano in app tramite "Importa report PuntaNet" — quindi
+# puo' girare ogni giorno senza alcun rischio, in aggiunta all'import normale (richiesto 2026-09-16).
 # Salva sempre un log leggibile per verificare cosa e' successo.
 
 $ErrorActionPreference = 'Continue'
@@ -16,6 +20,15 @@ Set-Location $ProjectDir
 
 try {
     & npx tsx "scripts\importaPuntaNet.mjs" --scrivi 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
+    "=== Completato con successo ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+} catch {
+    "=== ERRORE: $($_.Exception.Message) ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+}
+
+"=== Avvio importaFornitoriPuntaNet.mjs - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+
+try {
+    & npx tsx "scripts\importaFornitoriPuntaNet.mjs" 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
     "=== Completato con successo ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
 } catch {
     "=== ERRORE: $($_.Exception.Message) ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
