@@ -338,10 +338,12 @@ export const CATEGORY_MIGRATION_MAP: Record<string, string> = {
   "[CANTIERE] Oneri Comunali":             "[CANTIERE] Oneri Comunali, Abaco e Occupazioni",
 };
 
-// Tassonomia standard edilizia per l'Anagrafica Fornitori: macro categoria di
-// lavorazione (Grezzo/Finiture) e sottocategorie tematiche. Le etichette sono
+// Tassonomia dell'Anagrafica Fornitori: macro categoria (lavorazioni di cantiere,
+// Grezzo/Finiture, più le altre categorie di controparti che compaiono comunque
+// nel registro Clienti/Fornitori di PuntaNet — mezzi, professionisti, utenze,
+// ristorazione, personale, enti) e sottocategorie tematiche. Le etichette sono
 // liberamente rinominabili/estendibili dalla UI — questo e' solo il default.
-export const FORNITORI_TAXONOMY: Record<'grezzo' | 'finiture', string[]> = {
+export const FORNITORI_TAXONOMY: Record<Exclude<import('./types').FornitoreMacroCategoria, 'non_categorizzato'>, string[]> = {
   grezzo: [
     'Scavi e Movimento Terra',
     'Strutture in C.A. e Carpenteria',
@@ -359,7 +361,90 @@ export const FORNITORI_TAXONOMY: Record<'grezzo' | 'finiture', string[]> = {
     'Cartongesso e Controsoffitti',
     'Arredi e Complementi',
   ],
+  mezzi_trasporti: [
+    'Officine e Carrozzerie',
+    'Noleggio e Autotrasporti',
+    'Assicurazioni e Bolli Mezzi',
+    'Carburanti',
+  ],
+  professionisti: [
+    'Progettazione e Direzione Lavori',
+    'Consulenza Fiscale e Legale',
+    'Certificazioni, SOA e Sicurezza',
+  ],
+  utenze_servizi: [
+    'Energia e Utenze',
+    'Telefonia e Software',
+    'Banche e Assicurazioni',
+    'Spedizioni e Logistica',
+  ],
+  ristorazione: [
+    'Ristorazione e Rappresentanza',
+  ],
+  personale: [
+    'Dipendenti',
+    'Collaboratori Fissi',
+  ],
+  enti_altro: [
+    'Enti Pubblici e Associazioni',
+    'Condomini',
+    'Altro',
+  ],
 };
+
+// Suggerimento automatico (best-effort, da confermare sempre in UI) di macro/sotto
+// categoria a partire dalla ragione sociale — usato dalla tab Fornitori per
+// pre-compilare i fornitori "Da Categorizzare" importati da PuntaNet, cosi' il
+// lavoro dell'utente diventa controllare/correggere invece di classificare da
+// zero centinaia di righe. Regole ordinate dalla piu' specifica alla piu'
+// generica: la prima che trova un indizio nel nome vince. Ritorna null quando
+// il nome non da' nessun indizio affidabile (es. un nome/cognome da solo, una
+// ragione sociale generica senza parole chiave) — meglio nessun suggerimento
+// che uno sbagliato, l'utente classifica quei casi a mano come oggi.
+type SuggerimentoCategoria = { macroCategoria: Exclude<import('./types').FornitoreMacroCategoria, 'non_categorizzato'>; sottoCategoria: string };
+const REGOLE_SUGGERIMENTO_FORNITORE: [RegExp, SuggerimentoCategoria][] = [
+  // Finiture — controllate prima delle regole generiche "costruzioni/edil", cosi'
+  // un'impresa che ha ANCHE una parola specifica (es. "newgips ... edilizia") vince
+  // sulla sottocategoria piu' precisa invece di cadere nel generico grezzo.
+  [/cartongess|controsoffitt|newgips|decorgesso/, { macroCategoria: 'finiture', sottoCategoria: 'Cartongesso e Controsoffitti' }],
+  [/serrament|infiss[oi]|vetreria/, { macroCategoria: 'finiture', sottoCategoria: 'Serramenti e Infissi' }],
+  [/pavimenti|rivestiment/, { macroCategoria: 'finiture', sottoCategoria: 'Pavimenti e Rivestimenti' }],
+  [/idraulic|termoidraulic/, { macroCategoria: 'finiture', sottoCategoria: 'Impianti Idraulici e Termici' }],
+  [/elettr/, { macroCategoria: 'finiture', sottoCategoria: 'Impianti Elettrici' }],
+  [/pittur|tinteggi|colorer/, { macroCategoria: 'finiture', sottoCategoria: 'Pitture e Decorazioni' }],
+  [/\barred|mobilific/, { macroCategoria: 'finiture', sottoCategoria: 'Arredi e Complementi' }],
+  // Grezzo
+  [/impermeabilizz|coibent|guaine/, { macroCategoria: 'grezzo', sottoCategoria: 'Impermeabilizzazioni e Coibentazioni' }],
+  [/\bscavi\b|movimento terra|sterri|escavazion/, { macroCategoria: 'grezzo', sottoCategoria: 'Scavi e Movimento Terra' }],
+  [/calcestruzz|prefabbricat|\bcalce\b|\bghiaia|ghiaie\b/, { macroCategoria: 'grezzo', sottoCategoria: 'Strutture in C.A. e Carpenteria' }],
+  [/costruzion|edil/, { macroCategoria: 'grezzo', sottoCategoria: 'Murature e Tramezzature' }],
+  // Mezzi e trasporti
+  [/autofficina|carrozzeria|gommist|autotrasport/, { macroCategoria: 'mezzi_trasporti', sottoCategoria: 'Officine e Carrozzerie' }],
+  [/noleggi[oi]/, { macroCategoria: 'mezzi_trasporti', sottoCategoria: 'Noleggio e Autotrasporti' }],
+  [/carburant/, { macroCategoria: 'mezzi_trasporti', sottoCategoria: 'Carburanti' }],
+  // Professionisti e consulenza
+  [/\bstudio\b|\barch\.|architett|\bing\.|ingegner|geometra|geoconsult|per\. ?ind\./, { macroCategoria: 'professionisti', sottoCategoria: 'Progettazione e Direzione Lavori' }],
+  [/commercialist|avvocat|studio legale|notai[oa]/, { macroCategoria: 'professionisti', sottoCategoria: 'Consulenza Fiscale e Legale' }],
+  [/\bsoa\b|bureau veritas|certificazion/, { macroCategoria: 'professionisti', sottoCategoria: 'Certificazioni, SOA e Sicurezza' }],
+  // Utenze, banche, assicurazioni, servizi
+  [/energia|enel|\ba2a\b|gas\b|utenz/, { macroCategoria: 'utenze_servizi', sottoCategoria: 'Energia e Utenze' }],
+  [/telefonia|\btim\b|iliad|vodafone|windtre|software|hosting|\baruba\b|google|amazon/, { macroCategoria: 'utenze_servizi', sottoCategoria: 'Telefonia e Software' }],
+  [/assicura|unipol|generali\b|\bintesa\b|sanpaolo|banca|leasing/, { macroCategoria: 'utenze_servizi', sottoCategoria: 'Banche e Assicurazioni' }],
+  [/spedizion|corrier|logistic/, { macroCategoria: 'utenze_servizi', sottoCategoria: 'Spedizioni e Logistica' }],
+  // Ristorazione e rappresentanza
+  [/ristorant|trattoria|osteria|pizzeria|bar\b|birreria|hostaria|caffe|cafe\b/, { macroCategoria: 'ristorazione', sottoCategoria: 'Ristorazione e Rappresentanza' }],
+  // Enti, istituzioni, condomini
+  [/comune di|associazione|parrocchia|pro ?loco|ordine (degli|architetti|ingegneri)|camera di commercio|cna\b/, { macroCategoria: 'enti_altro', sottoCategoria: 'Enti Pubblici e Associazioni' }],
+  [/condominio/, { macroCategoria: 'enti_altro', sottoCategoria: 'Condomini' }],
+];
+
+export function suggerisciCategoriaFornitore(ragioneSociale: string): SuggerimentoCategoria | null {
+  const nome = ragioneSociale.toLowerCase();
+  for (const [regex, suggerimento] of REGOLE_SUGGERIMENTO_FORNITORE) {
+    if (regex.test(nome)) return suggerimento;
+  }
+  return null;
+}
 
 // Mapping Category -> Suppliers/Subcategories
 export const SUPPLIER_PRESETS: Record<string, string[]> = {
