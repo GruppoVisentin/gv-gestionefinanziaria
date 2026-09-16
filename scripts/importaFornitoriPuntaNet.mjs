@@ -1,5 +1,5 @@
-// Estrazione best-effort dell'anagrafica fornitori da PuntaNet (GRUPPO VISENTIN SRL),
-// per popolare la tab "Anagrafica Fornitori" di Gestione Finanziaria.
+// Estrazione dell'anagrafica fornitori da PuntaNet (GRUPPO VISENTIN SRL), per
+// popolare la tab "Anagrafica Fornitori" di Gestione Finanziaria.
 //
 // A differenza di importaPuntaNet.mjs (che legge solo la Ragione Sociale da
 // [Clienti Fornitori] per etichettare i movimenti), qui NON conosciamo i nomi
@@ -10,12 +10,29 @@
 //   2. Prova a riconoscere colonne utili (P.IVA/CF, indirizzo, telefono, email,
 //      PEC...) per somiglianza del nome colonna — quelle non riconosciute
 //      vengono semplicemente ignorate, nessun errore.
-//   3. Scrive SOLO report di sola lettura in DATI SALVATI/AUTO — non tocca mai
-//      il file dati reale dell'app. Il file "fornitori-report_*.json" va poi
-//      caricato a mano dalla tab Fornitori ("Importa report PuntaNet"), dove
-//      resta comunque da rivedere/confermare riga per riga prima di salvare.
 //
-// Uso: npx tsx scripts/importaFornitoriPuntaNet.mjs
+// Due modalita', stesso schema di importaPuntaNet.mjs:
+// - DRY-RUN (default, `npx tsx scripts/importaFornitoriPuntaNet.mjs`): scrive
+//   SOLO un report di sola lettura in DATI SALVATI/AUTO — il file
+//   "fornitori-report_*.json" va poi caricato a mano dalla tab Fornitori
+//   ("Importa report PuntaNet"), dove resta da rivedere/confermare in UI.
+// - SCRITTURA (`npx tsx scripts/importaFornitoriPuntaNet.mjs --scrivi`, pensata
+//   per un task programmato/schedulato senza intervento manuale): scrive
+//   direttamente nel file dati reale dell'app, con "auto-scrittura selettiva"
+//   diversa da quella dei movimenti — qui il dato (nome/contatti/fatturato,
+//   agganciato per IDCliFor reale) e' sempre affidabile al 100%, quindi:
+//     - un fornitore NUOVO (IDCliFor non ancora presente) viene aggiunto con
+//       macroCategoria "Da Categorizzare" — l'utente la assegna quando vuole,
+//       in app, non e' mai bloccante;
+//     - un fornitore GIA' PRESENTE viene aggiornato SOLO nei campi economici
+//       (numero fatture, fatturato anno corrente/totale, ultima fattura): mai
+//       nei contatti (potrebbero essere stati corretti a mano in app) ne' nella
+//       categoria/nelle note (scelte dell'utente).
+//   Prima di scrivere: backup del file reale (stessa convenzione di
+//   importaPuntaNet.mjs), rilettura del file al momento della scrittura,
+//   scrittura atomica (file temporaneo + rename).
+//
+// Uso: npx tsx scripts/importaFornitoriPuntaNet.mjs [--scrivi]
 // Presuppone (come importaPuntaNet.mjs) che GC_Impresa2_RO esista gia'
 // sull'istanza SQLEXPRESS locale (ripristinata dall'ultimo backup PuntaNet).
 
@@ -23,6 +40,9 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import crypto from 'crypto';
+
+const SCRIVI = process.argv.includes('--scrivi');
 
 const SQLCMD = String.raw`C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\110\Tools\Binn\SQLCMD.EXE`;
 const INSTANCE = String.raw`localhost\SQLEXPRESS`;
@@ -31,6 +51,8 @@ const TABELLA = 'Clienti Fornitori';
 
 const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV\35_APP GV ECOSISTEM\04-GV GestioneFINANZIARIA\DATI SALVATI`;
 const AUTO_DIR = path.join(NAS_DATI, 'AUTO');
+const BACKUP_DIR = path.join(NAS_DATI, 'BACKUP');
+const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico.gvcf');
 const OGGI = new Date().toISOString().slice(0, 10);
 const COLONNE_PATH = path.join(AUTO_DIR, `fornitori-colonne_${OGGI}.json`);
 const REPORT_PATH = path.join(AUTO_DIR, `fornitori-report_${OGGI}.json`);
@@ -77,7 +99,7 @@ function costruisciMapping(colonneReali) {
   return mapping;
 }
 
-console.log(`=== Estrazione anagrafica fornitori da PuntaNet (dry-run, sola lettura) ===\n`);
+console.log(`=== ${SCRIVI ? 'Scrittura' : 'Estrazione (dry-run)'} anagrafica fornitori da PuntaNet ===\n`);
 
 let colonneReali;
 try {
@@ -163,8 +185,87 @@ const fornitori = righe
   })
   .filter(f => f.ragioneSociale);
 
+fs.mkdirSync(AUTO_DIR, { recursive: true });
 fs.writeFileSync(REPORT_PATH, JSON.stringify({ fornitori }, null, 2));
 console.log(`\n${fornitori.length} fornitori estratti da [${TABELLA}].`);
 console.log(`Report scritto in:\n  ${REPORT_PATH}`);
-console.log(`\nProssimo passo: in Gestione Finanziaria, tab "Fornitori" -> "Importa report PuntaNet" -> seleziona questo file.`);
-console.log(`Nessun dato e' stato scritto nel file reale dell'app: il report va sempre rivisto/confermato in UI.`);
+
+if (!SCRIVI) {
+  console.log(`\nProssimo passo: in Gestione Finanziaria, tab "Fornitori" -> "Importa report PuntaNet" -> seleziona questo file.`);
+  console.log(`Nessun dato e' stato scritto nel file reale dell'app (dry-run — usa --scrivi per scrivere davvero).`);
+  process.exit(0);
+}
+
+// ─── Scrittura sul file dati vero (per il task programmato) ───────────────
+// Rilettura del file AL MOMENTO della scrittura, stessa cautela di importaPuntaNet.mjs:
+// minimizza la finestra in cui un'altra scrittura (l'app stessa, o l'import automatico
+// dei movimenti) potrebbe andare persa con una sovrascrittura cieca.
+const gvDataFresh = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
+const fornitoriEsistenti = gvDataFresh.fornitori || [];
+const esistentiPerPuntaNetId = new Map(
+  fornitoriEsistenti.filter(f => f.puntaNetIdCliFor != null).map(f => [String(f.puntaNetIdCliFor), f])
+);
+const esistentiPerNome = new Set(fornitoriEsistenti.map(f => (f.ragioneSociale || '').toLowerCase().trim()));
+
+const nuovi = [];
+const aggiornati = [];
+for (const f of fornitori) {
+  const chiaveId = f.puntaNetIdCliFor != null ? String(f.puntaNetIdCliFor) : null;
+  const esistente = chiaveId ? esistentiPerPuntaNetId.get(chiaveId) : null;
+  if (esistente) {
+    // Fornitore gia' noto: aggiorna SOLO i campi economici, mai contatti/categoria/note
+    // (potrebbero essere stati corretti o assegnati a mano in app).
+    const cambiato =
+      esistente.numeroFatturePuntaNet !== f.numeroFatturePuntaNet ||
+      esistente.fatturatoAnnoCorrente !== f.fatturatoAnnoCorrente ||
+      esistente.fatturatoTotalePuntaNet !== f.fatturatoTotalePuntaNet ||
+      esistente.ultimaFatturaPuntaNet !== f.ultimaFatturaPuntaNet;
+    if (cambiato) {
+      Object.assign(esistente, {
+        numeroFatturePuntaNet: f.numeroFatturePuntaNet,
+        fatturatoAnnoCorrente: f.fatturatoAnnoCorrente,
+        fatturatoTotalePuntaNet: f.fatturatoTotalePuntaNet,
+        ultimaFatturaPuntaNet: f.ultimaFatturaPuntaNet,
+      });
+      aggiornati.push(esistente.ragioneSociale);
+    }
+  } else if (!chiaveId || !esistentiPerNome.has((f.ragioneSociale || '').toLowerCase().trim())) {
+    // Fornitore nuovo: dato anagrafico/economico affidabile al 100% (chiave IDCliFor
+    // reale, non un fuzzy match), quindi si scrive subito — solo la categoria resta
+    // "Da Categorizzare" perche' PuntaNet non ha alcun concetto di Grezzo/Finiture.
+    nuovi.push({
+      id: crypto.randomUUID(),
+      macroCategoria: 'non_categorizzato',
+      ...f,
+    });
+  }
+}
+
+if (nuovi.length === 0 && aggiornati.length === 0) {
+  console.log('\nNessuna novita\' da scrivere (anagrafica e fatturato gia\' allineati — probabile doppia esecuzione nella stessa giornata).');
+  process.exit(0);
+}
+
+fs.mkdirSync(BACKUP_DIR, { recursive: true });
+const stamp = `${OGGI}_${Date.now()}`;
+const backupPath = path.join(BACKUP_DIR, `gv-cashflow_v2_PRE-import-fornitori-automatico_${stamp}.gvcf`);
+fs.copyFileSync(GVCF_PATH, backupPath);
+
+gvDataFresh.fornitori = [...fornitoriEsistenti, ...nuovi];
+gvDataFresh.timestamp = new Date().toISOString();
+// Stesso log usato dal banner "N movimenti importati automaticamente" in app (App.tsx) —
+// campi fornitoriNuovi/fornitoriAggiornati aggiunti qui, ignorati dalle voci piu' vecchie
+// scritte solo da importaPuntaNet.mjs (che non li imposta).
+gvDataFresh.logImportAutomatico = [
+  ...(gvDataFresh.logImportAutomatico || []),
+  { timestamp: new Date().toISOString(), autoScritti: 0, daRivedere: 0, fornitoriNuovi: nuovi.length, fornitoriAggiornati: aggiornati.length },
+].slice(-60);
+
+const tmpPath = `${GVCF_PATH}.tmp_${process.pid}`;
+fs.writeFileSync(tmpPath, JSON.stringify(gvDataFresh, null, 2));
+fs.renameSync(tmpPath, GVCF_PATH);
+
+console.log(`\n✔ Aggiunti ${nuovi.length} fornitori nuovi (categoria "Da Categorizzare").`);
+console.log(`✔ Aggiornato il fatturato/numero fatture di ${aggiornati.length} fornitori gia' presenti.`);
+console.log(`  Backup pre-scrittura: ${backupPath}`);
+console.log('=== Scrittura completata ===');

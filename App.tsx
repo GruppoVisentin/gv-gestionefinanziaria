@@ -755,7 +755,7 @@ const App: React.FC = () => {
   // --scrivi direttamente nel file dati): serve solo per il banner "N movimenti importati dall'ultima
   // apertura" qui sotto — l'app non ha altro modo di sapere cosa e' successo tra un'apertura e l'altra,
   // perche' ha accesso solo al singolo file .gvcf, non alla cartella AUTO con i log testuali.
-  const [logImportAutomatico, setLogImportAutomatico] = useState<{ timestamp: string; autoScritti: number; daRivedere: number }[]>([]);
+  const [logImportAutomatico, setLogImportAutomatico] = useState<{ timestamp: string; autoScritti: number; daRivedere: number; fornitoriNuovi?: number; fornitoriAggiornati?: number }[]>([]);
   // Fotografia giornaliera di Crediti Clienti/Debiti Fornitori aperti, calcolata da PuntaNet dallo
   // stesso script automatico — usata in Stato Patrimoniale come suggerimento (mai applicata da sola).
   const [saldiApertiPuntaNet, setSaldiApertiPuntaNet] = useState<{ data: string; creditiClienti: number; debitiFornitori: number } | null>(null);
@@ -783,12 +783,13 @@ const App: React.FC = () => {
   // scritte in automatico SENZA bisogno di intervento.
   const LOCALSTORAGE_ULTIMO_LOG_IMPORT = 'gv_ultimoLogImportAutomaticoVisto';
   const nuoviImportAutomatici = useMemo(() => {
-    if (logImportAutomatico.length === 0) return { count: 0, ultimoTimestamp: null as string | null };
+    if (logImportAutomatico.length === 0) return { count: 0, fornitoriCount: 0, ultimoTimestamp: null as string | null };
     let ultimoVisto = '';
     try { ultimoVisto = localStorage.getItem(LOCALSTORAGE_ULTIMO_LOG_IMPORT) || ''; } catch { /* privacy mode, ecc. */ }
     const nuovi = logImportAutomatico.filter(l => l.timestamp > ultimoVisto);
     const count = nuovi.reduce((s, l) => s + l.autoScritti, 0);
-    return { count, ultimoTimestamp: logImportAutomatico[logImportAutomatico.length - 1].timestamp };
+    const fornitoriCount = nuovi.reduce((s, l) => s + (l.fornitoriNuovi || 0) + (l.fornitoriAggiornati || 0), 0);
+    return { count, fornitoriCount, ultimoTimestamp: logImportAutomatico[logImportAutomatico.length - 1].timestamp };
   }, [logImportAutomatico]);
 
   useEffect(() => {
@@ -3023,12 +3024,16 @@ const App: React.FC = () => {
           avere un riscontro visibile che l'automatismo ha lavorato, non solo il silenzio quando
           non c'e' nulla da segnalare (il banner arancione qui sotto). Sparisce chiudendolo, e comunque
           non si ripresenta piu' per questi stessi movimenti alla prossima apertura (localStorage). */}
-      {bannerImportAutoVisibile && nuoviImportAutomatici.count > 0 && (
+      {bannerImportAutoVisibile && (nuoviImportAutomatici.count > 0 || nuoviImportAutomatici.fornitoriCount > 0) && (
         <div className="bg-emerald-600 text-white px-4 py-2 flex items-center justify-between text-sm font-bold z-[70]">
           <div className="flex items-center gap-2">
             <CheckCircle2 size={16} />
             <span>
-              Import automatico PuntaNet: {nuoviImportAutomatici.count} {nuoviImportAutomatici.count === 1 ? 'movimento importato' : 'movimenti importati'} dall'ultima apertura — nessuna verifica necessaria
+              Import automatico PuntaNet:
+              {nuoviImportAutomatici.count > 0 && ` ${nuoviImportAutomatici.count} ${nuoviImportAutomatici.count === 1 ? 'movimento importato' : 'movimenti importati'}`}
+              {nuoviImportAutomatici.count > 0 && nuoviImportAutomatici.fornitoriCount > 0 && ','}
+              {nuoviImportAutomatici.fornitoriCount > 0 && ` ${nuoviImportAutomatici.fornitoriCount} ${nuoviImportAutomatici.fornitoriCount === 1 ? 'fornitore aggiornato' : 'fornitori aggiornati'}`}
+              {' '}dall'ultima apertura — nessuna verifica necessaria
             </span>
           </div>
           <button
