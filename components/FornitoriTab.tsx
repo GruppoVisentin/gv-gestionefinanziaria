@@ -21,6 +21,8 @@ type FormState = {
   telefono: string;
   email: string;
   pec: string;
+  sitoInternet: string;
+  iban: string;
   note: string;
   pagamentoAFineLavorazione: boolean;
   terminiPagamentoNote: string;
@@ -28,7 +30,7 @@ type FormState = {
 
 const EMPTY_FORM: FormState = {
   ragioneSociale: '', macroCategoria: 'grezzo', sottoCategoria: '',
-  pIvaCf: '', indirizzo: '', telefono: '', email: '', pec: '', note: '',
+  pIvaCf: '', indirizzo: '', telefono: '', email: '', pec: '', sitoInternet: '', iban: '', note: '',
   pagamentoAFineLavorazione: false, terminiPagamentoNote: '',
 };
 
@@ -54,6 +56,8 @@ function toFornitoreInput(f: FormState): Omit<Fornitore, 'id'> {
     telefono: f.telefono.trim() || undefined,
     email: f.email.trim() || undefined,
     pec: f.pec.trim() || undefined,
+    sitoInternet: f.sitoInternet.trim() || undefined,
+    iban: f.iban.trim() || undefined,
     note: f.note.trim() || undefined,
     pagamentoAFineLavorazione: f.pagamentoAFineLavorazione || undefined,
     terminiPagamentoNote: f.terminiPagamentoNote.trim() || undefined,
@@ -68,6 +72,8 @@ function fromFornitore(f: Fornitore): FormState {
     pIvaCf: f.pIvaCf || '',
     indirizzo: f.indirizzo || '',
     telefono: f.telefono || '',
+    sitoInternet: f.sitoInternet || '',
+    iban: f.iban || '',
     email: f.email || '',
     pec: f.pec || '',
     note: f.note || '',
@@ -140,6 +146,18 @@ function FornitoreForm({ value, onChange }: { value: FormState; onChange: (v: Fo
         onChange={e => onChange({ ...value, indirizzo: e.target.value })}
         placeholder="Indirizzo"
         className="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-200 text-sm"
+      />
+      <input
+        value={value.sitoInternet}
+        onChange={e => onChange({ ...value, sitoInternet: e.target.value })}
+        placeholder="Sito internet"
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+      />
+      <input
+        value={value.iban}
+        onChange={e => onChange({ ...value, iban: e.target.value })}
+        placeholder="IBAN"
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
       />
       <textarea
         value={value.note}
@@ -523,6 +541,8 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                               {f.pIvaCf && <span>{f.pIvaCf}</span>}
                               {f.telefono && <span>{f.telefono}</span>}
                               {f.email && <span>{f.email}</span>}
+                              {f.sitoInternet && <span>🌐 {f.sitoInternet}</span>}
+                              {f.iban && <span title="IBAN">🏦 {f.iban}</span>}
                               {f.condizionePagamentoPuntaNet && <span title="Condizione di pagamento da PuntaNet">💳 {f.condizionePagamentoPuntaNet}</span>}
                             </div>
                           </div>

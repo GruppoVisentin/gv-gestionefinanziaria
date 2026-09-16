@@ -79,15 +79,34 @@ function runSql(database, query) {
 const SINONIMI = {
   puntaNetIdCliFor: ['idclifor'],
   ragioneSociale: ['ragionesociale', 'denominazione', 'nome'],
-  pIvaCf: ['partitaiva', 'piva', 'codicefiscale'],
+  // Partita IVA e Codice Fiscale sono DUE colonne distinte in PuntaNet — prima venivano
+  // cercate come un unico sinonimo "pIvaCf", quindi la prima trovata (Partita Iva, che
+  // precede Codice Fiscale nella tabella) vinceva sempre e il Codice Fiscale non veniva mai
+  // letto: per una persona fisica (senza Partita IVA) il campo restava vuoto anche quando il
+  // Codice Fiscale era presente (bug trovato in audit il 2026-09-16). Estratte separatamente,
+  // ricombinate sotto con fallback Partita IVA -> Codice Fiscale.
+  partitaIva: ['partitaiva'],
+  codiceFiscale: ['codicefiscale'],
   indirizzo: ['indirizzo', 'via'],
-  telefono: ['telefono', 'cellulare', 'tel'],
+  citta: ['citta'],
+  provincia: ['provincia'],
+  cap: ['cap'],
+  telefono: ['telefono', 'tel'],
+  cellulare: ['cellulare'],
   pec: ['pec'],
   email: ['email', 'mail'],
+  sitoInternet: ['sitointernet', 'sito'],
+  iban: ['iban'],
 };
 
+// NFD + rimozione dei segni diacritici (es. "Città" -> "citta") oltre a spazi/underscore/trattini:
+// senza questo "Città" non avrebbe mai matchato il sinonimo "citta" (bug trovato in audit il
+// 2026-09-16, mai notato prima perche' nessun campo con lettere accentate era ancora cercato).
 function normalizza(nome) {
-  return nome.toLowerCase().replace(/[\s_]/g, '');
+  return nome
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[\s_-]/g, '');
 }
 
 function costruisciMapping(colonneReali) {
@@ -202,6 +221,32 @@ const fornitori = righe
       const v = r[colonna];
       if (v !== null && v !== undefined && String(v).trim() !== '') out[campo] = typeof v === 'string' ? v.trim() : v;
     }
+
+    // Partita IVA (aziende) con fallback su Codice Fiscale (persone fisiche, che non hanno
+    // Partita IVA) — vedi nota sopra su SINONIMI.partitaIva/codiceFiscale.
+    out.pIvaCf = out.partitaIva || out.codiceFiscale;
+    delete out.partitaIva;
+    delete out.codiceFiscale;
+
+    // Indirizzo completo: via + CAP + citta' + provincia, tutti campi separati in PuntaNet ma
+    // un solo campo libero "indirizzo" in Fornitore — prima veniva importata solo la via.
+    const indirizzoCompleto = [
+      out.indirizzo,
+      [out.cap, out.citta].filter(Boolean).join(' '),
+      out.provincia ? `(${out.provincia})` : undefined,
+    ].filter(Boolean).join(', ');
+    if (indirizzoCompleto) out.indirizzo = indirizzoCompleto; else delete out.indirizzo;
+    delete out.citta;
+    delete out.provincia;
+    delete out.cap;
+
+    // Telefono fisso + cellulare, entrambi in PuntaNet ma un solo campo "telefono" in
+    // Fornitore — prima il cellulare non veniva mai letto (il sinonimo era condiviso con
+    // "telefono" e la colonna Telefono vinceva sempre).
+    const telefoni = [out.telefono, out.cellulare].filter(Boolean);
+    if (telefoni.length > 0) out.telefono = [...new Set(telefoni)].join(' / '); else delete out.telefono;
+    delete out.cellulare;
+
     if (out.puntaNetIdCliFor !== undefined) {
       const r2 = riepilogoPerId.get(String(out.puntaNetIdCliFor));
       if (r2) {
