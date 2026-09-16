@@ -523,6 +523,7 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                               {f.pIvaCf && <span>{f.pIvaCf}</span>}
                               {f.telefono && <span>{f.telefono}</span>}
                               {f.email && <span>{f.email}</span>}
+                              {f.condizionePagamentoPuntaNet && <span title="Condizione di pagamento da PuntaNet">💳 {f.condizionePagamentoPuntaNet}</span>}
                             </div>
                           </div>
                           {suggerito && (
