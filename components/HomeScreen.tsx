@@ -15,6 +15,7 @@ import {
   LucideIcon,
   Receipt,
   BellRing,
+  Users,
 } from 'lucide-react';
 import { AppView } from '../types';
 
@@ -154,7 +155,17 @@ const modules: Module[] = [
     iconColor: 'text-teal-600',
     active: true,
   },
-  // ── MODULO 12 — PAGAMENTI FORNITORI (ATTIVO — NUOVO) ──────────
+  // ── MODULO 12 — FORNITORI (ATTIVO — NUOVO) ────────────────────
+  {
+    id: AppView.FORNITORI,
+    label: 'Fornitori',
+    sublabel: 'Anagrafica e termini di pagamento',
+    icon: Users,
+    color: 'bg-sky-100',
+    iconColor: 'text-sky-600',
+    active: true,
+  },
+  // ── MODULO 13 — PAGAMENTI FORNITORI (ATTIVO — NUOVO) ──────────
   {
     id: AppView.PAGAMENTI_FORNITORI,
     label: 'Pagamenti',
