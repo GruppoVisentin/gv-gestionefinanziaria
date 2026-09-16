@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, InitialBalanceBreakdown, BankAccount, ExistingLoan, LoanDetails, AppView, RinegoziazioneMutuo, SaldoInizialeCashFlow, Project, RimanenzeData, CEData } from '../types';
 import { fetchEuriborRates, generateFinancialReportPDFAnalysis } from '../services/geminiService';
 import { CURRENCY_FORMATTER, VARIABLE_COST_CATEGORIES } from '../constants';
-import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Database, Search, RefreshCw, Pencil, CheckCircle2, Building2 } from 'lucide-react';
+import { Landmark, Wallet, TrendingUp, AlertCircle, Plus, Trash2, X, Save, Settings, Calendar, History, ArrowRight, Shield, FileText, Search, RefreshCw, Pencil, CheckCircle2, Building2 } from 'lucide-react';
 import PDFExportButton from './PDFExportButton';
 import { HelpButton } from './HelpPanel';
 import HelpPanel from './HelpPanel';
@@ -21,7 +21,6 @@ interface CashFlowTimelineProps {
   currentYear: number;
   isAuthorized?: boolean;
   onGoToManuale?: (section?: string, tab?: 'manuale' | 'glossario') => void;
-  onOpenImportPuntaNet?: () => void;
   onSaveTransaction: (t: Omit<Transaction, 'id'>) => void;
   onUpdateTransaction: (t: Transaction) => void;
   onDeleteTransaction: (id: string) => void;
@@ -42,7 +41,6 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
   currentYear, 
   isAuthorized = false,
   onGoToManuale,
-  onOpenImportPuntaNet,
   onSaveTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
@@ -1633,17 +1631,6 @@ const CashFlowTimeline: React.FC<CashFlowTimelineProps> = ({
             </div>
             <HelpButton onClick={() => setShowHelp(true)} />
           </div>
-
-          {/* Tasto POPOLA — accanto all'ingranaggio */}
-          {onOpenImportPuntaNet && (
-            <button
-              onClick={onOpenImportPuntaNet}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-colors shadow-sm"
-            >
-              <Database size={14} />
-              Popola da Punta Net
-            </button>
-          )}
         </div>
       </div>
       
