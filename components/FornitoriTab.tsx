@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles, Truck, Briefcase, Zap, UtensilsCrossed, Users, Landmark, Wand2 } from 'lucide-react';
 import { Fornitore, FornitoreMacroCategoria } from '../types';
-import { FORNITORI_TAXONOMY } from '../constants';
+import { FORNITORI_TAXONOMY, suggerisciCategoriaFornitore } from '../constants';
 import { parseContractPaymentTerms } from '../services/geminiService';
 
 interface FornitoriTabProps {
@@ -35,6 +35,12 @@ const EMPTY_FORM: FormState = {
 const MACRO_LABEL: Record<FornitoreMacroCategoria, string> = {
   grezzo: 'Grezzo',
   finiture: 'Finiture',
+  mezzi_trasporti: 'Mezzi e Trasporti',
+  professionisti: 'Professionisti e Consulenza',
+  utenze_servizi: 'Utenze, Banche e Servizi',
+  ristorazione: 'Ristorazione e Rappresentanza',
+  personale: 'Personale e Collaboratori',
+  enti_altro: 'Enti, Condomini e Altro',
   non_categorizzato: 'Da Categorizzare',
 };
 
@@ -70,8 +76,13 @@ function fromFornitore(f: Fornitore): FormState {
   };
 }
 
+const MACRO_OPTIONS: FornitoreMacroCategoria[] = [
+  'grezzo', 'finiture', 'mezzi_trasporti', 'professionisti', 'utenze_servizi',
+  'ristorazione', 'personale', 'enti_altro', 'non_categorizzato',
+];
+
 function FornitoreForm({ value, onChange }: { value: FormState; onChange: (v: FormState) => void }) {
-  const subOptions = value.macroCategoria === 'grezzo' || value.macroCategoria === 'finiture'
+  const subOptions = value.macroCategoria !== 'non_categorizzato'
     ? FORNITORI_TAXONOMY[value.macroCategoria]
     : [];
   return (
@@ -88,9 +99,7 @@ function FornitoreForm({ value, onChange }: { value: FormState; onChange: (v: Fo
         onChange={e => onChange({ ...value, macroCategoria: e.target.value as FornitoreMacroCategoria, sottoCategoria: '' })}
         className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white"
       >
-        <option value="grezzo">Grezzo</option>
-        <option value="finiture">Finiture</option>
-        <option value="non_categorizzato">Da Categorizzare</option>
+        {MACRO_OPTIONS.map(m => <option key={m} value={m}>{MACRO_LABEL[m]}</option>)}
       </select>
       <input
         list="sottocategoria-options"
@@ -244,7 +253,9 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
 
   const grouped = useMemo(() => {
     const groups: Record<FornitoreMacroCategoria, Record<string, Fornitore[]>> = {
-      grezzo: {}, finiture: {}, non_categorizzato: {},
+      grezzo: {}, finiture: {}, mezzi_trasporti: {}, professionisti: {},
+      utenze_servizi: {}, ristorazione: {}, personale: {}, enti_altro: {},
+      non_categorizzato: {},
     };
     for (const f of fornitori) {
       const sub = f.sottoCategoria || '(senza sottocategoria)';
@@ -271,6 +282,34 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
   };
 
   const toggleGroup = (key: string) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+
+  // Applica un suggerimento di categoria (o una correzione manuale) a un fornitore esistente,
+  // preservando tutti gli altri campi già impostati — nessuna riscrittura totale del record.
+  const applyCategoria = (f: Fornitore, macroCategoria: FornitoreMacroCategoria, sottoCategoria: string) => {
+    const { id, ...rest } = f;
+    onUpdateFornitore(id, { ...rest, macroCategoria, sottoCategoria });
+  };
+
+  // Suggerimenti (best-effort, da confermare) per i fornitori ancora "Da Categorizzare" —
+  // vedi suggerisciCategoriaFornitore in constants.ts: nessun indizio affidabile nel nome ->
+  // nessun suggerimento, restano da classificare a mano come prima (richiesto 2026-09-16, per
+  // rendere il lavoro dell'utente "solo controllo" invece di classificare 579 righe da zero).
+  const suggerimenti = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof suggerisciCategoriaFornitore>>();
+    for (const f of fornitori) {
+      if (f.macroCategoria !== 'non_categorizzato') continue;
+      const s = suggerisciCategoriaFornitore(f.ragioneSociale);
+      if (s) map.set(f.id, s);
+    }
+    return map;
+  }, [fornitori]);
+
+  const applicaTuttiISuggerimenti = () => {
+    for (const f of fornitori) {
+      const s = suggerimenti.get(f.id);
+      if (s) applyCategoria(f, s.macroCategoria, s.sottoCategoria);
+    }
+  };
 
   const handleImportFile = (file: File) => {
     setImportError(null);
@@ -337,15 +376,30 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
     setImportPreview(null);
   };
 
-  const macroOrder: FornitoreMacroCategoria[] = ['grezzo', 'finiture', 'non_categorizzato'];
+  const macroOrder: FornitoreMacroCategoria[] = [
+    'grezzo', 'finiture', 'mezzi_trasporti', 'professionisti', 'utenze_servizi',
+    'ristorazione', 'personale', 'enti_altro', 'non_categorizzato',
+  ];
   const macroIcon: Record<FornitoreMacroCategoria, React.ReactNode> = {
     grezzo: <HardHat size={16} />,
     finiture: <Paintbrush size={16} />,
+    mezzi_trasporti: <Truck size={16} />,
+    professionisti: <Briefcase size={16} />,
+    utenze_servizi: <Zap size={16} />,
+    ristorazione: <UtensilsCrossed size={16} />,
+    personale: <Users size={16} />,
+    enti_altro: <Landmark size={16} />,
     non_categorizzato: <Inbox size={16} />,
   };
   const macroStyle: Record<FornitoreMacroCategoria, string> = {
     grezzo: 'bg-stone-50 text-stone-700 border-stone-200',
     finiture: 'bg-sky-50 text-sky-700 border-sky-200',
+    mezzi_trasporti: 'bg-orange-50 text-orange-700 border-orange-200',
+    professionisti: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    utenze_servizi: 'bg-amber-50 text-amber-700 border-amber-200',
+    ristorazione: 'bg-rose-50 text-rose-700 border-rose-200',
+    personale: 'bg-teal-50 text-teal-700 border-teal-200',
+    enti_altro: 'bg-violet-50 text-violet-700 border-violet-200',
     non_categorizzato: 'bg-slate-50 text-slate-500 border-slate-200',
   };
 
@@ -422,8 +476,18 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
       <div className="space-y-6">
         {macroOrder.filter(macro => Object.keys(grouped[macro]).length > 0).map(macro => (
           <div key={macro} className="space-y-3">
-            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-black uppercase tracking-wider ${macroStyle[macro]}`}>
-              {macroIcon[macro]} {MACRO_LABEL[macro]}
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-black uppercase tracking-wider ${macroStyle[macro]}`}>
+                {macroIcon[macro]} {MACRO_LABEL[macro]}
+              </div>
+              {macro === 'non_categorizzato' && suggerimenti.size > 0 && (
+                <button
+                  onClick={applicaTuttiISuggerimenti}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-[11px] font-black transition-colors"
+                >
+                  <Wand2 size={13} /> Applica tutti i {suggerimenti.size} suggerimenti
+                </button>
+              )}
             </div>
             {Object.entries(grouped[macro]).sort(([a], [b]) => a.localeCompare(b)).map(([sub, list]) => {
               const key = `${macro}::${sub}`;
@@ -442,7 +506,9 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                   </button>
                   {!isCollapsed && (
                     <div className="divide-y divide-slate-100 border-t border-slate-100">
-                      {list.map(f => (
+                      {list.map(f => {
+                        const suggerito = suggerimenti.get(f.id);
+                        return (
                         <div key={f.id} className="flex items-center gap-3 px-4 py-3">
                           <div className="flex-1 min-w-0">
                             <div className="font-bold text-sm text-slate-800 truncate flex items-center gap-2">
@@ -459,10 +525,24 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                               {f.email && <span>{f.email}</span>}
                             </div>
                           </div>
+                          {suggerito && (
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[10px] font-bold text-violet-600 bg-violet-50 border border-violet-100 px-2 py-1 rounded-full">
+                                Suggerito: {MACRO_LABEL[suggerito.macroCategoria]} → {suggerito.sottoCategoria}
+                              </span>
+                              <button
+                                onClick={() => applyCategoria(f, suggerito.macroCategoria, suggerito.sottoCategoria)}
+                                title="Conferma questo suggerimento"
+                                className="p-1.5 text-violet-500 hover:text-white hover:bg-violet-600 bg-violet-50 rounded-lg transition-all"
+                              >
+                                <Check size={14} />
+                              </button>
+                            </div>
+                          )}
                           <button onClick={() => startEdit(f)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all"><Edit2 size={14} /></button>
                           <button onClick={() => onDeleteFornitore(f.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={14} /></button>
                         </div>
-                      ))}
+                      );})}
                     </div>
                   )}
                 </div>

@@ -117,7 +117,16 @@ export interface Client {
 // Anagrafica fornitori, divisa per macro categoria di lavorazione (Grezzo/Finiture)
 // e sottocategoria tematica. Puo' essere popolata a mano o importata (con revisione
 // manuale) dal report generato da scripts/importaFornitoriPuntaNet.mjs.
-export type FornitoreMacroCategoria = 'grezzo' | 'finiture' | 'non_categorizzato';
+export type FornitoreMacroCategoria =
+  | 'grezzo'
+  | 'finiture'
+  | 'mezzi_trasporti'
+  | 'professionisti'
+  | 'utenze_servizi'
+  | 'ristorazione'
+  | 'personale'
+  | 'enti_altro'
+  | 'non_categorizzato';
 
 export interface Fornitore {
   id: string;
