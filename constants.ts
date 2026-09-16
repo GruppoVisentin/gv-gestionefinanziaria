@@ -350,6 +350,8 @@ export const FORNITORI_TAXONOMY: Record<Exclude<import('./types').FornitoreMacro
     'Murature e Tramezzature',
     'Impermeabilizzazioni e Coibentazioni',
     'Impianti a Grezzo (predisposizioni)',
+    'Calcestruzzi, Inerti e Prefabbricati',
+    'Materiali Edili e Rivendite',
   ],
   finiture: [
     'Intonaci e Rasature',
@@ -360,6 +362,7 @@ export const FORNITORI_TAXONOMY: Record<Exclude<import('./types').FornitoreMacro
     'Pitture e Decorazioni',
     'Cartongesso e Controsoffitti',
     'Arredi e Complementi',
+    'Opere in Ferro e Lattoneria',
   ],
   mezzi_trasporti: [
     'Officine e Carrozzerie',
@@ -371,12 +374,15 @@ export const FORNITORI_TAXONOMY: Record<Exclude<import('./types').FornitoreMacro
     'Progettazione e Direzione Lavori',
     'Consulenza Fiscale e Legale',
     'Certificazioni, SOA e Sicurezza',
+    'Consulenza Aziendale e Formazione',
   ],
   utenze_servizi: [
     'Energia e Utenze',
     'Telefonia e Software',
     'Banche e Assicurazioni',
     'Spedizioni e Logistica',
+    'Pubblicità, Stampa e Cancelleria',
+    'Rifiuti, Spurghi e Pulizie',
   ],
   ristorazione: [
     'Ristorazione e Rappresentanza',
