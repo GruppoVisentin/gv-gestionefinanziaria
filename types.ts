@@ -139,6 +139,8 @@ export interface Fornitore {
   email?: string;
   pec?: string;
   note?: string;
+  sitoInternet?: string;
+  iban?: string;
   // Presenti solo se importato dal report PuntaNet (Clienti Fornitori), per
   // riconciliare re-importazioni successive senza creare doppioni.
   puntaNetIdCliFor?: number;
