@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { HardHat, Building2, CalendarClock, Check, RotateCcw, BellRing } from 'lucide-react';
+import { HardHat, Building2, CalendarClock, Check, RotateCcw, BellRing, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { fetchPaymentAlerts, setPaymentAlertRead, PaymentAlert } from '../services/paymentAlertsSync';
 
 const dateFmt = (iso: string) => new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
+const currencyFmt = (n: number) => n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 
 export function PagamentiFornitoriTab() {
   const [alerts, setAlerts] = useState<PaymentAlert[] | null>(null);
@@ -82,6 +83,15 @@ export function PagamentiFornitoriTab() {
                     <Check size={12} /> Gestito
                   </button>
                 </div>
+                {a.validato ? (
+                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg w-fit">
+                    <ShieldCheck size={12} /> Confermato dal Direttore Cantiere{a.importoValidato != null ? ` — ${currencyFmt(a.importoValidato)}` : ''}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-amber-700 bg-amber-100 px-2 py-1 rounded-lg w-fit">
+                    <ShieldAlert size={12} /> Provvisorio — in attesa di validazione dal Direttore Cantiere{a.percentuale != null ? ` (${a.percentuale}% indicativo)` : ''}
+                  </div>
+                )}
                 <div className="flex items-center gap-1.5 text-xs text-slate-600"><Building2 size={12} className="text-slate-400" /> {a.cantiereNome}</div>
                 <div className="flex items-center gap-1.5 text-xs text-slate-600"><HardHat size={12} className="text-slate-400" /> {a.lavorazioneNome}</div>
                 {a.dataCompletamento && (
@@ -103,6 +113,8 @@ export function PagamentiFornitoriTab() {
                 <span className="flex-1 truncate">
                   <span className="font-bold text-slate-600">{a.fornitoreNome}</span> — {a.cantiereNome} · {a.lavorazioneNome}
                   {a.dataCompletamento && ` · ${dateFmt(a.dataCompletamento)}`}
+                  {a.validato && a.importoValidato != null && ` · ${currencyFmt(a.importoValidato)}`}
+                  {!a.validato && ' · provvisorio, non ancora validato'}
                 </span>
                 <button
                   onClick={() => toggleLetto(a)}

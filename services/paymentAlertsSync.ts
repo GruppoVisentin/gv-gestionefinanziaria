@@ -13,7 +13,14 @@ export interface PaymentAlert {
   lavorazioneNome: string;
   dataCompletamento: string | null;
   note: string | null;
+  // % indicativa dalla rata di contratto che ha generato l'avviso (assente per il
+  // vecchio flag generico pagamentoAFineLavorazione, che non ha una % associata).
+  percentuale: number | null;
   letto: boolean;
+  // false finché il Direttore di quel cantiere non conferma l'importo reale in
+  // Direttore Cantiere: fino ad allora l'avviso è "provvisorio" per Gestione Finanziaria.
+  validato: boolean;
+  importoValidato: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -26,6 +33,7 @@ export interface PaymentAlertInput {
   lavorazioneNome: string;
   dataCompletamento?: string | null;
   note?: string | null;
+  percentuale?: number | null;
 }
 
 export async function fetchPaymentAlerts(): Promise<PaymentAlert[]> {
@@ -51,4 +59,15 @@ export async function setPaymentAlertRead(id: string, letto: boolean): Promise<v
     body: JSON.stringify({ id, letto }),
   });
   if (!res.ok) throw new Error(`Errore aggiornamento avviso pagamento fornitore (${res.status})`);
+}
+
+// Validazione dell'importo reale da parte del Direttore di quel cantiere — solo
+// Direttore Cantiere scrive questi campi, mai Gestione Finanziaria.
+export async function setPaymentAlertValidation(id: string, importoValidato: number): Promise<void> {
+  const res = await fetch('/api/avvisiPagamentoFornitori', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, validato: true, importoValidato }),
+  });
+  if (!res.ok) throw new Error(`Errore validazione avviso pagamento fornitore (${res.status})`);
 }
