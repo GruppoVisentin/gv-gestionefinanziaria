@@ -2678,7 +2678,6 @@ const App: React.FC = () => {
                   currentYear={timelineYear}
                   isAuthorized={isAuthorized}
                   onGoToManuale={handleGoToManuale}
-                  onOpenImportPuntaNet={() => setShowImportPuntaNet(true)}
                   onSaveTransaction={handleSaveTransaction}
                   onUpdateTransaction={handleUpdateTransaction}
                   onDeleteTransaction={handleDeleteTransaction}
