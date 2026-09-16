@@ -400,7 +400,9 @@ for (const f of fornitori) {
       const attuale = esistente[campo];
       const vuoto = attuale === undefined || attuale === null || String(attuale).trim() === '';
       const corrotto = !vuoto && String(attuale).includes('�') && String(nuovo) !== String(attuale);
-      const estendibile = campo !== 'ragioneSociale' && !vuoto && String(nuovo) !== String(attuale) && String(nuovo).startsWith(String(attuale));
+      // La condizione di pagamento e' modificabile a mano in scheda (es. "30" scritto dall'utente):
+      // mai "estesa" col valore PuntaNet, solo riempita se vuota.
+      const estendibile = campo !== 'ragioneSociale' && campo !== 'condizionePagamentoPuntaNet' && !vuoto && String(nuovo) !== String(attuale) && String(nuovo).startsWith(String(attuale));
       if ((vuoto && campo !== 'ragioneSociale') || corrotto || estendibile) {
         esistente[campo] = nuovo;
         completato = true;

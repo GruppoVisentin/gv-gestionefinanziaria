@@ -24,6 +24,7 @@ type FormState = {
   sitoInternet: string;
   iban: string;
   note: string;
+  condizionePagamento: string;
   pagamentoAFineLavorazione: boolean;
   terminiPagamentoNote: string;
 };
@@ -31,7 +32,7 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   ragioneSociale: '', macroCategoria: 'grezzo', sottoCategoria: '',
   pIvaCf: '', indirizzo: '', telefono: '', email: '', pec: '', sitoInternet: '', iban: '', note: '',
-  pagamentoAFineLavorazione: false, terminiPagamentoNote: '',
+  condizionePagamento: '', pagamentoAFineLavorazione: false, terminiPagamentoNote: '',
 };
 
 const MACRO_LABEL: Record<FornitoreMacroCategoria, string> = {
@@ -59,6 +60,9 @@ function toFornitoreInput(f: FormState): Omit<Fornitore, 'id'> {
     sitoInternet: f.sitoInternet.trim() || undefined,
     iban: f.iban.trim() || undefined,
     note: f.note.trim() || undefined,
+    // Stesso campo compilato dall'import PuntaNet (ultima fattura / anagrafica): modificabile a
+    // mano in scheda, e l'import lo riempie solo se vuoto, quindi la scelta fatta qui resta.
+    condizionePagamentoPuntaNet: f.condizionePagamento.trim() || undefined,
     pagamentoAFineLavorazione: f.pagamentoAFineLavorazione || undefined,
     terminiPagamentoNote: f.terminiPagamentoNote.trim() || undefined,
   };
@@ -77,6 +81,7 @@ function fromFornitore(f: Fornitore): FormState {
     email: f.email || '',
     pec: f.pec || '',
     note: f.note || '',
+    condizionePagamento: f.condizionePagamentoPuntaNet || '',
     pagamentoAFineLavorazione: f.pagamentoAFineLavorazione || false,
     terminiPagamentoNote: f.terminiPagamentoNote || '',
   };
@@ -87,7 +92,7 @@ const MACRO_OPTIONS: FornitoreMacroCategoria[] = [
   'ristorazione', 'personale', 'enti_altro', 'non_categorizzato',
 ];
 
-function FornitoreForm({ value, onChange }: { value: FormState; onChange: (v: FormState) => void }) {
+function FornitoreForm({ value, onChange, condizioniPagamento }: { value: FormState; onChange: (v: FormState) => void; condizioniPagamento: string[] }) {
   const subOptions = value.macroCategoria !== 'non_categorizzato'
     ? FORNITORI_TAXONOMY[value.macroCategoria]
     : [];
@@ -168,6 +173,19 @@ function FornitoreForm({ value, onChange }: { value: FormState; onChange: (v: Fo
       />
 
       <div className="sm:col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+        <label className="block text-xs font-bold text-slate-700">
+          Condizione di pagamento
+          <input
+            list="condizione-pagamento-options"
+            value={value.condizionePagamento}
+            onChange={e => onChange({ ...value, condizionePagamento: e.target.value })}
+            placeholder="es. BONIFICO 30 gg D.F.F.M., RI.BA. 60 gg"
+            className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-normal bg-white"
+          />
+        </label>
+        <datalist id="condizione-pagamento-options">
+          {condizioniPagamento.map(c => <option key={c} value={c} />)}
+        </datalist>
         <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
           <input
             type="checkbox"
@@ -284,6 +302,12 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
     return groups;
   }, [fornitori]);
 
+  // Valori gia' usati (PuntaNet + inseriti a mano), proposti come scelta rapida nella scheda.
+  const condizioniPagamento = useMemo(
+    () => [...new Set(fornitori.map(f => f.condizionePagamentoPuntaNet).filter((c): c is string => !!c))].sort(),
+    [fornitori]
+  );
+
   const startAdd = () => { setIsAdding(true); setEditingId(null); setForm(EMPTY_FORM); };
   const startEdit = (f: Fornitore) => { setEditingId(f.id); setIsAdding(false); setForm(fromFornitore(f)); };
   const cancel = () => { setIsAdding(false); setEditingId(null); };
@@ -291,7 +315,13 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
   const save = () => {
     if (!form.ragioneSociale.trim()) return;
     if (editingId) {
-      onUpdateFornitore(editingId, toFornitoreInput(form));
+      // Merge sul record esistente: il form non mostra i campi gestiti dall'import PuntaNet
+      // (puntaNetIdCliFor, fatturato, numero fatture, ultima fattura). Senza merge venivano
+      // cancellati a ogni salvataggio della scheda (App.tsx sostituisce l'intero record) e il
+      // fornitore perdeva il collegamento a PuntaNet per sempre.
+      const esistente = fornitori.find(f => f.id === editingId);
+      const { id: _id, ...campiEsistenti } = esistente || ({} as Fornitore);
+      onUpdateFornitore(editingId, { ...campiEsistenti, ...toFornitoreInput(form) });
     } else {
       onAddFornitore(toFornitoreInput(form));
     }
@@ -479,7 +509,7 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
 
       {(isAdding || editingId) && (
         <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-          <FornitoreForm value={form} onChange={setForm} />
+          <FornitoreForm value={form} onChange={setForm} condizioniPagamento={condizioniPagamento} />
           <div className="flex gap-2 justify-end">
             <button onClick={save} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600"><Check size={14} /> Salva</button>
             <button onClick={cancel} className="flex items-center gap-1.5 px-4 py-2 bg-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-300"><X size={14} /> Annulla</button>
