@@ -102,6 +102,11 @@ export interface Project {
   // Set when this commessa was auto-imported from another GV app (es. DirettoreCantiere)
   externalSource?: 'direttore_cantiere';
   externalId?: string; // id di questo cantiere nell'app di origine
+  // Ultimo valore grezzo di "stato" ricevuto dal registro condiviso per una
+  // commessa nativa DirettoreCantiere (es. "future", non rappresentabile in
+  // ACTIVE/COMPLETED): va ripubblicato tale e quale, senza reinterpretarlo,
+  // altrimenti il ciclo di pubblicazione di questa app lo sovrascrive.
+  externalStato?: string;
 }
 
 // Anagrafica cliente, condivisa con le altre app della suite tramite il

@@ -1852,6 +1852,14 @@ const App: React.FC = () => {
       );
       if (!ok) return;
       setTransactions(prev => prev.map(t => t.project === project.name ? { ...t, project: undefined } : t));
+    } else {
+      // Ogni commessa è un dato condiviso col registro comune con le altre app
+      // GV (nativa: verrà rimossa anche lì; importata da DirettoreCantiere:
+      // rimane solo locale, riapparirà al prossimo aggiornamento automatico).
+      const msg = project.externalSource
+        ? `Rimuovere "${project.name}" da questa app? È un cantiere gestito su Direttore Cantiere: non verrà cancellato lì, quindi ricomparirà qui al prossimo aggiornamento automatico a meno di eliminarlo anche là.`
+        : `Eliminare la commessa "${project.name}"? È un dato condiviso con le altre app GV: verrà rimossa anche dal registro comune.`;
+      if (!window.confirm(msg)) return;
     }
 
     // Solo una commessa di proprietà di questa app va rimossa anche dal
@@ -1904,10 +1912,15 @@ const App: React.FC = () => {
           const newStatus = row.source === 'direttore_cantiere'
             ? (row.stato === 'completed' ? 'COMPLETED' : row.stato === 'active' ? 'ACTIVE' : p.status)
             : (row.stato as Project['status']);
+          // Per le commesse native DirettoreCantiere teniamo anche il valore
+          // grezzo di stato (es. "future") così da poterlo ripubblicare
+          // identico più sotto, invece di reinterpretarlo con un vocabolario
+          // che qui conosce solo ACTIVE/COMPLETED e perderebbe l'informazione.
+          const newExternalStato = row.source === 'direttore_cantiere' ? row.stato : p.externalStato;
 
-          if (newName !== p.name || newStart !== p.startDate || newStatus !== p.status) {
+          if (newName !== p.name || newStart !== p.startDate || newStatus !== p.status || newExternalStato !== p.externalStato) {
             changed = true;
-            return [{ ...p, name: newName, startDate: newStart, status: newStatus }];
+            return [{ ...p, name: newName, startDate: newStart, status: newStatus, externalStato: newExternalStato }];
           }
           return [p];
         });
@@ -1930,6 +1943,7 @@ const App: React.FC = () => {
           status: r.stato === 'completed' ? 'COMPLETED' : 'ACTIVE',
           externalSource: 'direttore_cantiere',
           externalId: r.sourceId,
+          externalStato: r.stato,
         }));
 
         if (!changed && imported.length === 0) return prev;
@@ -1959,10 +1973,14 @@ const App: React.FC = () => {
         const key = p.externalSource
           ? { source: p.externalSource, sourceId: p.externalId! }
           : { source: 'gestione_finanziaria' as const, sourceId: p.id };
-        // Le righe di proprietà di DirettoreCantiere usano il suo vocabolario
-        // active/completed, indipendentemente da quale app sta scrivendo.
+        // Le righe di proprietà di DirettoreCantiere usano il suo vocabolario,
+        // che qui non conosciamo per intero (es. "future" non è rappresentabile
+        // in ACTIVE/COMPLETED): ripubblichiamo il valore grezzo ricevuto
+        // dall'ultima sincronizzazione così com'è, senza reinterpretarlo,
+        // altrimenti l'app di origine si ritroverebbe lo stato sovrascritto
+        // ad ogni ciclo di pubblicazione di questa app.
         const stato = key.source === 'direttore_cantiere'
-          ? (p.status === 'COMPLETED' ? 'completed' : 'active')
+          ? (p.externalStato ?? (p.status === 'COMPLETED' ? 'completed' : 'active'))
           : p.status;
         pushSharedCantiere({
           source: key.source,
@@ -2067,7 +2085,16 @@ const App: React.FC = () => {
   const handleDeleteClient = useCallback((id: string) => {
     setClients(prev => {
       const client = prev.find(c => c.id === id);
-      if (client && !client.externalSource) {
+      if (!client) return prev;
+      // Dato condiviso con l'ecosistema GV: conferma esplicita, distinguendo
+      // un cliente di proprietà di questa app (eliminazione bidirezionale,
+      // sparisce anche da Direttore Cantiere) da uno importato da un'altra
+      // app (resta lì, sparisce solo da qui).
+      const msg = client.externalSource
+        ? `Eliminare "${client.nome}" dall'anagrafica clienti? È importato da Direttore Cantiere: verrà rimosso solo da qui, il cliente originale non verrà toccato.`
+        : `Eliminare "${client.nome}" dall'anagrafica clienti? È condiviso con l'ecosistema GV: verrà rimosso anche dal registro condiviso e quindi da Direttore Cantiere.`;
+      if (!window.confirm(msg)) return prev;
+      if (!client.externalSource) {
         deleteSharedCliente('gestione_finanziaria', client.id).catch(e =>
           console.error('Cancellazione cliente dal registro condiviso fallita', e)
         );
@@ -2117,11 +2144,17 @@ const App: React.FC = () => {
   }, []);
 
   const handleDeleteFornitore = useCallback((id: string) => {
+    const fornitore = fornitori.find(f => f.id === id);
+    if (!fornitore) return;
+    const ok = window.confirm(
+      `Eliminare il fornitore "${fornitore.ragioneSociale}"?\n\nÈ un dato condiviso con Direttore Cantiere: verrà rimosso anche da lì (mestieri fornitori, contratti, avvisi di pagamento collegati).`
+    );
+    if (!ok) return;
     setFornitori(prev => prev.filter(f => f.id !== id));
     deleteSharedFornitore('gestione_finanziaria', id).catch(e =>
       console.error('Cancellazione fornitore dal registro condiviso fallita', e)
     );
-  }, []);
+  }, [fornitori]);
 
   const handleImportFornitoriBatch = useCallback((data: Omit<Fornitore, 'id'>[]) => {
     setFornitori(prev => [...prev, ...data.map(d => ({ ...d, id: crypto.randomUUID() }))]);
