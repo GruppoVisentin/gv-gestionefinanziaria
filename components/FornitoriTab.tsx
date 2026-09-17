@@ -110,9 +110,11 @@ const MACRO_OPTIONS: FornitoreMacroCategoria[] = [
   'ristorazione', 'personale', 'enti_altro', 'non_categorizzato',
 ];
 
-function FornitoreForm({ value, onChange, condizioniPagamento }: { value: FormState; onChange: (v: FormState) => void; condizioniPagamento: string[] }) {
+function FornitoreForm({ value, onChange, condizioniPagamento, sottoCategoriePerMacro }: { value: FormState; onChange: (v: FormState) => void; condizioniPagamento: string[]; sottoCategoriePerMacro: Partial<Record<FornitoreMacroCategoria, string[]>> }) {
+  // Suggerimenti nel menu a tendina: tassonomia base + sottocategorie gia' usate a mano sui
+  // fornitori esistenti (cosi' una nuova sottocategoria digitata qui resta disponibile in seguito).
   const subOptions = value.macroCategoria !== 'non_categorizzato'
-    ? FORNITORI_TAXONOMY[value.macroCategoria]
+    ? [...new Set([...FORNITORI_TAXONOMY[value.macroCategoria], ...(sottoCategoriePerMacro[value.macroCategoria] || [])])].sort((a, b) => a.localeCompare(b))
     : [];
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -350,6 +352,18 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
     () => [...new Set(fornitori.map(f => f.condizionePagamentoPuntaNet).filter((c): c is string => !!c))].sort(),
     [fornitori]
   );
+
+  // Sottocategorie digitate a mano sui fornitori esistenti, per macro categoria — cosi' una
+  // sottocategoria nuova (non nella tassonomia base) resta disponibile nel menu a tendina.
+  const sottoCategoriePerMacro = useMemo(() => {
+    const map: Partial<Record<FornitoreMacroCategoria, string[]>> = {};
+    for (const f of fornitori) {
+      if (!f.sottoCategoria) continue;
+      const set = map[f.macroCategoria] || (map[f.macroCategoria] = []);
+      if (!set.includes(f.sottoCategoria)) set.push(f.sottoCategoria);
+    }
+    return map;
+  }, [fornitori]);
 
   const startAdd = () => { setIsAdding(true); setEditingId(null); setForm(EMPTY_FORM); };
   const startEdit = (f: Fornitore) => { setEditingId(f.id); setIsAdding(false); setForm(fromFornitore(f)); };
@@ -610,9 +624,9 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
         </div>
       )}
 
-      {(isAdding || editingId) && (
+      {isAdding && (
         <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-          <FornitoreForm value={form} onChange={setForm} condizioniPagamento={condizioniPagamento} />
+          <FornitoreForm value={form} onChange={setForm} condizioniPagamento={condizioniPagamento} sottoCategoriePerMacro={sottoCategoriePerMacro} />
           <div className="flex gap-2 justify-end">
             <button onClick={save} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600"><Check size={14} /> Salva</button>
             <button onClick={cancel} className="flex items-center gap-1.5 px-4 py-2 bg-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-300"><X size={14} /> Annulla</button>
@@ -674,7 +688,7 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                         const spesaAnno = f.statistichePuntaNet?.perAnno.find(a => a.anno === new Date().getFullYear())?.imponibile;
                         return (
                         <div key={f.id} id={`fornitore-${f.id}`}>
-                        <div className={`flex items-center gap-3 px-4 py-3 ${espanso ? 'bg-slate-50' : ''}`}>
+                        <div className={`flex items-center gap-3 px-4 py-3 ${espanso || editingId === f.id ? 'bg-slate-50' : ''}`}>
                           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setEspansoId(espanso ? null : f.id)}>
                             <div className="font-bold text-sm text-slate-800 truncate flex items-center gap-2">
                               {f.ragioneSociale}
@@ -720,10 +734,25 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                           >
                             <BarChart3 size={14} />
                           </button>
-                          <button onClick={() => startEdit(f)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all"><Edit2 size={14} /></button>
+                          <button
+                            onClick={() => editingId === f.id ? cancel() : startEdit(f)}
+                            title="Modifica fornitore"
+                            className={`p-1.5 rounded-lg transition-all ${editingId === f.id ? 'text-white bg-slate-700' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                          >
+                            <Edit2 size={14} />
+                          </button>
                           <button onClick={() => onDeleteFornitore(f.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={14} /></button>
                         </div>
                         {espanso && <FornitoreSchedaNumeri fornitore={f} />}
+                        {editingId === f.id && (
+                          <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
+                            <FornitoreForm value={form} onChange={setForm} condizioniPagamento={condizioniPagamento} sottoCategoriePerMacro={sottoCategoriePerMacro} />
+                            <div className="flex gap-2 justify-end">
+                              <button onClick={save} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600"><Check size={14} /> Salva</button>
+                              <button onClick={cancel} className="flex items-center gap-1.5 px-4 py-2 bg-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-300"><X size={14} /> Annulla</button>
+                            </div>
+                          </div>
+                        )}
                         </div>
                       );})}
                     </div>
