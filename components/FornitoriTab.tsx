@@ -1,8 +1,25 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles, Truck, Briefcase, Zap, UtensilsCrossed, Users, Landmark, Wand2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles, Truck, Briefcase, Zap, UtensilsCrossed, Users, Landmark, Wand2, Building2, AlertTriangle, Euro, ClipboardList } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import { Fornitore, FornitoreMacroCategoria } from '../types';
 import { FORNITORI_TAXONOMY, suggerisciCategoriaFornitore } from '../constants';
 import { parseContractPaymentTerms } from '../services/geminiService';
+
+const CURRENCY_FORMATTER = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+
+// Stessa palette di macroStyle (versione esadecimale, per i grafici Recharts che non
+// possono usare le classi Tailwind bg-*).
+const MACRO_COLOR: Record<FornitoreMacroCategoria, string> = {
+  grezzo: '#78716c',
+  finiture: '#0ea5e9',
+  mezzi_trasporti: '#f97316',
+  professionisti: '#6366f1',
+  utenze_servizi: '#f59e0b',
+  ristorazione: '#f43f5e',
+  personale: '#14b8a6',
+  enti_altro: '#8b5cf6',
+  non_categorizzato: '#94a3b8',
+};
 
 interface FornitoriTabProps {
   fornitori: Fornitore[];
@@ -322,6 +339,31 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
     return map;
   }, [fornitori]);
 
+  // Insight generali per la panoramica in cima alla pagina — solo lettura, nessun
+  // impatto sui dati. fatturatoAnnoCorrente/numeroFatture arrivano da PuntaNet (vedi
+  // Fornitore in types.ts): non tutti i fornitori li hanno (es. inseriti a mano).
+  const insights = useMemo(() => {
+    const totale = fornitori.length;
+    const daCategorizzare = fornitori.filter(f => f.macroCategoria === 'non_categorizzato').length;
+    const datiIncompleti = fornitori.filter(f => !f.telefono && !f.email && !f.pec).length;
+    const speseAnnoCorrente = fornitori.reduce((sum, f) => sum + (f.fatturatoAnnoCorrente || 0), 0);
+
+    const categorieData = MACRO_OPTIONS
+      .map(macro => ({ macro, name: MACRO_LABEL[macro], value: fornitori.filter(f => f.macroCategoria === macro).length }))
+      .filter(d => d.value > 0);
+
+    const conSpesa = fornitori.filter(f => (f.fatturatoAnnoCorrente || 0) > 0).sort((a, b) => (b.fatturatoAnnoCorrente || 0) - (a.fatturatoAnnoCorrente || 0));
+    const topSpesa = conSpesa.slice(0, 8).map(f => ({
+      name: f.ragioneSociale.length > 22 ? f.ragioneSociale.slice(0, 21) + '…' : f.ragioneSociale,
+      value: f.fatturatoAnnoCorrente || 0,
+      macro: f.macroCategoria,
+    }));
+    const top5Sum = conSpesa.slice(0, 5).reduce((sum, f) => sum + (f.fatturatoAnnoCorrente || 0), 0);
+    const concentrazionePct = speseAnnoCorrente > 0 ? Math.round((top5Sum / speseAnnoCorrente) * 100) : 0;
+
+    return { totale, daCategorizzare, datiIncompleti, speseAnnoCorrente, categorieData, topSpesa, concentrazionePct, hasSpesa: conSpesa.length > 0 };
+  }, [fornitori]);
+
   const applicaTuttiISuggerimenti = () => {
     for (const f of fornitori) {
       const s = suggerimenti.get(f.id);
@@ -445,6 +487,98 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
           )}
         </div>
       </div>
+
+      {fornitori.length > 0 && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-slate-50 text-slate-600"><Building2 size={18} /></div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500">Totale fornitori</p>
+                <p className="text-xl font-bold text-slate-900">{insights.totale}</p>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl ${insights.daCategorizzare > 0 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}><ClipboardList size={18} /></div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500">Da categorizzare</p>
+                <p className="text-xl font-bold text-slate-900">
+                  {insights.daCategorizzare}
+                  {insights.totale > 0 && <span className="text-xs font-medium text-slate-400"> ({Math.round((insights.daCategorizzare / insights.totale) * 100)}%)</span>}
+                </p>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600"><Euro size={18} /></div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500">Spesa anno corrente</p>
+                <p className="text-xl font-bold text-slate-900 truncate" title={CURRENCY_FORMATTER.format(insights.speseAnnoCorrente)}>{CURRENCY_FORMATTER.format(insights.speseAnnoCorrente)}</p>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl ${insights.datiIncompleti > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}><AlertTriangle size={18} /></div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500">Senza contatti</p>
+                <p className="text-xl font-bold text-slate-900">{insights.datiIncompleti}</p>
+                <p className="text-[10px] text-slate-400">nessun telefono/email/PEC</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+              <p className="text-xs font-bold text-slate-600 mb-2">Distribuzione per categoria</p>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={insights.categorieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}>
+                      {insights.categorieData.map(d => <Cell key={d.macro} fill={MACRO_COLOR[d.macro]} />)}
+                    </Pie>
+                    <Tooltip formatter={(value: number, _name, item: any) => [`${value} fornitori`, item?.payload?.name]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 justify-center">
+                {insights.categorieData.map(d => (
+                  <span key={d.macro} className="flex items-center gap-1 text-[10px] text-slate-500">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MACRO_COLOR[d.macro] }} />
+                    {d.name} ({d.value})
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+              <p className="text-xs font-bold text-slate-600 mb-2">Fornitori con più spesa (anno corrente)</p>
+              {insights.hasSpesa ? (
+                <>
+                  <div className="h-56">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={insights.topSpesa} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
+                        <XAxis type="number" hide />
+                        <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 10, fill: '#64748b' }} />
+                        <Tooltip formatter={(value: number) => CURRENCY_FORMATTER.format(value)} />
+                        <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                          {insights.topSpesa.map((d, i) => <Cell key={i} fill={MACRO_COLOR[d.macro]} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {insights.concentrazionePct > 0 && (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      I primi 5 fornitori pesano per il <span className="font-bold text-slate-600">{insights.concentrazionePct}%</span> della spesa anno corrente.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="h-56 flex items-center justify-center text-xs text-slate-400 text-center px-4">
+                  Nessun dato di fatturato disponibile (presente solo per i fornitori importati da PuntaNet).
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {importError && (
         <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-xl">{importError}</div>
