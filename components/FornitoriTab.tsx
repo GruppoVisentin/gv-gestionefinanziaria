@@ -1,11 +1,26 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles, Truck, Briefcase, Zap, UtensilsCrossed, Users, Landmark, Wand2, BarChart3, List } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles, Truck, Briefcase, Zap, UtensilsCrossed, Users, Landmark, Wand2, BarChart3, List, Building2, AlertTriangle, ClipboardList } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Fornitore, FornitoreMacroCategoria } from '../types';
 import { FORNITORI_TAXONOMY, suggerisciCategoriaFornitore } from '../constants';
 import { parseContractPaymentTerms } from '../services/geminiService';
 import FornitoreSchedaNumeri from './FornitoreSchedaNumeri';
 import FornitoriAnalisiSpesa from './FornitoriAnalisiSpesa';
 import { formatEuro } from '../utils/formatters';
+
+// Stessa palette di macroStyle (versione esadecimale, per il grafico Recharts che non
+// puo' usare le classi Tailwind bg-*).
+const MACRO_COLOR: Record<FornitoreMacroCategoria, string> = {
+  grezzo: '#78716c',
+  finiture: '#0ea5e9',
+  mezzi_trasporti: '#f97316',
+  professionisti: '#6366f1',
+  utenze_servizi: '#f59e0b',
+  ristorazione: '#f43f5e',
+  personale: '#14b8a6',
+  enti_altro: '#8b5cf6',
+  non_categorizzato: '#94a3b8',
+};
 
 interface FornitoriTabProps {
   fornitori: Fornitore[];
@@ -317,6 +332,19 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
     return groups;
   }, [fornitori]);
 
+  // Insight generali per la panoramica in cima alla pagina — composizione e completezza
+  // dell'anagrafica (non spesa: quella ha una vista dedicata "Analisi spesa" piu' sotto,
+  // con importi in imponibile da statistichePuntaNet). Solo lettura, nessun impatto sui dati.
+  const insights = useMemo(() => {
+    const totale = fornitori.length;
+    const daCategorizzare = fornitori.filter(f => f.macroCategoria === 'non_categorizzato').length;
+    const datiIncompleti = fornitori.filter(f => !f.telefono && !f.email && !f.pec).length;
+    const categorieData = MACRO_OPTIONS
+      .map(macro => ({ macro, name: MACRO_LABEL[macro], value: fornitori.filter(f => f.macroCategoria === macro).length }))
+      .filter(d => d.value > 0);
+    return { totale, daCategorizzare, datiIncompleti, categorieData };
+  }, [fornitori]);
+
   // Valori gia' usati (PuntaNet + inseriti a mano), proposti come scelta rapida nella scheda.
   const condizioniPagamento = useMemo(
     () => [...new Set(fornitori.map(f => f.condizionePagamentoPuntaNet).filter((c): c is string => !!c))].sort(),
@@ -493,6 +521,63 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
           )}
         </div>
       </div>
+
+      {fornitori.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 grid grid-cols-3 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-slate-50 text-slate-600"><Building2 size={18} /></div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500">Totale fornitori</p>
+                <p className="text-xl font-bold text-slate-900">{insights.totale}</p>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl ${insights.daCategorizzare > 0 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}><ClipboardList size={18} /></div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500">Da categorizzare</p>
+                <p className="text-xl font-bold text-slate-900">
+                  {insights.daCategorizzare}
+                  {insights.totale > 0 && <span className="text-xs font-medium text-slate-400"> ({Math.round((insights.daCategorizzare / insights.totale) * 100)}%)</span>}
+                </p>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl ${insights.datiIncompleti > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}><AlertTriangle size={18} /></div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-slate-500">Senza contatti</p>
+                <p className="text-xl font-bold text-slate-900">{insights.datiIncompleti}</p>
+                <p className="text-[10px] text-slate-400">nessun telefono/email/PEC</p>
+              </div>
+            </div>
+            <div className="col-span-3 text-[11px] text-slate-400">
+              Per spesa, classifica fornitori e scadenze vedi la vista <span className="font-bold text-slate-500">Analisi spesa</span> qui sotto.
+            </div>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+            <p className="text-xs font-bold text-slate-600 mb-2">Distribuzione per categoria</p>
+            <div className="h-40">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={insights.categorieData} dataKey="value" nameKey="name" innerRadius={35} outerRadius={60} paddingAngle={2}>
+                    {insights.categorieData.map(d => <Cell key={d.macro} fill={MACRO_COLOR[d.macro]} />)}
+                  </Pie>
+                  <Tooltip formatter={(value: number, _name, item: any) => [`${value} fornitori`, item?.payload?.name]} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1 justify-center">
+              {insights.categorieData.map(d => (
+                <span key={d.macro} className="flex items-center gap-1 text-[10px] text-slate-500">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MACRO_COLOR[d.macro] }} />
+                  {d.name} ({d.value})
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {importError && (
         <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-xl">{importError}</div>
