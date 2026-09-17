@@ -708,7 +708,10 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                             </div>
                           )}
                           {spesaAnno != null && spesaAnno !== 0 && (
-                            <span title={`Spesa ${new Date().getFullYear()} (imponibile)`} className="hidden sm:inline text-xs font-bold text-slate-600 shrink-0">{formatEuro(spesaAnno)}</span>
+                            <div title={`Spesa ${new Date().getFullYear()} (imponibile)`} className="hidden sm:flex flex-col items-end shrink-0 leading-tight">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Spesa {new Date().getFullYear()}</span>
+                              <span className="text-xs font-bold text-slate-600">{formatEuro(spesaAnno)}</span>
+                            </div>
                           )}
                           <button
                             onClick={() => setEspansoId(espanso ? null : f.id)}
