@@ -1,14 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles, Truck, Briefcase, Zap, UtensilsCrossed, Users, Landmark, Wand2, Building2, AlertTriangle, Euro, ClipboardList } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis } from 'recharts';
+import { Plus, Trash2, Edit2, X, Check, Upload, HardHat, Paintbrush, ChevronDown, ChevronRight, Inbox, FileSearch, Sparkles, Truck, Briefcase, Zap, UtensilsCrossed, Users, Landmark, Wand2, BarChart3, List, Building2, AlertTriangle, ClipboardList } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Fornitore, FornitoreMacroCategoria } from '../types';
 import { FORNITORI_TAXONOMY, suggerisciCategoriaFornitore } from '../constants';
 import { parseContractPaymentTerms } from '../services/geminiService';
+import FornitoreSchedaNumeri from './FornitoreSchedaNumeri';
+import FornitoriAnalisiSpesa from './FornitoriAnalisiSpesa';
+import { formatEuro } from '../utils/formatters';
 
-const CURRENCY_FORMATTER = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
-
-// Stessa palette di macroStyle (versione esadecimale, per i grafici Recharts che non
-// possono usare le classi Tailwind bg-*).
+// Stessa palette di macroStyle (versione esadecimale, per il grafico Recharts che non
+// puo' usare le classi Tailwind bg-*).
 const MACRO_COLOR: Record<FornitoreMacroCategoria, string> = {
   grezzo: '#78716c',
   finiture: '#0ea5e9',
@@ -41,6 +42,7 @@ type FormState = {
   sitoInternet: string;
   iban: string;
   note: string;
+  condizionePagamento: string;
   pagamentoAFineLavorazione: boolean;
   terminiPagamentoNote: string;
 };
@@ -48,7 +50,7 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   ragioneSociale: '', macroCategoria: 'grezzo', sottoCategoria: '',
   pIvaCf: '', indirizzo: '', telefono: '', email: '', pec: '', sitoInternet: '', iban: '', note: '',
-  pagamentoAFineLavorazione: false, terminiPagamentoNote: '',
+  condizionePagamento: '', pagamentoAFineLavorazione: false, terminiPagamentoNote: '',
 };
 
 const MACRO_LABEL: Record<FornitoreMacroCategoria, string> = {
@@ -76,6 +78,9 @@ function toFornitoreInput(f: FormState): Omit<Fornitore, 'id'> {
     sitoInternet: f.sitoInternet.trim() || undefined,
     iban: f.iban.trim() || undefined,
     note: f.note.trim() || undefined,
+    // Stesso campo compilato dall'import PuntaNet (ultima fattura / anagrafica): modificabile a
+    // mano in scheda, e l'import lo riempie solo se vuoto, quindi la scelta fatta qui resta.
+    condizionePagamentoPuntaNet: f.condizionePagamento.trim() || undefined,
     pagamentoAFineLavorazione: f.pagamentoAFineLavorazione || undefined,
     terminiPagamentoNote: f.terminiPagamentoNote.trim() || undefined,
   };
@@ -94,6 +99,7 @@ function fromFornitore(f: Fornitore): FormState {
     email: f.email || '',
     pec: f.pec || '',
     note: f.note || '',
+    condizionePagamento: f.condizionePagamentoPuntaNet || '',
     pagamentoAFineLavorazione: f.pagamentoAFineLavorazione || false,
     terminiPagamentoNote: f.terminiPagamentoNote || '',
   };
@@ -104,7 +110,7 @@ const MACRO_OPTIONS: FornitoreMacroCategoria[] = [
   'ristorazione', 'personale', 'enti_altro', 'non_categorizzato',
 ];
 
-function FornitoreForm({ value, onChange }: { value: FormState; onChange: (v: FormState) => void }) {
+function FornitoreForm({ value, onChange, condizioniPagamento }: { value: FormState; onChange: (v: FormState) => void; condizioniPagamento: string[] }) {
   const subOptions = value.macroCategoria !== 'non_categorizzato'
     ? FORNITORI_TAXONOMY[value.macroCategoria]
     : [];
@@ -185,6 +191,19 @@ function FornitoreForm({ value, onChange }: { value: FormState; onChange: (v: Fo
       />
 
       <div className="sm:col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+        <label className="block text-xs font-bold text-slate-700">
+          Condizione di pagamento
+          <input
+            list="condizione-pagamento-options"
+            value={value.condizionePagamento}
+            onChange={e => onChange({ ...value, condizionePagamento: e.target.value })}
+            placeholder="es. BONIFICO 30 gg D.F.F.M., RI.BA. 60 gg"
+            className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-normal bg-white"
+          />
+        </label>
+        <datalist id="condizione-pagamento-options">
+          {condizioniPagamento.map(c => <option key={c} value={c} />)}
+        </datalist>
         <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
           <input
             type="checkbox"
@@ -283,6 +302,18 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [vista, setVista] = useState<'anagrafica' | 'analisi'>('anagrafica');
+  const [espansoId, setEspansoId] = useState<string | null>(null);
+
+  // Dall'analisi spesa: torna all'anagrafica, apre il gruppo del fornitore e la sua scheda numeri.
+  const apriFornitore = (id: string) => {
+    const f = fornitori.find(x => x.id === id);
+    if (!f) return;
+    setVista('anagrafica');
+    setCollapsed(prev => ({ ...prev, [`${f.macroCategoria}::${f.sottoCategoria || '(senza sottocategoria)'}`]: false }));
+    setEspansoId(id);
+    setTimeout(() => document.getElementById(`fornitore-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  };
   const [importPreview, setImportPreview] = useState<{ nuovi: Omit<Fornitore, 'id'>[]; aggiornamenti: { id: string; ragioneSociale: string; data: Omit<Fornitore, 'id'> }[] } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -301,6 +332,25 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
     return groups;
   }, [fornitori]);
 
+  // Insight generali per la panoramica in cima alla pagina — composizione e completezza
+  // dell'anagrafica (non spesa: quella ha una vista dedicata "Analisi spesa" piu' sotto,
+  // con importi in imponibile da statistichePuntaNet). Solo lettura, nessun impatto sui dati.
+  const insights = useMemo(() => {
+    const totale = fornitori.length;
+    const daCategorizzare = fornitori.filter(f => f.macroCategoria === 'non_categorizzato').length;
+    const datiIncompleti = fornitori.filter(f => !f.telefono && !f.email && !f.pec).length;
+    const categorieData = MACRO_OPTIONS
+      .map(macro => ({ macro, name: MACRO_LABEL[macro], value: fornitori.filter(f => f.macroCategoria === macro).length }))
+      .filter(d => d.value > 0);
+    return { totale, daCategorizzare, datiIncompleti, categorieData };
+  }, [fornitori]);
+
+  // Valori gia' usati (PuntaNet + inseriti a mano), proposti come scelta rapida nella scheda.
+  const condizioniPagamento = useMemo(
+    () => [...new Set(fornitori.map(f => f.condizionePagamentoPuntaNet).filter((c): c is string => !!c))].sort(),
+    [fornitori]
+  );
+
   const startAdd = () => { setIsAdding(true); setEditingId(null); setForm(EMPTY_FORM); };
   const startEdit = (f: Fornitore) => { setEditingId(f.id); setIsAdding(false); setForm(fromFornitore(f)); };
   const cancel = () => { setIsAdding(false); setEditingId(null); };
@@ -308,7 +358,13 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
   const save = () => {
     if (!form.ragioneSociale.trim()) return;
     if (editingId) {
-      onUpdateFornitore(editingId, toFornitoreInput(form));
+      // Merge sul record esistente: il form non mostra i campi gestiti dall'import PuntaNet
+      // (puntaNetIdCliFor, fatturato, numero fatture, ultima fattura). Senza merge venivano
+      // cancellati a ogni salvataggio della scheda (App.tsx sostituisce l'intero record) e il
+      // fornitore perdeva il collegamento a PuntaNet per sempre.
+      const esistente = fornitori.find(f => f.id === editingId);
+      const { id: _id, ...campiEsistenti } = esistente || ({} as Fornitore);
+      onUpdateFornitore(editingId, { ...campiEsistenti, ...toFornitoreInput(form) });
     } else {
       onAddFornitore(toFornitoreInput(form));
     }
@@ -337,31 +393,6 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
       if (s) map.set(f.id, s);
     }
     return map;
-  }, [fornitori]);
-
-  // Insight generali per la panoramica in cima alla pagina — solo lettura, nessun
-  // impatto sui dati. fatturatoAnnoCorrente/numeroFatture arrivano da PuntaNet (vedi
-  // Fornitore in types.ts): non tutti i fornitori li hanno (es. inseriti a mano).
-  const insights = useMemo(() => {
-    const totale = fornitori.length;
-    const daCategorizzare = fornitori.filter(f => f.macroCategoria === 'non_categorizzato').length;
-    const datiIncompleti = fornitori.filter(f => !f.telefono && !f.email && !f.pec).length;
-    const speseAnnoCorrente = fornitori.reduce((sum, f) => sum + (f.fatturatoAnnoCorrente || 0), 0);
-
-    const categorieData = MACRO_OPTIONS
-      .map(macro => ({ macro, name: MACRO_LABEL[macro], value: fornitori.filter(f => f.macroCategoria === macro).length }))
-      .filter(d => d.value > 0);
-
-    const conSpesa = fornitori.filter(f => (f.fatturatoAnnoCorrente || 0) > 0).sort((a, b) => (b.fatturatoAnnoCorrente || 0) - (a.fatturatoAnnoCorrente || 0));
-    const topSpesa = conSpesa.slice(0, 8).map(f => ({
-      name: f.ragioneSociale.length > 22 ? f.ragioneSociale.slice(0, 21) + '…' : f.ragioneSociale,
-      value: f.fatturatoAnnoCorrente || 0,
-      macro: f.macroCategoria,
-    }));
-    const top5Sum = conSpesa.slice(0, 5).reduce((sum, f) => sum + (f.fatturatoAnnoCorrente || 0), 0);
-    const concentrazionePct = speseAnnoCorrente > 0 ? Math.round((top5Sum / speseAnnoCorrente) * 100) : 0;
-
-    return { totale, daCategorizzare, datiIncompleti, speseAnnoCorrente, categorieData, topSpesa, concentrazionePct, hasSpesa: conSpesa.length > 0 };
   }, [fornitori]);
 
   const applicaTuttiISuggerimenti = () => {
@@ -397,6 +428,8 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
             fatturatoAnnoCorrente: r.fatturatoAnnoCorrente || undefined,
             fatturatoTotalePuntaNet: r.fatturatoTotalePuntaNet || undefined,
             ultimaFatturaPuntaNet: r.ultimaFatturaPuntaNet || undefined,
+            condizionePagamentoPuntaNet: r.condizionePagamentoPuntaNet || undefined,
+            statistichePuntaNet: r.statistichePuntaNet || undefined,
           }));
 
         // Per i fornitori già presenti (collegati via puntaNetIdCliFor), un
@@ -416,6 +449,7 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                 fatturatoAnnoCorrente: r.fatturatoAnnoCorrente || undefined,
                 fatturatoTotalePuntaNet: r.fatturatoTotalePuntaNet || undefined,
                 ultimaFatturaPuntaNet: r.ultimaFatturaPuntaNet || undefined,
+                statistichePuntaNet: r.statistichePuntaNet || rest.statistichePuntaNet,
               },
             };
           });
@@ -489,8 +523,8 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
       </div>
 
       {fornitori.length > 0 && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 grid grid-cols-3 gap-3">
             <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
               <div className="p-2.5 rounded-xl bg-slate-50 text-slate-600"><Building2 size={18} /></div>
               <div className="min-w-0">
@@ -509,13 +543,6 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
               </div>
             </div>
             <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600"><Euro size={18} /></div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-medium text-slate-500">Spesa anno corrente</p>
-                <p className="text-xl font-bold text-slate-900 truncate" title={CURRENCY_FORMATTER.format(insights.speseAnnoCorrente)}>{CURRENCY_FORMATTER.format(insights.speseAnnoCorrente)}</p>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
               <div className={`p-2.5 rounded-xl ${insights.datiIncompleti > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}><AlertTriangle size={18} /></div>
               <div className="min-w-0">
                 <p className="text-[11px] font-medium text-slate-500">Senza contatti</p>
@@ -523,58 +550,30 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                 <p className="text-[10px] text-slate-400">nessun telefono/email/PEC</p>
               </div>
             </div>
+            <div className="col-span-3 text-[11px] text-slate-400">
+              Per spesa, classifica fornitori e scadenze vedi la vista <span className="font-bold text-slate-500">Analisi spesa</span> qui sotto.
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-              <p className="text-xs font-bold text-slate-600 mb-2">Distribuzione per categoria</p>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={insights.categorieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}>
-                      {insights.categorieData.map(d => <Cell key={d.macro} fill={MACRO_COLOR[d.macro]} />)}
-                    </Pie>
-                    <Tooltip formatter={(value: number, _name, item: any) => [`${value} fornitori`, item?.payload?.name]} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 justify-center">
-                {insights.categorieData.map(d => (
-                  <span key={d.macro} className="flex items-center gap-1 text-[10px] text-slate-500">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MACRO_COLOR[d.macro] }} />
-                    {d.name} ({d.value})
-                  </span>
-                ))}
-              </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+            <p className="text-xs font-bold text-slate-600 mb-2">Distribuzione per categoria</p>
+            <div className="h-40">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={insights.categorieData} dataKey="value" nameKey="name" innerRadius={35} outerRadius={60} paddingAngle={2}>
+                    {insights.categorieData.map(d => <Cell key={d.macro} fill={MACRO_COLOR[d.macro]} />)}
+                  </Pie>
+                  <Tooltip formatter={(value: number, _name, item: any) => [`${value} fornitori`, item?.payload?.name]} />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
-
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-              <p className="text-xs font-bold text-slate-600 mb-2">Fornitori con più spesa (anno corrente)</p>
-              {insights.hasSpesa ? (
-                <>
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={insights.topSpesa} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
-                        <XAxis type="number" hide />
-                        <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 10, fill: '#64748b' }} />
-                        <Tooltip formatter={(value: number) => CURRENCY_FORMATTER.format(value)} />
-                        <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                          {insights.topSpesa.map((d, i) => <Cell key={i} fill={MACRO_COLOR[d.macro]} />)}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  {insights.concentrazionePct > 0 && (
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      I primi 5 fornitori pesano per il <span className="font-bold text-slate-600">{insights.concentrazionePct}%</span> della spesa anno corrente.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <div className="h-56 flex items-center justify-center text-xs text-slate-400 text-center px-4">
-                  Nessun dato di fatturato disponibile (presente solo per i fornitori importati da PuntaNet).
-                </div>
-              )}
+            <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1 justify-center">
+              {insights.categorieData.map(d => (
+                <span key={d.macro} className="flex items-center gap-1 text-[10px] text-slate-500">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MACRO_COLOR[d.macro] }} />
+                  {d.name} ({d.value})
+                </span>
+              ))}
             </div>
           </div>
         </div>
@@ -613,7 +612,7 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
 
       {(isAdding || editingId) && (
         <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-          <FornitoreForm value={form} onChange={setForm} />
+          <FornitoreForm value={form} onChange={setForm} condizioniPagamento={condizioniPagamento} />
           <div className="flex gap-2 justify-end">
             <button onClick={save} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600"><Check size={14} /> Salva</button>
             <button onClick={cancel} className="flex items-center gap-1.5 px-4 py-2 bg-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-300"><X size={14} /> Annulla</button>
@@ -621,11 +620,22 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
         </div>
       )}
 
-      {fornitori.length === 0 && !isAdding && (
+      <div className="inline-flex p-1 bg-slate-100 rounded-xl gap-1">
+        <button onClick={() => setVista('anagrafica')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${vista === 'anagrafica' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <List size={14} /> Anagrafica
+        </button>
+        <button onClick={() => setVista('analisi')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${vista === 'analisi' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <BarChart3 size={14} /> Analisi spesa
+        </button>
+      </div>
+
+      {vista === 'analisi' && <FornitoriAnalisiSpesa fornitori={fornitori} macroLabel={MACRO_LABEL} onApriFornitore={apriFornitore} />}
+
+      {vista === 'anagrafica' && fornitori.length === 0 && !isAdding && (
         <div className="p-10 text-center text-sm text-slate-400 bg-white border border-slate-200 rounded-2xl">Nessun fornitore registrato.</div>
       )}
 
-      <div className="space-y-6">
+      {vista === 'anagrafica' && <div className="space-y-6">
         {macroOrder.filter(macro => Object.keys(grouped[macro]).length > 0).map(macro => (
           <div key={macro} className="space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -660,9 +670,12 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                     <div className="divide-y divide-slate-100 border-t border-slate-100">
                       {list.map(f => {
                         const suggerito = suggerimenti.get(f.id);
+                        const espanso = espansoId === f.id;
+                        const spesaAnno = f.statistichePuntaNet?.perAnno.find(a => a.anno === new Date().getFullYear())?.imponibile;
                         return (
-                        <div key={f.id} className="flex items-center gap-3 px-4 py-3">
-                          <div className="flex-1 min-w-0">
+                        <div key={f.id} id={`fornitore-${f.id}`}>
+                        <div className={`flex items-center gap-3 px-4 py-3 ${espanso ? 'bg-slate-50' : ''}`}>
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setEspansoId(espanso ? null : f.id)}>
                             <div className="font-bold text-sm text-slate-800 truncate flex items-center gap-2">
                               {f.ragioneSociale}
                               {f.pagamentoAFineLavorazione && (
@@ -694,8 +707,20 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
                               </button>
                             </div>
                           )}
+                          {spesaAnno != null && spesaAnno !== 0 && (
+                            <span title={`Spesa ${new Date().getFullYear()} (imponibile)`} className="hidden sm:inline text-xs font-bold text-slate-600 shrink-0">{formatEuro(spesaAnno)}</span>
+                          )}
+                          <button
+                            onClick={() => setEspansoId(espanso ? null : f.id)}
+                            title="Numeri del fornitore: spesa, cantieri, scadenze"
+                            className={`p-1.5 rounded-lg transition-all ${espanso ? 'text-white bg-indigo-600' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                          >
+                            <BarChart3 size={14} />
+                          </button>
                           <button onClick={() => startEdit(f)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all"><Edit2 size={14} /></button>
                           <button onClick={() => onDeleteFornitore(f.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={14} /></button>
+                        </div>
+                        {espanso && <FornitoreSchedaNumeri fornitore={f} />}
                         </div>
                       );})}
                     </div>
@@ -705,7 +730,7 @@ export function FornitoriTab({ fornitori, onAddFornitore, onUpdateFornitore, onD
             })}
           </div>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
