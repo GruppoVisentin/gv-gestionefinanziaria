@@ -25,6 +25,13 @@ export interface SharedFornitore {
   // finita di questo fornitore genera un avviso per l'amministrazione.
   pagamentoAFineLavorazione: boolean | null;
   terminiPagamentoNote: string | null;
+  // Cantieri PuntaNet su cui questo fornitore risulta aver fatturato (da
+  // Fornitore.statistichePuntaNet.perCantiere) — scritto solo da Gestione
+  // Finanziaria. Direttore Cantiere lo legge per capire, cantiere per cantiere,
+  // quali fornitori del registro condiviso risultano davvero coinvolti lì
+  // secondo la fatturazione reale, anche se non ancora assegnati a nessuna
+  // lavorazione sul Gantt.
+  perCantiere: { idCantiere: number; nome: string }[] | null;
   updatedAt: string;
 }
 
@@ -44,6 +51,7 @@ export interface SharedFornitoreInput {
   ultimaFattura?: string | null;
   pagamentoAFineLavorazione?: boolean | null;
   terminiPagamentoNote?: string | null;
+  perCantiere?: { idCantiere: number; nome: string }[] | null;
 }
 
 export async function fetchSharedFornitori(): Promise<SharedFornitore[]> {

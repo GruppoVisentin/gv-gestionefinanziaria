@@ -10,6 +10,9 @@ export interface SharedCantiere {
   dataInizio: string | null;
   dataConsegna: string | null;
   stato: string;
+  // Id numerico PuntaNet del cantiere, collegato a mano qui in Gestione
+  // Finanziaria — vedi fornitori_registry.perCantiere per come si usa.
+  puntaNetCantiereId: number | null;
   updatedAt: string;
 }
 
@@ -22,6 +25,7 @@ export interface SharedCantiereInput {
   dataInizio?: string | null;
   dataConsegna?: string | null;
   stato: string;
+  puntaNetCantiereId?: number | null;
 }
 
 export async function fetchSharedCantieri(): Promise<SharedCantiere[]> {

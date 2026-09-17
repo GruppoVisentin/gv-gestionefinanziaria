@@ -17,6 +17,11 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // Id numerico PuntaNet del cantiere (Project.puntaNetCantiereId), collegato a
+  // mano da Gestione Finanziaria — permette a Direttore Cantiere di incrociare,
+  // per un proprio cantiere nativo, quali fornitori del registro condiviso
+  // risultano avervi fatturato secondo PuntaNet (vedi fornitori_registry.per_cantiere).
+  await sql`ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS punta_net_cantiere_id INTEGER`;
 }
 
 function toDateStr(value: any): string | null {
@@ -41,6 +46,7 @@ function rowToCantiere(row: any) {
     dataInizio: toDateStr(row.data_inizio),
     dataConsegna: toDateStr(row.data_consegna),
     stato: row.stato,
+    puntaNetCantiereId: row.punta_net_cantiere_id,
     updatedAt: row.updated_at,
   };
 }
@@ -55,14 +61,18 @@ export default async function handler(req: any, res: any) {
     }
 
     if (req.method === 'POST') {
-      const { source, sourceId, nome, cliente, luogo, dataInizio, dataConsegna, stato } = req.body || {};
+      const { source, sourceId, nome, cliente, luogo, dataInizio, dataConsegna, stato, puntaNetCantiereId } = req.body || {};
       if (!source || !sourceId || !nome || !stato) {
         return res.status(400).json({ error: 'Campi obbligatori mancanti: source, sourceId, nome, stato' });
       }
       const id = `${source}:${sourceId}`;
+      // puntaNetCantiereId non è mai obbligatorio e non viene mai inviato da Direttore
+      // Cantiere: se assente in questa richiesta non va toccato (COALESCE sul valore
+      // già presente), altrimenti ogni pubblicazione di Direttore Cantiere lo
+      // azzererebbe di nuovo.
       const rows = await sql`
-        INSERT INTO cantieri (id, source, source_id, nome, cliente, luogo, data_inizio, data_consegna, stato, updated_at)
-        VALUES (${id}, ${source}, ${sourceId}, ${nome}, ${cliente ?? null}, ${luogo ?? null}, ${dataInizio ?? null}, ${dataConsegna ?? null}, ${stato}, now())
+        INSERT INTO cantieri (id, source, source_id, nome, cliente, luogo, data_inizio, data_consegna, stato, punta_net_cantiere_id, updated_at)
+        VALUES (${id}, ${source}, ${sourceId}, ${nome}, ${cliente ?? null}, ${luogo ?? null}, ${dataInizio ?? null}, ${dataConsegna ?? null}, ${stato}, ${puntaNetCantiereId ?? null}, now())
         ON CONFLICT (id) DO UPDATE SET
           nome = EXCLUDED.nome,
           cliente = EXCLUDED.cliente,
@@ -70,6 +80,7 @@ export default async function handler(req: any, res: any) {
           data_inizio = EXCLUDED.data_inizio,
           data_consegna = EXCLUDED.data_consegna,
           stato = EXCLUDED.stato,
+          punta_net_cantiere_id = COALESCE(EXCLUDED.punta_net_cantiere_id, cantieri.punta_net_cantiere_id),
           updated_at = now()
         RETURNING *
       `;

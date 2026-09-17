@@ -31,6 +31,10 @@ async function ensureSchema() {
   // l'amministrazione di un pagamento in arrivo).
   await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS pagamento_a_fine_lavorazione BOOLEAN`;
   await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS termini_pagamento_note TEXT`;
+  // Cantieri PuntaNet su cui il fornitore risulta aver fatturato (join Documenti
+  // Imponibili Cantiere), per il cross-check di Direttore Cantiere sulla scheda
+  // fornitori di ogni cantiere — scritto solo da Gestione Finanziaria.
+  await sql`ALTER TABLE fornitori_registry ADD COLUMN IF NOT EXISTS per_cantiere JSONB`;
 }
 
 function rowToFornitore(row: any) {
@@ -52,6 +56,7 @@ function rowToFornitore(row: any) {
     ultimaFattura: toDateStr(row.ultima_fattura),
     pagamentoAFineLavorazione: row.pagamento_a_fine_lavorazione,
     terminiPagamentoNote: row.termini_pagamento_note,
+    perCantiere: row.per_cantiere ?? null,
     updatedAt: row.updated_at,
   };
 }
@@ -80,15 +85,16 @@ export default async function handler(req: any, res: any) {
       const {
         source, sourceId, ragioneSociale, pIvaCf, indirizzo, telefono, email, pec, puntaNetIdCliFor,
         numeroFatture, fatturatoAnnoCorrente, fatturatoTotale, ultimaFattura,
-        pagamentoAFineLavorazione, terminiPagamentoNote,
+        pagamentoAFineLavorazione, terminiPagamentoNote, perCantiere,
       } = req.body || {};
       if (!source || !sourceId || !ragioneSociale) {
         return res.status(400).json({ error: 'Campi obbligatori mancanti: source, sourceId, ragioneSociale' });
       }
       const id = `${source}:${sourceId}`;
+      const perCantiereJson = perCantiere ? JSON.stringify(perCantiere) : null;
       const rows = await sql`
-        INSERT INTO fornitori_registry (id, source, source_id, ragione_sociale, piva_cf, indirizzo, telefono, email, pec, punta_net_id_cli_for, numero_fatture, fatturato_anno_corrente, fatturato_totale, ultima_fattura, pagamento_a_fine_lavorazione, termini_pagamento_note, updated_at)
-        VALUES (${id}, ${source}, ${sourceId}, ${ragioneSociale}, ${pIvaCf ?? null}, ${indirizzo ?? null}, ${telefono ?? null}, ${email ?? null}, ${pec ?? null}, ${puntaNetIdCliFor ?? null}, ${numeroFatture ?? null}, ${fatturatoAnnoCorrente ?? null}, ${fatturatoTotale ?? null}, ${ultimaFattura ?? null}, ${pagamentoAFineLavorazione ?? null}, ${terminiPagamentoNote ?? null}, now())
+        INSERT INTO fornitori_registry (id, source, source_id, ragione_sociale, piva_cf, indirizzo, telefono, email, pec, punta_net_id_cli_for, numero_fatture, fatturato_anno_corrente, fatturato_totale, ultima_fattura, pagamento_a_fine_lavorazione, termini_pagamento_note, per_cantiere, updated_at)
+        VALUES (${id}, ${source}, ${sourceId}, ${ragioneSociale}, ${pIvaCf ?? null}, ${indirizzo ?? null}, ${telefono ?? null}, ${email ?? null}, ${pec ?? null}, ${puntaNetIdCliFor ?? null}, ${numeroFatture ?? null}, ${fatturatoAnnoCorrente ?? null}, ${fatturatoTotale ?? null}, ${ultimaFattura ?? null}, ${pagamentoAFineLavorazione ?? null}, ${terminiPagamentoNote ?? null}, ${perCantiereJson}::jsonb, now())
         ON CONFLICT (id) DO UPDATE SET
           ragione_sociale = EXCLUDED.ragione_sociale,
           piva_cf = EXCLUDED.piva_cf,
@@ -103,6 +109,7 @@ export default async function handler(req: any, res: any) {
           ultima_fattura = EXCLUDED.ultima_fattura,
           pagamento_a_fine_lavorazione = EXCLUDED.pagamento_a_fine_lavorazione,
           termini_pagamento_note = EXCLUDED.termini_pagamento_note,
+          per_cantiere = EXCLUDED.per_cantiere,
           updated_at = now()
         RETURNING *
       `;

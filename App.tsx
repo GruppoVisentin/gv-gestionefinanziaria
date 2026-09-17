@@ -1990,6 +1990,11 @@ const App: React.FC = () => {
           luogo: p.location || null,
           dataInizio: p.startDate,
           stato,
+          // Collegamento manuale (fatto qui) tra questo cantiere e l'id numerico
+          // PuntaNet: pubblicato solo per un cantiere nativo di Direttore Cantiere,
+          // per permettergli di incrociare i fornitori che vi hanno fatturato
+          // secondo PuntaNet (vedi fornitori_registry.perCantiere).
+          ...(key.source === 'direttore_cantiere' && p.puntaNetCantiereId ? { puntaNetCantiereId: p.puntaNetCantiereId } : {}),
         }).catch(e => console.error('Pubblicazione commessa sul registro fallita', e));
       });
     }, 1500);
@@ -2129,6 +2134,7 @@ const App: React.FC = () => {
           ultimaFattura: f.ultimaFatturaPuntaNet ?? null,
           pagamentoAFineLavorazione: f.pagamentoAFineLavorazione ?? null,
           terminiPagamentoNote: f.terminiPagamentoNote ?? null,
+          perCantiere: f.statistichePuntaNet?.perCantiere?.map(c => ({ idCantiere: c.idCantiere, nome: c.nome })) ?? null,
         }).catch(e => console.error('Pubblicazione fornitore sul registro fallita', e));
       });
     }, 1500);
