@@ -98,7 +98,8 @@ import {
   Loader2,
   Receipt,
   Copy,
-  BellRing
+  BellRing,
+  Globe
 } from 'lucide-react';
 import { 
   getHandleFromIDB, 
@@ -121,6 +122,7 @@ import {
 import { fetchSharedCantieri, pushSharedCantiere, deleteSharedCantiere } from './services/cantieriSync';
 import { fetchSharedClienti, pushSharedCliente, deleteSharedCliente } from './services/clientiSync';
 import { pushSharedFornitore, deleteSharedFornitore } from './services/fornitoriSync';
+import { reportRegistrySync, useLastRegistrySync } from './services/registrySyncStatus';
 
 interface WelcomeScreenProps {
   pendingHandleFromIDB: FileSystemFileHandle | null;
@@ -648,6 +650,7 @@ const App: React.FC = () => {
   const [appState, setAppState] = useState<'loading' | 'welcome' | 'ready'>('loading');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const lastRegistrySync = useLastRegistrySync();
   const [pendingHandleFromIDB, setPendingHandleFromIDB] = useState<FileSystemFileHandle | null>(null);
   const [pendingBackupHandleFromIDB, setPendingBackupHandleFromIDB] = useState<FileSystemFileHandle | null>(null);
   const [pendingRulesHandleFromIDB, setPendingRulesHandleFromIDB] = useState<FileSystemFileHandle | null>(null);
@@ -1949,6 +1952,7 @@ const App: React.FC = () => {
         if (!changed && imported.length === 0) return prev;
         return [...imported, ...reconciled];
       });
+      reportRegistrySync();
     } catch (e) {
       console.error('Sincronizzazione registro cantieri fallita', e);
     }
@@ -1997,6 +2001,7 @@ const App: React.FC = () => {
           ...(key.source === 'direttore_cantiere' && p.puntaNetCantiereId ? { puntaNetCantiereId: p.puntaNetCantiereId } : {}),
         }).catch(e => console.error('Pubblicazione commessa sul registro fallita', e));
       });
+      reportRegistrySync();
     }, 1500);
     return () => clearTimeout(timer);
   }, [projects, appState]);
@@ -2049,6 +2054,7 @@ const App: React.FC = () => {
         if (!changed && imported.length === 0) return prev;
         return [...reconciled, ...imported];
       });
+      reportRegistrySync();
     } catch (e) {
       console.error('Sincronizzazione anagrafica clienti fallita', e);
     }
@@ -2075,6 +2081,7 @@ const App: React.FC = () => {
           pIvaCf: c.pIva || null,
         }).catch(e => console.error('Pubblicazione cliente sul registro fallita', e));
       });
+      reportRegistrySync();
     }, 1500);
     return () => clearTimeout(timer);
   }, [clients, appState]);
@@ -2137,6 +2144,7 @@ const App: React.FC = () => {
           perCantiere: f.statistichePuntaNet?.perCantiere?.map(c => ({ idCantiere: c.idCantiere, nome: c.nome })) ?? null,
         }).catch(e => console.error('Pubblicazione fornitore sul registro fallita', e));
       });
+      reportRegistrySync();
     }, 1500);
     return () => clearTimeout(timer);
   }, [fornitori, appState]);
@@ -3151,7 +3159,29 @@ const App: React.FC = () => {
               )}
             </div>
           )}
-          
+
+          {/* Ultima sincronizzazione riuscita col registro condiviso (cantieri/
+              fornitori/clienti con le altre app della suite): un indicatore
+              separato dal salvataggio locale, per capire subito se questa
+              scheda del browser sta ancora eseguendo codice vecchio senza
+              la logica di pubblicazione/lettura registro. */}
+          {fileHandle && (
+            <div
+              className="hidden lg:flex items-center gap-2 px-4 py-1.5 bg-white/5 rounded-full border border-white/10"
+              title="Ultima volta che questa app ha scambiato dati con il registro condiviso dell'Ecosistema GV (cantieri, fornitori, clienti)"
+            >
+              <Globe size={14} className={lastRegistrySync ? "text-emerald-400" : "text-slate-500"} />
+              <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Registro Condiviso</span>
+              {lastRegistrySync ? (
+                <span className="text-[10px] font-bold text-white/20 uppercase">
+                  {lastRegistrySync.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-white/20 uppercase">In attesa</span>
+              )}
+            </div>
+          )}
+
           {/* Controlli Destra (Secure Widget) */}
           <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
              {appState === 'ready' && (
