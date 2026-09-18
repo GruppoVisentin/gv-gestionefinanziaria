@@ -117,6 +117,10 @@ export interface Client {
   pIva?: string;
   externalSource?: 'direttore_cantiere';
   externalId?: string;
+  // IDCliFor reale in PuntaNet (CliFor = 0): chiave di merge per l'import
+  // automatico da scripts/importaClientiPuntaNet.mjs, stessa convenzione di
+  // Fornitore.puntaNetIdCliFor.
+  puntaNetIdCliFor?: number;
 }
 
 // Anagrafica fornitori, divisa per macro categoria di lavorazione (Grezzo/Finiture)
