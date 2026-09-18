@@ -2081,10 +2081,34 @@ const App: React.FC = () => {
           pIvaCf: c.pIva || null,
         }).catch(e => console.error('Pubblicazione cliente sul registro fallita', e));
       });
+      // Ogni commessa qui ha un campo "Cliente / Committente" obbligatorio, molto
+      // prima e indipendentemente dall'anagrafica clienti manuale sopra (quasi mai
+      // popolata: e' una funzione nuova, separata, che nessuno usa ancora). Il
+      // committente indicato sulle commesse e' il vero elenco clienti reale
+      // dell'azienda: lo pubblichiamo anche noi sullo stesso registro, con una
+      // chiave sintetica basata sul nome (non esiste un id di anagrafica per
+      // questi, sono solo un campo testo sulla commessa), cosi' Direttore
+      // Cantiere trova finalmente qualcosa nella sua Anagrafica Clienti anche se
+      // nessuno ha mai aperto "Gestisci Clienti" qui.
+      const committentiUnici = new Map<string, string>();
+      projects.forEach(p => {
+        const nome = (p.client || '').trim();
+        if (!nome) return;
+        const chiave = nome.toLowerCase().replace(/\s+/g, ' ');
+        if (!committentiUnici.has(chiave)) committentiUnici.set(chiave, nome);
+      });
+      committentiUnici.forEach((nome, chiave) => {
+        pushSharedCliente({
+          source: 'gestione_finanziaria',
+          sourceId: `commessa:${chiave}`,
+          nome,
+          pIvaCf: null,
+        }).catch(e => console.error('Pubblicazione committente commessa sul registro fallita', e));
+      });
       reportRegistrySync();
     }, 1500);
     return () => clearTimeout(timer);
-  }, [clients, appState]);
+  }, [clients, projects, appState]);
 
   const handleAddClient = useCallback((nome: string, pIva?: string) => {
     setClients(prev => [...prev, { id: crypto.randomUUID(), nome, pIva: pIva || undefined }]);
