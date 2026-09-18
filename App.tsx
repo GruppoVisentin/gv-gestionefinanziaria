@@ -1970,41 +1970,56 @@ const App: React.FC = () => {
   // Pubblica sul registro condiviso nome/data inizio/stato di ogni commessa,
   // sia quelle create qui sia quelle importate (le modifiche fatte qui a una
   // commessa importata tornano indietro all'app di origine).
+  const pushProjectsToRegistry = useCallback(() => {
+    projects.forEach(p => {
+      const key = p.externalSource
+        ? { source: p.externalSource, sourceId: p.externalId! }
+        : { source: 'gestione_finanziaria' as const, sourceId: p.id };
+      // Le righe di proprietà di DirettoreCantiere usano il suo vocabolario,
+      // che qui non conosciamo per intero (es. "future" non è rappresentabile
+      // in ACTIVE/COMPLETED): ripubblichiamo il valore grezzo ricevuto
+      // dall'ultima sincronizzazione così com'è, senza reinterpretarlo,
+      // altrimenti l'app di origine si ritroverebbe lo stato sovrascritto
+      // ad ogni ciclo di pubblicazione di questa app.
+      const stato = key.source === 'direttore_cantiere'
+        ? (p.externalStato ?? (p.status === 'COMPLETED' ? 'completed' : 'active'))
+        : p.status;
+      pushSharedCantiere({
+        source: key.source,
+        sourceId: key.sourceId,
+        nome: p.name,
+        cliente: p.client || null,
+        luogo: p.location || null,
+        dataInizio: p.startDate,
+        stato,
+        // Collegamento manuale (fatto qui) tra questo cantiere e l'id numerico
+        // PuntaNet: pubblicato solo per un cantiere nativo di Direttore Cantiere,
+        // per permettergli di incrociare i fornitori che vi hanno fatturato
+        // secondo PuntaNet (vedi fornitori_registry.perCantiere).
+        ...(key.source === 'direttore_cantiere' && p.puntaNetCantiereId ? { puntaNetCantiereId: p.puntaNetCantiereId } : {}),
+      }).catch(e => console.error('Pubblicazione commessa sul registro fallita', e));
+    });
+    reportRegistrySync();
+  }, [projects]);
+
   useEffect(() => {
     if (appState !== 'ready') return;
-    const timer = setTimeout(() => {
-      projects.forEach(p => {
-        const key = p.externalSource
-          ? { source: p.externalSource, sourceId: p.externalId! }
-          : { source: 'gestione_finanziaria' as const, sourceId: p.id };
-        // Le righe di proprietà di DirettoreCantiere usano il suo vocabolario,
-        // che qui non conosciamo per intero (es. "future" non è rappresentabile
-        // in ACTIVE/COMPLETED): ripubblichiamo il valore grezzo ricevuto
-        // dall'ultima sincronizzazione così com'è, senza reinterpretarlo,
-        // altrimenti l'app di origine si ritroverebbe lo stato sovrascritto
-        // ad ogni ciclo di pubblicazione di questa app.
-        const stato = key.source === 'direttore_cantiere'
-          ? (p.externalStato ?? (p.status === 'COMPLETED' ? 'completed' : 'active'))
-          : p.status;
-        pushSharedCantiere({
-          source: key.source,
-          sourceId: key.sourceId,
-          nome: p.name,
-          cliente: p.client || null,
-          luogo: p.location || null,
-          dataInizio: p.startDate,
-          stato,
-          // Collegamento manuale (fatto qui) tra questo cantiere e l'id numerico
-          // PuntaNet: pubblicato solo per un cantiere nativo di Direttore Cantiere,
-          // per permettergli di incrociare i fornitori che vi hanno fatturato
-          // secondo PuntaNet (vedi fornitori_registry.perCantiere).
-          ...(key.source === 'direttore_cantiere' && p.puntaNetCantiereId ? { puntaNetCantiereId: p.puntaNetCantiereId } : {}),
-        }).catch(e => console.error('Pubblicazione commessa sul registro fallita', e));
-      });
-      reportRegistrySync();
-    }, 1500);
+    const timer = setTimeout(pushProjectsToRegistry, 1500);
     return () => clearTimeout(timer);
-  }, [projects, appState]);
+  }, [pushProjectsToRegistry, appState]);
+
+  // Ripubblica periodicamente anche senza modifiche locali: l'effetto sopra
+  // scatta solo quando "projects" cambia (o al mount), quindi una scheda del
+  // browser rimasta aperta da prima che un campo venisse aggiunto alla
+  // pubblicazione (es. "cliente") non lo avrebbe mai pubblicato finché
+  // qualcuno non modificava di nuovo quella commessa. Un giro periodico,
+  // come già fa la lettura (syncFromRegistry), rende il tutto eventualmente
+  // coerente da solo.
+  useEffect(() => {
+    if (appState !== 'ready') return;
+    const interval = setInterval(pushProjectsToRegistry, 120000);
+    return () => clearInterval(interval);
+  }, [pushProjectsToRegistry, appState]);
 
   // --- ANAGRAFICA CLIENTI CONDIVISA (stesso registro condiviso dei cantieri) ---
   // Stessa logica di chiave/riconciliazione delle commesse: un cliente creato
@@ -2067,48 +2082,57 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [appState, syncClientiFromRegistry]);
 
+  const pushClientsToRegistry = useCallback(() => {
+    clients.forEach(c => {
+      const key = c.externalSource
+        ? { source: c.externalSource, sourceId: c.externalId! }
+        : { source: 'gestione_finanziaria' as const, sourceId: c.id };
+      pushSharedCliente({
+        source: key.source,
+        sourceId: key.sourceId,
+        nome: c.nome,
+        pIvaCf: c.pIva || null,
+      }).catch(e => console.error('Pubblicazione cliente sul registro fallita', e));
+    });
+    // Ogni commessa qui ha un campo "Cliente / Committente" obbligatorio, molto
+    // prima e indipendentemente dall'anagrafica clienti manuale sopra (quasi mai
+    // popolata: e' una funzione nuova, separata, che nessuno usa ancora). Il
+    // committente indicato sulle commesse e' il vero elenco clienti reale
+    // dell'azienda: lo pubblichiamo anche noi sullo stesso registro, con una
+    // chiave sintetica basata sul nome (non esiste un id di anagrafica per
+    // questi, sono solo un campo testo sulla commessa), cosi' Direttore
+    // Cantiere trova finalmente qualcosa nella sua Anagrafica Clienti anche se
+    // nessuno ha mai aperto "Gestisci Clienti" qui.
+    const committentiUnici = new Map<string, string>();
+    projects.forEach(p => {
+      const nome = (p.client || '').trim();
+      if (!nome) return;
+      const chiave = nome.toLowerCase().replace(/\s+/g, ' ');
+      if (!committentiUnici.has(chiave)) committentiUnici.set(chiave, nome);
+    });
+    committentiUnici.forEach((nome, chiave) => {
+      pushSharedCliente({
+        source: 'gestione_finanziaria',
+        sourceId: `commessa:${chiave}`,
+        nome,
+        pIvaCf: null,
+      }).catch(e => console.error('Pubblicazione committente commessa sul registro fallita', e));
+    });
+    reportRegistrySync();
+  }, [clients, projects]);
+
   useEffect(() => {
     if (appState !== 'ready') return;
-    const timer = setTimeout(() => {
-      clients.forEach(c => {
-        const key = c.externalSource
-          ? { source: c.externalSource, sourceId: c.externalId! }
-          : { source: 'gestione_finanziaria' as const, sourceId: c.id };
-        pushSharedCliente({
-          source: key.source,
-          sourceId: key.sourceId,
-          nome: c.nome,
-          pIvaCf: c.pIva || null,
-        }).catch(e => console.error('Pubblicazione cliente sul registro fallita', e));
-      });
-      // Ogni commessa qui ha un campo "Cliente / Committente" obbligatorio, molto
-      // prima e indipendentemente dall'anagrafica clienti manuale sopra (quasi mai
-      // popolata: e' una funzione nuova, separata, che nessuno usa ancora). Il
-      // committente indicato sulle commesse e' il vero elenco clienti reale
-      // dell'azienda: lo pubblichiamo anche noi sullo stesso registro, con una
-      // chiave sintetica basata sul nome (non esiste un id di anagrafica per
-      // questi, sono solo un campo testo sulla commessa), cosi' Direttore
-      // Cantiere trova finalmente qualcosa nella sua Anagrafica Clienti anche se
-      // nessuno ha mai aperto "Gestisci Clienti" qui.
-      const committentiUnici = new Map<string, string>();
-      projects.forEach(p => {
-        const nome = (p.client || '').trim();
-        if (!nome) return;
-        const chiave = nome.toLowerCase().replace(/\s+/g, ' ');
-        if (!committentiUnici.has(chiave)) committentiUnici.set(chiave, nome);
-      });
-      committentiUnici.forEach((nome, chiave) => {
-        pushSharedCliente({
-          source: 'gestione_finanziaria',
-          sourceId: `commessa:${chiave}`,
-          nome,
-          pIvaCf: null,
-        }).catch(e => console.error('Pubblicazione committente commessa sul registro fallita', e));
-      });
-      reportRegistrySync();
-    }, 1500);
+    const timer = setTimeout(pushClientsToRegistry, 1500);
     return () => clearTimeout(timer);
-  }, [clients, projects, appState]);
+  }, [pushClientsToRegistry, appState]);
+
+  // Ripubblicazione periodica: stesso motivo del push commesse sopra.
+  useEffect(() => {
+    if (appState !== 'ready') return;
+    const interval = setInterval(pushClientsToRegistry, 120000);
+    return () => clearInterval(interval);
+  }, [pushClientsToRegistry, appState]);
 
   const handleAddClient = useCallback((nome: string, pIva?: string) => {
     setClients(prev => [...prev, { id: crypto.randomUUID(), nome, pIva: pIva || undefined }]);
@@ -2145,33 +2169,42 @@ const App: React.FC = () => {
   // ci interessa. Basta tenere il registro allineato ai dati anagrafici e al
   // riepilogo economico PuntaNet di ogni fornitore, sia inseriti a mano sia
   // importati da PuntaNet (il riepilogo economico resta assente per i primi).
+  const pushFornitoriToRegistry = useCallback(() => {
+    fornitori.forEach(f => {
+      pushSharedFornitore({
+        source: 'gestione_finanziaria',
+        sourceId: f.id,
+        ragioneSociale: f.ragioneSociale,
+        pIvaCf: f.pIvaCf || null,
+        indirizzo: f.indirizzo || null,
+        telefono: f.telefono || null,
+        email: f.email || null,
+        pec: f.pec || null,
+        puntaNetIdCliFor: f.puntaNetIdCliFor ? String(f.puntaNetIdCliFor) : null,
+        numeroFatture: f.numeroFatturePuntaNet ?? null,
+        fatturatoAnnoCorrente: f.fatturatoAnnoCorrente ?? null,
+        fatturatoTotale: f.fatturatoTotalePuntaNet ?? null,
+        ultimaFattura: f.ultimaFatturaPuntaNet ?? null,
+        pagamentoAFineLavorazione: f.pagamentoAFineLavorazione ?? null,
+        terminiPagamentoNote: f.terminiPagamentoNote ?? null,
+        perCantiere: f.statistichePuntaNet?.perCantiere?.map(c => ({ idCantiere: c.idCantiere, nome: c.nome })) ?? null,
+      }).catch(e => console.error('Pubblicazione fornitore sul registro fallita', e));
+    });
+    reportRegistrySync();
+  }, [fornitori]);
+
   useEffect(() => {
     if (appState !== 'ready') return;
-    const timer = setTimeout(() => {
-      fornitori.forEach(f => {
-        pushSharedFornitore({
-          source: 'gestione_finanziaria',
-          sourceId: f.id,
-          ragioneSociale: f.ragioneSociale,
-          pIvaCf: f.pIvaCf || null,
-          indirizzo: f.indirizzo || null,
-          telefono: f.telefono || null,
-          email: f.email || null,
-          pec: f.pec || null,
-          puntaNetIdCliFor: f.puntaNetIdCliFor ? String(f.puntaNetIdCliFor) : null,
-          numeroFatture: f.numeroFatturePuntaNet ?? null,
-          fatturatoAnnoCorrente: f.fatturatoAnnoCorrente ?? null,
-          fatturatoTotale: f.fatturatoTotalePuntaNet ?? null,
-          ultimaFattura: f.ultimaFatturaPuntaNet ?? null,
-          pagamentoAFineLavorazione: f.pagamentoAFineLavorazione ?? null,
-          terminiPagamentoNote: f.terminiPagamentoNote ?? null,
-          perCantiere: f.statistichePuntaNet?.perCantiere?.map(c => ({ idCantiere: c.idCantiere, nome: c.nome })) ?? null,
-        }).catch(e => console.error('Pubblicazione fornitore sul registro fallita', e));
-      });
-      reportRegistrySync();
-    }, 1500);
+    const timer = setTimeout(pushFornitoriToRegistry, 1500);
     return () => clearTimeout(timer);
-  }, [fornitori, appState]);
+  }, [pushFornitoriToRegistry, appState]);
+
+  // Ripubblicazione periodica: stesso motivo del push commesse sopra.
+  useEffect(() => {
+    if (appState !== 'ready') return;
+    const interval = setInterval(pushFornitoriToRegistry, 120000);
+    return () => clearInterval(interval);
+  }, [pushFornitoriToRegistry, appState]);
 
   const handleAddFornitore = useCallback((data: Omit<Fornitore, 'id'>) => {
     setFornitori(prev => [...prev, { ...data, id: crypto.randomUUID() }]);
