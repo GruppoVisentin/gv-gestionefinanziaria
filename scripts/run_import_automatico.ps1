@@ -1,4 +1,10 @@
-# Avviato automaticamente da Windows ogni giorno alle 9:00 (Attivita Pianificata "GV_ImportaPuntaNet").
+# Avviato automaticamente da Windows ogni giorno (Attivita Pianificata "GV_ImportaPuntaNet").
+# IMPORTANTE (dal 2026-09-24): deve girare DOPO scripts\aggiornaCopiaLocale.ps1 (Attivita
+# Pianificata separata, consigliata alle 9:00), che ripristina la copia locale PuntaNet
+# dall'ultimo backup automatico — senza quel passaggio questo script legge sempre la stessa
+# fotografia congelata, "con successo" ma senza trovare mai nulla di nuovo (bug reale: 15 giorni
+# di silenzio perche' il ripristino non era mai stato automatizzato). Questa attivita' va quindi
+# spostata alle 9:30, per lasciare margine al ripristino di completarsi.
 # Esegue l'estrazione/classificazione PuntaNet in modalita SCRITTURA (--scrivi): i movimenti ad
 # alta confidenza vengono scritti direttamente nel file dati reale, gli altri finiscono in
 # bozzaImportPuntaNet per la revisione manuale in app (banner giallo "movimenti da classificare").
