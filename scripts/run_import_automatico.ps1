@@ -1,5 +1,11 @@
 # Avviato automaticamente da Windows ogni giorno alle 9:00 (Attivita Pianificata "GV_ImportaPuntaNet").
-# Esegue PRIMA DI TUTTO scripts\aggiornaCopiaLocale.ps1 (dal 2026-09-24), che ripristina la copia
+# Esegue PRIMA DI TUTTO "git pull" su questa cartella (dal 2026-09-24): senza questo passaggio,
+# una correzione allo script pubblicata su GitHub resta senza effetto finche' qualcuno non
+# aggiorna questa copia a mano — successo tre volte di fila nella pratica (anagrafica clienti,
+# collegamento cantieri PuntaNet, filtro fornitori per cantiere: tutte corrette su GitHub ma mai
+# arrivate qui finche' non aggiornata manualmente). Se questa cartella non e' un clone git, il
+# log lo segnala chiaramente invece di fallire in silenzio.
+# Poi esegue scripts\aggiornaCopiaLocale.ps1 (dal 2026-09-24), che ripristina la copia
 # locale PuntaNet dall'ultimo backup automatico — richiede pochi secondi (verificato: ~5 secondi
 # in totale sui tre database), quindi non serve una seconda Attivita Pianificata separata con un
 # orario sfalsato: un'unica attivita' alle 9:00 basta, con la sequenza sempre garantita. Senza
@@ -34,7 +40,22 @@ $LogFile = Join-Path $LogDir ("log_{0}.txt" -f (Get-Date -Format 'yyyy-MM-dd_HHm
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 Set-Location $ProjectDir
-"=== Avvio aggiornaCopiaLocale.ps1 - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Encoding utf8
+"=== Avvio aggiornamento codice (git pull) - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Encoding utf8
+
+if (Test-Path (Join-Path $ProjectDir ".git")) {
+    try {
+        & git pull origin main 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
+        "=== Codice aggiornato con successo ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+    } catch {
+        # Non blocca il giro che segue: meglio eseguire con la versione locale attuale (magari
+        # non l'ultima) che saltare tutto l'import per un problema di rete/git.
+        "=== ERRORE aggiornamento codice (si prosegue comunque con la versione locale attuale): $($_.Exception.Message) ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+    }
+} else {
+    "=== ATTENZIONE: $ProjectDir non e' un clone git — il codice qui non si aggiorna mai da solo. Per attivare l'aggiornamento automatico, sostituire questa cartella con un clone di https://github.com/GruppoVisentin/gv-gestionefinanziaria una volta sola (stesso percorso, o aggiornando la variable ProjectDir in cima a questo script). ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+}
+
+"=== Avvio aggiornaCopiaLocale.ps1 - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
 
 try {
     & powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\aggiornaCopiaLocale.ps1" 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
