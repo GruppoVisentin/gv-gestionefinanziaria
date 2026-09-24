@@ -34,16 +34,7 @@ function runSql(database, query) {
   }
 }
 
-console.log('=== 1) Quando e\' stato ripristinato/creato per l\'ultima volta il database locale? ===\n');
-console.log('(sys.databases.create_date si azzera a ogni RESTORE DATABASE completo — se e\' vecchio, il DB non viene piu\' rinfrescato)\n');
-try {
-  const info = runSql('master', `SET NOCOUNT ON; SELECT name, create_date, state_desc FROM sys.databases WHERE name IN ('${DB_IMPRESA}','${DB_COMUNE}') FOR JSON PATH`);
-  console.log(JSON.stringify(info, null, 2));
-} catch (e) {
-  console.error('Errore leggendo sys.databases:', e.message);
-}
-
-console.log('\n\n=== 2) Storico dei ripristini (RESTORE DATABASE) registrati da SQL Server ===\n');
+console.log('=== 1) Storico dei ripristini (RESTORE DATABASE) registrati da SQL Server — indicatore AFFIDABILE ===\n');
 try {
   const storico = runSql('msdb', `SET NOCOUNT ON; SELECT TOP 20 destination_database_name AS Database_, restore_date, [user_name] FROM msdb.dbo.restorehistory WHERE destination_database_name IN ('${DB_IMPRESA}','${DB_COMUNE}') ORDER BY restore_date DESC FOR JSON PATH`);
   if (storico.length === 0) {
@@ -55,7 +46,17 @@ try {
   console.error('Errore leggendo msdb.dbo.restorehistory:', e.message);
 }
 
+console.log('\n\n=== 2) sys.databases.create_date — SOLO INFORMATIVO, NON usare per giudicare la freschezza ===\n');
+console.log('(verificato sui dati reali il 2026-09-24: un RESTORE ... WITH REPLACE su un database GIA\' ESISTENTE con lo stesso nome NON aggiorna create_date, che resta quello del primo ripristino per sempre — usarlo darebbe un falso allarme permanente anche a ripristino riuscito. L\'indicatore affidabile e\' il punto 1 sopra.)\n');
+try {
+  const info = runSql('master', `SET NOCOUNT ON; SELECT name, create_date, state_desc FROM sys.databases WHERE name IN ('${DB_IMPRESA}','${DB_COMUNE}') FOR JSON PATH`);
+  console.log(JSON.stringify(info, null, 2));
+} catch (e) {
+  console.error('Errore leggendo sys.databases:', e.message);
+}
+
 console.log('\n\n=== 3) Ultimo movimento bancario e ultima fattura REALMENTE presenti nella copia locale ===\n');
+console.log('(occhio: una singola riga con data corrotta — es. l\'anno "2232" trovato in Conti Movimenti — puo\' far risultare un MAX(Data) piu\' vecchio del vero, o comunque non rappresentativo; vale piu\' il confronto nel tempo di "TotaleRighe" che il MAX(Data) da solo)\n');
 try {
   const ultimoMovimento = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT MAX(Data) AS UltimaData, COUNT(*) AS TotaleRighe FROM [Conti Movimenti] FOR JSON PATH`);
   console.log('Conti Movimenti:', JSON.stringify(ultimoMovimento));
