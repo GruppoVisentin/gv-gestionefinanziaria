@@ -1992,11 +1992,14 @@ const App: React.FC = () => {
         luogo: p.location || null,
         dataInizio: p.startDate,
         stato,
-        // Collegamento manuale (fatto qui) tra questo cantiere e l'id numerico
-        // PuntaNet: pubblicato solo per un cantiere nativo di Direttore Cantiere,
-        // per permettergli di incrociare i fornitori che vi hanno fatturato
-        // secondo PuntaNet (vedi fornitori_registry.perCantiere).
-        ...(key.source === 'direttore_cantiere' && p.puntaNetCantiereId ? { puntaNetCantiereId: p.puntaNetCantiereId } : {}),
+        // Collegamento (fatto solo qui, mai da Direttore Cantiere) tra questo
+        // cantiere e l'id numerico PuntaNet: pubblicato sia per una commessa
+        // nativa di Direttore Cantiere sia per una nativa di questa app, per
+        // permettere in entrambi i casi di incrociare i fornitori che vi hanno
+        // fatturato secondo PuntaNet (vedi fornitori_registry.perCantiere) —
+        // prima veniva pubblicato solo per le prime, lasciando la maggioranza
+        // delle commesse reali (native qui) senza incrocio possibile.
+        ...(p.puntaNetCantiereId ? { puntaNetCantiereId: p.puntaNetCantiereId } : {}),
       }).catch(e => console.error('Pubblicazione commessa sul registro fallita', e));
     });
     reportRegistrySync();
