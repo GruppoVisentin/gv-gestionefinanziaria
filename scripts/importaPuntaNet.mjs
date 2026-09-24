@@ -143,6 +143,26 @@ function costruisciBozza({ dataISO, descrizione, entity, importo, tipo, tipoMovi
 
 console.log(`=== ${SCRIVI ? 'Scrittura' : 'Estrazione (dry-run)'} PuntaNet — GRUPPO VISENTIN SRL — da ${DATA_INIZIO} ===\n`);
 
+// ─── Controllo di freschezza della copia locale ──────────────────────────
+// Bug reale trovato il 2026-09-24: il ripristino del backup PuntaNet in GC_Impresa2_RO/GC_Comune_RO
+// non era mai stato automatizzato (un solo ripristino manuale il 9 settembre, mai ripetuto). Lo
+// script ha continuato a girare "con successo" per 15 giorni, semplicemente non trovando piu'
+// nulla di nuovo perche' leggeva sempre la stessa fotografia congelata — nessun errore SQL, quindi
+// nessun segnale visibile. sys.databases.create_date si azzera a ogni RESTORE DATABASE completo:
+// se e' vecchio, la copia non viene piu' rinfrescata. Va eseguito scripts/aggiornaCopiaLocale.ps1
+// prima di questo script (vedi scripts/run_import_automatico.ps1).
+try {
+  const [dbInfo] = runSql('master', `SET NOCOUNT ON; SELECT create_date FROM sys.databases WHERE name = '${DB_IMPRESA}' FOR JSON PATH`);
+  if (dbInfo?.create_date) {
+    const oreDaUltimoRipristino = (Date.now() - new Date(dbInfo.create_date).getTime()) / 3600000;
+    if (oreDaUltimoRipristino > 20) {
+      console.warn(`\n⚠️  ATTENZIONE: la copia locale di PuntaNet (${DB_IMPRESA}) non viene ripristinata da ${Math.round(oreDaUltimoRipristino)} ore (ultimo ripristino: ${dbInfo.create_date}). I dati letti da questo script potrebbero essere VECCHI — verificare che scripts/aggiornaCopiaLocale.ps1 sia stato eseguito.\n`);
+    }
+  }
+} catch (e) {
+  console.warn(`(controllo di freschezza non riuscito, si prosegue comunque: ${e.message})`);
+}
+
 const gvData = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
 const cantiereToProject = new Map();
 const projectMeta = new Map();
