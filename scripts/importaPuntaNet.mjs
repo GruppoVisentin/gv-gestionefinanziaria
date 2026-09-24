@@ -148,16 +148,23 @@ console.log(`=== ${SCRIVI ? 'Scrittura' : 'Estrazione (dry-run)'} PuntaNet — G
 // non era mai stato automatizzato (un solo ripristino manuale il 9 settembre, mai ripetuto). Lo
 // script ha continuato a girare "con successo" per 15 giorni, semplicemente non trovando piu'
 // nulla di nuovo perche' leggeva sempre la stessa fotografia congelata — nessun errore SQL, quindi
-// nessun segnale visibile. sys.databases.create_date si azzera a ogni RESTORE DATABASE completo:
-// se e' vecchio, la copia non viene piu' rinfrescata. Va eseguito scripts/aggiornaCopiaLocale.ps1
-// prima di questo script (vedi scripts/run_import_automatico.ps1).
+// nessun segnale visibile. Da oggi scripts/aggiornaCopiaLocale.ps1 gira automaticamente prima di
+// questo script (vedi scripts/run_import_automatico.ps1) — questo controllo resta come rete di
+// sicurezza in caso smetta di funzionare di nuovo.
+//
+// Usa msdb.dbo.restorehistory, MAI sys.databases.create_date: verificato sui dati reali il
+// 2026-09-24 che un RESTORE DATABASE ... WITH REPLACE su un database GIA' ESISTENTE (come qui,
+// sempre lo stesso nome "_RO") NON aggiorna create_date, che resta quello del primo ripristino
+// per sempre — usarlo avrebbe dato un falso allarme permanente anche a ripristino riuscito.
 try {
-  const [dbInfo] = runSql('master', `SET NOCOUNT ON; SELECT create_date FROM sys.databases WHERE name = '${DB_IMPRESA}' FOR JSON PATH`);
-  if (dbInfo?.create_date) {
-    const oreDaUltimoRipristino = (Date.now() - new Date(dbInfo.create_date).getTime()) / 3600000;
+  const [storico] = runSql('msdb', `SET NOCOUNT ON; SELECT TOP 1 restore_date FROM msdb.dbo.restorehistory WHERE destination_database_name = '${DB_IMPRESA}' ORDER BY restore_date DESC FOR JSON PATH`);
+  if (storico?.restore_date) {
+    const oreDaUltimoRipristino = (Date.now() - new Date(storico.restore_date).getTime()) / 3600000;
     if (oreDaUltimoRipristino > 20) {
-      console.warn(`\n⚠️  ATTENZIONE: la copia locale di PuntaNet (${DB_IMPRESA}) non viene ripristinata da ${Math.round(oreDaUltimoRipristino)} ore (ultimo ripristino: ${dbInfo.create_date}). I dati letti da questo script potrebbero essere VECCHI — verificare che scripts/aggiornaCopiaLocale.ps1 sia stato eseguito.\n`);
+      console.warn(`\n⚠️  ATTENZIONE: la copia locale di PuntaNet (${DB_IMPRESA}) non viene ripristinata da ${Math.round(oreDaUltimoRipristino)} ore (ultimo ripristino: ${storico.restore_date}). I dati letti da questo script potrebbero essere VECCHI — verificare che scripts/aggiornaCopiaLocale.ps1 sia stato eseguito.\n`);
     }
+  } else {
+    console.warn(`\n⚠️  ATTENZIONE: nessun ripristino mai registrato per ${DB_IMPRESA} in msdb.dbo.restorehistory — verificare scripts/aggiornaCopiaLocale.ps1.\n`);
   }
 } catch (e) {
   console.warn(`(controllo di freschezza non riuscito, si prosegue comunque: ${e.message})`);

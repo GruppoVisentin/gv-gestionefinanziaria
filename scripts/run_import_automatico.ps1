@@ -1,10 +1,11 @@
-# Avviato automaticamente da Windows ogni giorno (Attivita Pianificata "GV_ImportaPuntaNet").
-# IMPORTANTE (dal 2026-09-24): deve girare DOPO scripts\aggiornaCopiaLocale.ps1 (Attivita
-# Pianificata separata, consigliata alle 9:00), che ripristina la copia locale PuntaNet
-# dall'ultimo backup automatico — senza quel passaggio questo script legge sempre la stessa
-# fotografia congelata, "con successo" ma senza trovare mai nulla di nuovo (bug reale: 15 giorni
-# di silenzio perche' il ripristino non era mai stato automatizzato). Questa attivita' va quindi
-# spostata alle 9:30, per lasciare margine al ripristino di completarsi.
+# Avviato automaticamente da Windows ogni giorno alle 9:00 (Attivita Pianificata "GV_ImportaPuntaNet").
+# Esegue PRIMA DI TUTTO scripts\aggiornaCopiaLocale.ps1 (dal 2026-09-24), che ripristina la copia
+# locale PuntaNet dall'ultimo backup automatico — richiede pochi secondi (verificato: ~5 secondi
+# in totale sui tre database), quindi non serve una seconda Attivita Pianificata separata con un
+# orario sfalsato: un'unica attivita' alle 9:00 basta, con la sequenza sempre garantita. Senza
+# questo passaggio l'import legge sempre la stessa fotografia congelata, "con successo" ma senza
+# trovare mai nulla di nuovo (bug reale: 15 giorni di silenzio perche' il ripristino non era mai
+# stato automatizzato — un solo ripristino manuale il 9 settembre, mai ripetuto).
 # Esegue l'estrazione/classificazione PuntaNet in modalita SCRITTURA (--scrivi): i movimenti ad
 # alta confidenza vengono scritti direttamente nel file dati reale, gli altri finiscono in
 # bozzaImportPuntaNet per la revisione manuale in app (banner giallo "movimenti da classificare").
@@ -28,7 +29,18 @@ $LogFile = Join-Path $LogDir ("log_{0}.txt" -f (Get-Date -Format 'yyyy-MM-dd_HHm
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 Set-Location $ProjectDir
-"=== Avvio importaPuntaNet.mjs --scrivi - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Encoding utf8
+"=== Avvio aggiornaCopiaLocale.ps1 - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Encoding utf8
+
+try {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\aggiornaCopiaLocale.ps1" 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
+    "=== Completato con successo ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+} catch {
+    # Non blocca l'import che segue: meglio importare dati eventualmente non freschissimi (il
+    # controllo di freschezza in importaPuntaNet.mjs lo segnalera') che saltare tutto il giro.
+    "=== ERRORE (si prosegue comunque con l'import): $($_.Exception.Message) ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+}
+
+"=== Avvio importaPuntaNet.mjs --scrivi - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
 
 try {
     & npx tsx "scripts\importaPuntaNet.mjs" --scrivi 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
