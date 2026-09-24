@@ -15,6 +15,11 @@
 # campi economici (fatturato/numero fatture/ultima fattura) — mai contatti/categoria/note, che
 # restano le scelte fatte a mano in app. Niente piu' passaggio manuale di selezione file
 # (richiesto 2026-09-16): il banner "N fornitori aggiornati" in app segnala cosa e' successo.
+# Esegue anche il collegamento automatico commessa <-> Cantiere PuntaNet (per nome,
+# fuzzy match, solo commesse senza collegamento gia' presente), sempre in modalita
+# SCRITTURA: da questo collegamento dipende l'incrocio fornitori/commessa di Direttore
+# Cantiere (richiesto 2026-09-24: la scheda Fornitori del Gantt mostrava tutto il
+# registro invece dei soli fornitori confermati su quel cantiere specifico).
 # Esegue infine l'estrazione dell'anagrafica clienti (committenti) dalla stessa tabella
 # PuntaNet, sempre in modalita SCRITTURA: da qui la pubblicazione periodica gia' esistente
 # verso il registro condiviso la propaga da sola a Direttore Cantiere (richiesto 2026-09-18:
@@ -44,6 +49,15 @@ try {
 
 try {
     & npx tsx "scripts\importaPuntaNet.mjs" --scrivi 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
+    "=== Completato con successo ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+} catch {
+    "=== ERRORE: $($_.Exception.Message) ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+}
+
+"=== Avvio collegaCantieriPuntaNet.mjs - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+
+try {
+    & npx tsx "scripts\collegaCantieriPuntaNet.mjs" --scrivi 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
     "=== Completato con successo ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
 } catch {
     "=== ERRORE: $($_.Exception.Message) ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
