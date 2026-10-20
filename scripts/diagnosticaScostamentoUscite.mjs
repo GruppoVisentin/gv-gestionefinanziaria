@@ -9,14 +9,19 @@
 // acquisizioni...), quindi non e' un problema di categorie escluse — il sospetto e' su
 // transazioni specifiche: duplicati da percorsi di import diversi, o importi con segno errato.
 //
-// Replica la stessa logica di calcolo di components/CashFlowTimeline.tsx (calculateMonthlyFlow):
-// EXPENSE, isForecast=false, ceType !== 'ammortamento', importo lordo (grossAmount se presente,
-// altrimenti amount*(1+vatRate/100)), raggruppato per mese di competenza = campo `date` (cassa).
+// Replica la stessa logica di calcolo di ExpenseTimeline.tsx (getMonthlyTotal) — e' quel
+// componente, non CashFlowTimeline, a disegnare la riga "TOTALE USCITE" mostrata in app: EXPENSE,
+// isForecast=false, ceType !== 'ammortamento', importo lordo (grossAmount se presente, altrimenti
+// amount*(1+vatRate/100)), raggruppato per mese di competenza = campo `date` (cassa) — E SOLO le
+// categorie presenti in fixedCategories/variableCategories (personalizzabili in Config): una
+// transazione con categoria "Altro / Non Classificato" o una categoria rimossa viene esclusa dal
+// totale mostrato in app, quindi va esclusa anche qui per confrontare lo stesso numero.
 //
 // Uso: npx tsx scripts/diagnosticaScostamentoUscite.mjs
 
 import fs from 'fs';
 import path from 'path';
+import { FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants.ts';
 
 const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV\35_APP GV ECOSISTEM\04-GV GestioneFINANZIARIA\DATI SALVATI`;
 const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico.gvcf');
@@ -40,13 +45,27 @@ const gvData = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
 console.log(`=== Diagnostica scostamento USCITE — dati letti da: ${GVCF_PATH} ===`);
 console.log(`Timestamp file: ${gvData.timestamp || '(assente)'}\n`);
 
+// Come in App.tsx: usa le liste personalizzate nel file se presenti, altrimenti i default.
+const fixedCategories = gvData.fixedCategories || [...FIXED_COST_CATEGORIES];
+const variableCategories = gvData.variableCategories || [...VARIABLE_COST_CATEGORIES];
+const categorieValide = new Set([...fixedCategories, ...variableCategories]);
+
 const uscite = gvData.transactions.filter(t => {
   const d = new Date(`${t.date}T00:00:00Z`);
   return t.type === 'EXPENSE' && !t.isForecast && t.ceType !== 'ammortamento' && d.getUTCFullYear() === ANNO;
 });
 
+const fuoriCategoria = uscite.filter(t => !categorieValide.has(t.category));
+if (fuoriCategoria.length > 0) {
+  console.log(`⚠️  ${fuoriCategoria.length} uscite con categoria NON presente in fixedCategories/variableCategories (escluse dal "TOTALE USCITE" mostrato in app, es. "Altro / Non Classificato" o una categoria rimossa):`);
+  for (const t of fuoriCategoria) {
+    console.log(`    ${t.date} — ${importoLordo(t).toFixed(2)} €  —  categoria: "${t.category}"  —  "${t.description}"`);
+  }
+  console.log('');
+}
+
 for (const mese of MESI) {
-  const delMese = uscite.filter(t => new Date(`${t.date}T00:00:00Z`).getUTCMonth() === mese.idx);
+  const delMese = uscite.filter(t => new Date(`${t.date}T00:00:00Z`).getUTCMonth() === mese.idx && categorieValide.has(t.category));
   const totale = delMese.reduce((s, t) => s + importoLordo(t), 0);
   console.log(`\n=== ${mese.nome} 2026 — TOTALE USCITE (come in app): ${totale.toFixed(2)} € (${delMese.length} transazioni) ===`);
 
@@ -70,13 +89,19 @@ for (const mese of MESI) {
     console.log(`  Nessun possibile duplicato trovato (stessa data+importo).`);
   }
 
-  // --- Segno anomalo: importo lordo negativo su una EXPENSE (dovrebbe sempre essere positivo) ---
-  const segnoAnomalo = delMese.filter(t => importoLordo(t) < 0);
+  // --- Segno anomalo: importo lordo negativo su una EXPENSE che NON sia una nota di credito
+  // passiva legittima (importaPuntaNet.mjs le scrive apposta con grossAmount negativo per
+  // stornare la fattura originale — descrizione sempre con prefisso "Nota di credito -") ---
+  const segnoAnomalo = delMese.filter(t => importoLordo(t) < 0 && !t.description?.startsWith('Nota di credito'));
+  const noteCredito = delMese.filter(t => importoLordo(t) < 0 && t.description?.startsWith('Nota di credito'));
   if (segnoAnomalo.length > 0) {
-    console.log(`  ⚠️  USCITE con importo NEGATIVO (segno anomalo, ${segnoAnomalo.length} righe):`);
+    console.log(`  ⚠️  USCITE con importo NEGATIVO e segno davvero anomalo (${segnoAnomalo.length} righe, escluse le note di credito legittime):`);
     for (const t of segnoAnomalo) {
       console.log(`      [${t.id?.slice(0, 8)}] ${t.date} — ${importoLordo(t).toFixed(2)} € — "${t.description}" — categoria: ${t.category}`);
     }
+  }
+  if (noteCredito.length > 0) {
+    console.log(`  (${noteCredito.length} note di credito passive legittime, gia' nette nel totale sopra — ${noteCredito.reduce((s, t) => s + importoLordo(t), 0).toFixed(2)} €)`);
   }
 
   // --- Dettaglio per categoria, ordinato dal piu' grande ---
