@@ -73,6 +73,14 @@ export interface Transaction {
   grossAmount?: number; // Exact gross amount imported from PuntaNet / bank
   puntaNetIDDocumento?: number; // ← NUOVO — Documenti.IDDocumento reale, per dedup esatto (pipeline SQL)
   puntaNetIDRata?: number;      // ← NUOVO — Documenti Scadenze.IDRata reale, per dedup esatto (pipeline SQL)
+
+  // Fattura PuntaNet ricevuta/emessa ma non ancora pagata/incassata al momento dell'import —
+  // scritta comunque come consuntivo (isForecast: false, mai previsionale: vedi nota storica
+  // sull'11/09/2026) perche' e' un dato fiscale certo per competenza. `false` = non ancora
+  // pagata (l'import automatico aggiorna il flag a `true` sulla stessa riga, senza duplicarla,
+  // quando rileva che e' stata saldata). Assente/undefined = non proveniente da una scadenza
+  // PuntaNet, o gia' pagata al momento dell'import (comportamento invariato).
+  pagato?: boolean;
 }
 
 export interface IntestatarioFattura {

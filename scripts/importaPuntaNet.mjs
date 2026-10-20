@@ -500,6 +500,11 @@ for (const s of scadenzeAperte) {
     sourceRef: `Punta Net (automatico) - IDDocumento ${s.IDDocumento} / IDRata ${s.IDRata}`,
     puntaNetIDDocumento: s.IDDocumento,
     puntaNetIDRata: s.IDRata,
+    // Non ancora pagata/incassata al momento di questo import (richiesto 2026-10-20): resta nel
+    // consuntivo per CE/Stato Patrimoniale, ma l'app la segnala a parte ("di cui X da pagare")
+    // finche' un giro successivo non la trova piu' tra le scadenze aperte (vedi aggiornamento
+    // pagamenti piu' sotto, nella sezione di scrittura) e aggiorna questo flag sulla stessa riga.
+    pagato: false,
   };
 
   if (alta) {
@@ -557,6 +562,28 @@ if (nessunMovimentoNuovo) {
   console.log('\nNessun movimento nuovo da scrivere (tutto gia\' presente nel file — probabile doppia esecuzione nella stessa giornata).');
 }
 
+// ─── Aggiornamento pagamenti: fatture gia' scritte come "non pagate" che oggi risultano saldate ──
+// Richiesto 2026-10-20: le fatture non ancora pagate restano visibili nel consuntivo (utile per
+// vedere cosa ci sara' da pagare), ma marcate `pagato: false`. Quando una scadenza che avevamo
+// scritto con quel flag non compare piu' tra le scadenze aperte di oggi (query sopra, sempre
+// filtrata su Pagato = 0), vuol dire che e' stata pagata nel frattempo: aggiorna il flag sulla
+// STESSA riga esistente — mai una riga nuova, mai toccati importo/data/categoria/progetto, che
+// restano quelli originali dell'epoca in cui la fattura e' stata emessa (competenza).
+const scadenzeAnchorAperteOggi = new Set(scadenzeAperte.map(s => `${s.IDDocumento}|${s.IDRata}`));
+let pagamentiAggiornati = 0;
+for (const t of gvDataFresh.transactions) {
+  if (t.pagato === false && t.puntaNetIDDocumento != null && t.puntaNetIDRata != null) {
+    const key = `${t.puntaNetIDDocumento}|${t.puntaNetIDRata}`;
+    if (!scadenzeAnchorAperteOggi.has(key)) {
+      t.pagato = true;
+      pagamentiAggiornati++;
+    }
+  }
+}
+if (pagamentiAggiornati > 0) {
+  console.log(`${pagamentiAggiornati} fattura/e risultano pagate rispetto all'ultimo import — flag aggiornato sulle righe esistenti.`);
+}
+
 // ─── Saldi aperti (Crediti Clienti / Debiti Fornitori) per lo Stato Patrimoniale ──────────
 // A differenza della query "scadenzeAperte" sopra (limitata a ds.[Data Rata] >= DATA_INIZIO, perche'
 // serve solo a decidere cosa importare come consuntivo da quest'anno in poi), qui serve il totale
@@ -580,7 +607,7 @@ const saldiApertiInvariati = gvDataFresh.saldiApertiPuntaNet
   && gvDataFresh.saldiApertiPuntaNet.creditiClienti === creditiClientiAperti
   && gvDataFresh.saldiApertiPuntaNet.debitiFornitori === debitiFornitoriAperti;
 
-if (nessunMovimentoNuovo && saldiApertiInvariati) {
+if (nessunMovimentoNuovo && saldiApertiInvariati && pagamentiAggiornati === 0) {
   console.log('Saldi aperti invariati rispetto a oggi — nessuna scrittura necessaria.');
   process.exit(0);
 }
@@ -605,7 +632,7 @@ gvDataFresh.saldiApertiPuntaNet = {
 // l'altra. Tenute solo le ultime 60 esecuzioni per non far crescere il file all'infinito.
 gvDataFresh.logImportAutomatico = [
   ...(gvDataFresh.logImportAutomatico || []),
-  { timestamp: new Date().toISOString(), autoScritti: daScrivere.length, daRivedere: daMettereInBozza.length },
+  { timestamp: new Date().toISOString(), autoScritti: daScrivere.length, daRivedere: daMettereInBozza.length, pagamentiAggiornati },
 ].slice(-60);
 
 const tmpPath = `${GVCF_PATH}.tmp_${process.pid}`;
@@ -614,5 +641,6 @@ fs.renameSync(tmpPath, GVCF_PATH);
 
 console.log(`\n✔ Scritti ${daScrivere.length} movimenti direttamente in transactions (alta confidenza, gia' definitivi).`);
 console.log(`✔ Aggiunti ${daMettereInBozza.length} movimenti in bozzaImportPuntaNet (da rivedere in app — banner giallo).`);
+console.log(`✔ Aggiornate ${pagamentiAggiornati} fatture da "non pagata" a "pagata" (stessa riga, nessun duplicato).`);
 console.log(`  Backup pre-scrittura: ${backupPath}`);
 console.log('=== Scrittura completata ===');

@@ -67,7 +67,11 @@ if (fuoriCategoria.length > 0) {
 for (const mese of MESI) {
   const delMese = uscite.filter(t => new Date(`${t.date}T00:00:00Z`).getUTCMonth() === mese.idx && categorieValide.has(t.category));
   const totale = delMese.reduce((s, t) => s + importoLordo(t), 0);
+  const nonPagato = delMese.filter(t => t.pagato === false).reduce((s, t) => s + importoLordo(t), 0);
   console.log(`\n=== ${mese.nome} 2026 — TOTALE USCITE (come in app): ${totale.toFixed(2)} € (${delMese.length} transazioni) ===`);
+  if (nonPagato > 0) {
+    console.log(`  di cui ${nonPagato.toFixed(2)} € non ancora pagati (fatture PuntaNet in attesa) — il resto, ${(totale - nonPagato).toFixed(2)} €, e' il confronto corretto con un flusso di cassa come l'Excel.`);
+  }
 
   // --- Possibili duplicati: stessa data + stesso importo lordo (arrotondato al centesimo) ---
   const perChiave = new Map();
