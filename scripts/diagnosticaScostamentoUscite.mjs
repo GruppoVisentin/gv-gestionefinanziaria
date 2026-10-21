@@ -1,6 +1,6 @@
 // Diagnostica SOLA LETTURA (nessuna scrittura, nessuna modifica) per capire perche' il "TOTALE
 // USCITE" consuntivo mostrato in app (Cash Flow) non coincide con il flusso di cassa tenuto a
-// mano in Excel dall'utente, per i mesi di giugno-settembre 2026.
+// mano in Excel dall'utente.
 //
 // Richiesto 2026-10-20: differenze di 12k-86k€ al mese (app sempre piu' alta di Excel per
 // giugno/luglio/agosto, molto piu' bassa per settembre — quest'ultimo gia' spiegato dal ritardo
@@ -8,6 +8,11 @@
 // costi dell'app (IVA, rate finanziamenti, spese bancarie, stipendi, subappalti, professionisti,
 // acquisizioni...), quindi non e' un problema di categorie escluse — il sospetto e' su
 // transazioni specifiche: duplicati da percorsi di import diversi, o importi con segno errato.
+//
+// Esteso 2026-10-21 (su richiesta: "non puo' essere che ci siano fatture di mesi lontani tipo
+// gennaio ancora da pagare?") a TUTTI i mesi dell'anno fino a quello corrente — non solo
+// giugno-settembre — cosi' il "di cui non pagato" e il controllo duplicati coprono anche gennaio
+// e gli altri mesi, non solo quelli originariamente sospettati.
 //
 // Replica la stessa logica di calcolo di ExpenseTimeline.tsx (getMonthlyTotal) — e' quel
 // componente, non CashFlowTimeline, a disegnare la riga "TOTALE USCITE" mostrata in app: EXPENSE,
@@ -27,13 +32,10 @@ const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV
 const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico.gvcf');
 
 const ANNO = 2026;
-// Indici mese (0=gennaio) — giugno=5 ... settembre=8
-const MESI = [
-  { idx: 5, nome: 'Giugno' },
-  { idx: 6, nome: 'Luglio' },
-  { idx: 7, nome: 'Agosto' },
-  { idx: 8, nome: 'Settembre' },
-];
+const NOMI_MESE = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+// Da gennaio al mese corrente incluso (non solo giugno-settembre: vedi nota sopra).
+const meseCorrente = new Date().getUTCMonth();
+const MESI = NOMI_MESE.slice(0, meseCorrente + 1).map((nome, idx) => ({ idx, nome }));
 
 function importoLordo(t) {
   if (typeof t.grossAmount === 'number') return t.grossAmount;
@@ -64,6 +66,8 @@ if (fuoriCategoria.length > 0) {
   console.log('');
 }
 
+const riepilogo = []; // { nome, totale, nonPagato, duplicati } — stampato in coda, dopo il dettaglio mese per mese
+
 for (const mese of MESI) {
   const delMese = uscite.filter(t => new Date(`${t.date}T00:00:00Z`).getUTCMonth() === mese.idx && categorieValide.has(t.category));
   const totale = delMese.reduce((s, t) => s + importoLordo(t), 0);
@@ -81,6 +85,7 @@ for (const mese of MESI) {
     perChiave.get(chiave).push(t);
   }
   const sospetti = [...perChiave.values()].filter(list => list.length > 1);
+  riepilogo.push({ nome: mese.nome, totale, nonPagato, duplicati: sospetti.length });
   if (sospetti.length > 0) {
     console.log(`  ⚠️  Possibili DUPLICATI (stessa data + stesso importo lordo):`);
     for (const list of sospetti) {
@@ -120,6 +125,12 @@ for (const mese of MESI) {
   for (const [cat, { somma, conteggio }] of [...perCategoria.entries()].sort((a, b) => b[1].somma - a[1].somma)) {
     console.log(`    ${somma.toFixed(2).padStart(12)} €  (${conteggio} righe)  —  ${cat}`);
   }
+}
+
+console.log('\n\n=== Riepilogo tutti i mesi (gennaio → mese corrente) ===');
+console.log('  Mese'.padEnd(12) + 'Totale uscite'.padStart(16) + '  di cui da pagare'.padStart(20) + '  duplicati sospetti'.padStart(22));
+for (const r of riepilogo) {
+  console.log(`  ${r.nome.padEnd(10)}${r.totale.toFixed(2).padStart(16)} €${r.nonPagato.toFixed(2).padStart(16)} €${String(r.duplicati).padStart(12)}`);
 }
 
 console.log('\n\n=== Fine diagnostica — nessun dato e\' stato modificato ===');
