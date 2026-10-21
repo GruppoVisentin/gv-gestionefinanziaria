@@ -92,6 +92,7 @@ function importoLordoTx(t) {
   const vat = t.vatRate || 0;
   return (t.amount || 0) * (1 + vat / 100);
 }
+function importoMovimento(mv) { return mv.ImportoE > 0 ? mv.ImportoE : mv.ImportoU; }
 function tipoMovimentoDa(descrizione) {
   const m = descrizione.match(/FEP|FEA|NEP/i);
   return m ? m[0].toUpperCase() : 'ALTRO';
@@ -264,6 +265,20 @@ function getResiduoPrevisione(f) {
   return totale - coperturaEsistente - coperturaNuova;
 }
 
+// Somma lordo gia' registrato per uno stesso IDDocumento (qualunque IDRata, sia nel file esistente
+// sia tra i movimenti gia' aggiunti in questo stesso giro) — serve a riconoscere un movimento
+// bancario che pagherebbe una fattura GIA' scritta per intero come scadenza aperta (vedi piu' sotto,
+// "possibileDoppioneDocumento"): trovato in review 2026-10-21 analizzando C.I. Coperture Innovative,
+// dove PuntaNet ha ristrutturato un'unica rata da 95.170€ in piu' rate con IDRata nuovi dopo un
+// pagamento parziale — i nuovi movimenti bancari non coincidono piu' per IDDocumento|IDRata con la
+// riga scadenza gia' scritta, e verrebbero importati come riga NUOVA, duplicando l'importo.
+function totaleGiaRegistratoPerDocumento(idDocumento) {
+  let somma = 0;
+  for (const t of gvData.transactions) if (t.puntaNetIDDocumento === idDocumento) somma += importoLordoTx(t);
+  for (const t of autoConsuntivo) if (t.puntaNetIDDocumento === idDocumento) somma += importoLordoTx(t);
+  return somma;
+}
+
 // Cerca una previsione ESISTENTE (inserita a mano dall'utente, mai modificata) a cui collegare
 // una riga nuova — stesso progetto+categoria+tipo, con capienza residua sufficiente, preferendo
 // il residuo piu' vicino (miglior fit). Condivisa dal loop Conti Movimenti e dal loop Documenti
@@ -361,12 +376,29 @@ for (const mv of movimenti) {
 
   const dataISO = mv.Data.slice(0, 10);
   const dataOk = dataPlausibile(dataISO);
+
+  // Possibile doppione per documento: una fattura ancora aperta viene scritta come scadenza per
+  // l'intero importo (vedi piu' sotto); se poi PuntaNet ristruttura le rate dopo un pagamento
+  // parziale, il movimento bancario reale non coincide piu' per IDDocumento|IDRata con quella riga
+  // gia' scritta e finirebbe importato come riga NUOVA, duplicando l'importo (trovato in review
+  // 2026-10-21 su C.I. Coperture Innovative: 95.170€ gia' scritti a luglio, pagamento di
+  // 47.449,11€ di settembre quasi scritto una seconda volta). Se il totale gia' registrato per
+  // questo IDDocumento (qualunque rata) sommato a questo movimento supererebbe il totale fattura,
+  // non e' mai "alta confidenza": va in bozza per conferma manuale, mai scritto alla cieca.
+  let possibileDoppioneDocumento = false;
+  if (mv.IDDocumento) {
+    const totaleFattura = headerPerDoc.get(mv.IDDocumento)?.Totale;
+    if (typeof totaleFattura === 'number' && totaleGiaRegistratoPerDocumento(mv.IDDocumento) + importo > totaleFattura + 1) {
+      possibileDoppioneDocumento = true;
+    }
+  }
+
   // Anche le entrate devono avere un'aliquota nota per essere scritte in automatico: senza
   // questo controllo un'entrata con vatRate mancante finiva scritta come se fosse un reverse
   // charge dichiarato (0%), gonfiando silenziosamente il credito IVA mostrato in app (bug
   // trovato in audit il 2026-09-14 sui dati storici 2023-2025, mai coperto per il flusso
   // automatico 2026+). Ora, se manca l'aliquota, la riga finisce in bozza da rivedere a mano.
-  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk;
+  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk && !possibileDoppioneDocumento;
 
   const base = {
     id: crypto.randomUUID(),
@@ -393,7 +425,10 @@ for (const mv of movimenti) {
   } else {
     revisioneConsuntivo.push(costruisciBozza({
       dataISO, descrizione: mv.Descrizione || '', entity, importo, tipo, tipoMovimento,
-      categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate, vatRateNota: notaRevisione(dataOk),
+      categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate,
+      vatRateNota: possibileDoppioneDocumento
+        ? `Possibile doppione: il documento PuntaNet IDDocumento ${mv.IDDocumento} risulta gia' coperto per intero da una riga esistente (fattura scritta come scadenza aperta, poi pagata in piu' rate) — verificare prima di confermare.`
+        : notaRevisione(dataOk),
       cantiereApp, idDocumento: mv.IDDocumento, idRata: mv.IDRata, idMovimento: mv.IDMovimento, dataDocumento: invoiceDate,
     }));
   }
@@ -540,48 +575,88 @@ if (!SCRIVI) {
 // stessa, o un altro processo) potrebbe essere andata persa con una sovrascrittura cieca.
 const gvDataFresh = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
 const esistentiKeyFresh = new Set();
+const esistentiKeyMovimentoFresh = new Set();
 for (const t of gvDataFresh.transactions) {
   if (t.puntaNetIDDocumento != null && t.puntaNetIDRata != null) esistentiKeyFresh.add(`${t.puntaNetIDDocumento}|${t.puntaNetIDRata}`);
+  if (t.puntaNetIDMovimento != null) esistentiKeyMovimentoFresh.add(t.puntaNetIDMovimento);
 }
 const bozzaKeyFresh = new Set();
 for (const b of (gvDataFresh.bozzaImportPuntaNet || [])) {
   if (b._puntaNetKey) bozzaKeyFresh.add(b._puntaNetKey);
 }
 
+// ─── Aggiornamento pagamenti: fatture gia' scritte come "non pagate" che oggi risultano saldate ──
+// Richiesto 2026-10-20: le fatture non ancora pagate restano visibili nel consuntivo (utile per
+// vedere cosa ci sara' da pagare), ma marcate `pagato: false`. Quando una scadenza che avevamo
+// scritto con quel flag non compare piu' tra le scadenze aperte di oggi, vuol dire che e' stata
+// saldata nel frattempo.
+//
+// Corretto 2026-10-21 (trovato in review su C.I. Coperture Innovative): PuntaNet puo' ristrutturare
+// le rate di una fattura dopo un pagamento parziale, sostituendo l'IDRata originale con rate nuove.
+// In quel caso la rata originale "sparisce" dalle scadenze aperte anche se la fattura NON e' ancora
+// saldata per intero — marcarla "pagato:true" solo perche' quella specifica rata non c'e' piu'
+// sarebbe scorretto. Si controlla quindi a livello di DOCUMENTO (qualunque rata ancora aperta =
+// fattura non chiusa), e solo quando il documento risulta chiuso del tutto si cerca il movimento
+// bancario reale per aggiornare la riga ESISTENTE (mai una riga nuova): sposta `date` alla data del
+// pagamento vero e aggancia `puntaNetIDMovimento`/`puntaNetIDRata`, cosi' il mese torna giusto E il
+// giro successivo riconosce gia' quel movimento come importato (niente doppioni). Se il documento e'
+// chiuso ma non si trova un riscontro bancario pulito (zero o piu' movimenti candidati, o importo
+// che non torna — es. pagamento parziale non ancora completato), si marca comunque "pagato:true" ma
+// SENZA toccare la data: meglio un dato impreciso che uno sbagliato per difetto.
+const scadenzeAperteDocIds = new Set(scadenzeAperte.map(s => s.IDDocumento));
+const movimentiRiconciliati = new Set(); // IDMovimento gia' agganciati qui — esclusi piu' sotto da daScrivere/daMettereInBozza
+let pagamentiConDataCorretta = 0;
+let pagamentiAggiornati = 0;
+for (const t of gvDataFresh.transactions) {
+  if (t.pagato === false && t.puntaNetIDDocumento != null && t.puntaNetIDRata != null) {
+    // Controllo a livello di DOCUMENTO (non di singola rata, vedi nota sopra): se una QUALSIASI
+    // rata di questo documento e' ancora aperta oggi — inclusa la rata originale di questa riga,
+    // se non fosse stata ristrutturata — la fattura non e' chiusa, non si tocca nulla.
+    if (scadenzeAperteDocIds.has(t.puntaNetIDDocumento)) continue;
+
+    const candidati = movimenti.filter(mv =>
+      mv.IDDocumento === t.puntaNetIDDocumento
+      && !esistentiKeyMovimentoFresh.has(mv.IDMovimento)
+      && !movimentiRiconciliati.has(mv.IDMovimento)
+      && ((t.type === 'INCOME' && mv.ImportoE > 0) || (t.type === 'EXPENSE' && mv.ImportoU > 0))
+      && mv.Data.slice(0, 10) >= t.date
+    );
+    const match = candidati.length === 1 && Math.abs(importoMovimento(candidati[0]) - importoLordoTx(t)) < 0.5 ? candidati[0] : null;
+
+    if (match) {
+      t.date = match.Data.slice(0, 10);
+      t.puntaNetIDMovimento = match.IDMovimento;
+      t.puntaNetIDRata = match.IDRata ?? t.puntaNetIDRata;
+      t.pagato = true;
+      movimentiRiconciliati.add(match.IDMovimento);
+      pagamentiConDataCorretta++;
+    } else {
+      t.pagato = true;
+      pagamentiAggiornati++;
+    }
+  }
+}
+if (pagamentiConDataCorretta > 0) {
+  console.log(`${pagamentiConDataCorretta} fattura/e riconciliate col pagamento reale — data spostata sulla stessa riga, nessun duplicato.`);
+}
+if (pagamentiAggiornati > 0) {
+  console.log(`${pagamentiAggiornati} fattura/e risultano pagate (documento chiuso) ma senza un riscontro bancario univoco — flag aggiornato, data invariata.`);
+}
+
 const daScrivere = [...autoConsuntivo, ...autoScadenze].filter(t => {
+  if (t.puntaNetIDMovimento != null && movimentiRiconciliati.has(t.puntaNetIDMovimento)) return false;
   const k = `${t.puntaNetIDDocumento}|${t.puntaNetIDRata}`;
   return !esistentiKeyFresh.has(k);
 });
 const daMettereInBozza = [...revisioneConsuntivo, ...revisioneScadenze].filter(b => {
   if (!b._puntaNetKey) return true;
+  if (b._puntaNetKey.startsWith('mov:') && movimentiRiconciliati.has(Number(b._puntaNetKey.slice(4)))) return false;
   return !esistentiKeyFresh.has(b._puntaNetKey) && !bozzaKeyFresh.has(b._puntaNetKey);
 });
 
 const nessunMovimentoNuovo = daScrivere.length === 0 && daMettereInBozza.length === 0;
 if (nessunMovimentoNuovo) {
   console.log('\nNessun movimento nuovo da scrivere (tutto gia\' presente nel file — probabile doppia esecuzione nella stessa giornata).');
-}
-
-// ─── Aggiornamento pagamenti: fatture gia' scritte come "non pagate" che oggi risultano saldate ──
-// Richiesto 2026-10-20: le fatture non ancora pagate restano visibili nel consuntivo (utile per
-// vedere cosa ci sara' da pagare), ma marcate `pagato: false`. Quando una scadenza che avevamo
-// scritto con quel flag non compare piu' tra le scadenze aperte di oggi (query sopra, sempre
-// filtrata su Pagato = 0), vuol dire che e' stata pagata nel frattempo: aggiorna il flag sulla
-// STESSA riga esistente — mai una riga nuova, mai toccati importo/data/categoria/progetto, che
-// restano quelli originali dell'epoca in cui la fattura e' stata emessa (competenza).
-const scadenzeAnchorAperteOggi = new Set(scadenzeAperte.map(s => `${s.IDDocumento}|${s.IDRata}`));
-let pagamentiAggiornati = 0;
-for (const t of gvDataFresh.transactions) {
-  if (t.pagato === false && t.puntaNetIDDocumento != null && t.puntaNetIDRata != null) {
-    const key = `${t.puntaNetIDDocumento}|${t.puntaNetIDRata}`;
-    if (!scadenzeAnchorAperteOggi.has(key)) {
-      t.pagato = true;
-      pagamentiAggiornati++;
-    }
-  }
-}
-if (pagamentiAggiornati > 0) {
-  console.log(`${pagamentiAggiornati} fattura/e risultano pagate rispetto all'ultimo import — flag aggiornato sulle righe esistenti.`);
 }
 
 // ─── Saldi aperti (Crediti Clienti / Debiti Fornitori) per lo Stato Patrimoniale ──────────
@@ -607,7 +682,7 @@ const saldiApertiInvariati = gvDataFresh.saldiApertiPuntaNet
   && gvDataFresh.saldiApertiPuntaNet.creditiClienti === creditiClientiAperti
   && gvDataFresh.saldiApertiPuntaNet.debitiFornitori === debitiFornitoriAperti;
 
-if (nessunMovimentoNuovo && saldiApertiInvariati && pagamentiAggiornati === 0) {
+if (nessunMovimentoNuovo && saldiApertiInvariati && pagamentiAggiornati === 0 && pagamentiConDataCorretta === 0) {
   console.log('Saldi aperti invariati rispetto a oggi — nessuna scrittura necessaria.');
   process.exit(0);
 }
@@ -632,7 +707,7 @@ gvDataFresh.saldiApertiPuntaNet = {
 // l'altra. Tenute solo le ultime 60 esecuzioni per non far crescere il file all'infinito.
 gvDataFresh.logImportAutomatico = [
   ...(gvDataFresh.logImportAutomatico || []),
-  { timestamp: new Date().toISOString(), autoScritti: daScrivere.length, daRivedere: daMettereInBozza.length, pagamentiAggiornati },
+  { timestamp: new Date().toISOString(), autoScritti: daScrivere.length, daRivedere: daMettereInBozza.length, pagamentiAggiornati, pagamentiConDataCorretta },
 ].slice(-60);
 
 const tmpPath = `${GVCF_PATH}.tmp_${process.pid}`;
@@ -641,6 +716,7 @@ fs.renameSync(tmpPath, GVCF_PATH);
 
 console.log(`\n✔ Scritti ${daScrivere.length} movimenti direttamente in transactions (alta confidenza, gia' definitivi).`);
 console.log(`✔ Aggiunti ${daMettereInBozza.length} movimenti in bozzaImportPuntaNet (da rivedere in app — banner giallo).`);
-console.log(`✔ Aggiornate ${pagamentiAggiornati} fatture da "non pagata" a "pagata" (stessa riga, nessun duplicato).`);
+console.log(`✔ Riconciliate ${pagamentiConDataCorretta} fatture col pagamento reale (data corretta, stessa riga, nessun duplicato).`);
+console.log(`✔ Aggiornate ${pagamentiAggiornati} fatture da "non pagata" a "pagata" senza riscontro bancario univoco (data invariata, stessa riga).`);
 console.log(`  Backup pre-scrittura: ${backupPath}`);
 console.log('=== Scrittura completata ===');
