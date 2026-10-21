@@ -10,16 +10,32 @@
 // (cioe' mai riconciliata dal nuovo codice — una riga gia' riconciliata ha sempre puntaNetIDMovimento
 // stampato, quindi questo script e' idempotente: ri-eseguirlo dopo un giro riuscito non trova piu'
 // nulla da correggere):
-//   - se il documento ha ancora QUALUNQUE rata aperta oggi → era stata marcata "pagata" per errore:
-//     riportata a `pagato: false` (la data resta quella di scadenza, invariata: non sappiamo quale
-//     pagamento parziale attribuirle, meglio lasciarla come "ancora da pagare" che sbagliata);
-//   - se il documento e' chiuso e c'e' UN SOLO movimento bancario che combacia per importo → la
-//     stessa riga viene riconciliata: `date` spostata al pagamento reale, `puntaNetIDMovimento` e
-//     `puntaNetIDRata` aggiornati (stessa logica di importaPuntaNet.mjs, commit b315b24);
-//   - se il documento e' chiuso ma non c'e' un riscontro bancario pulito (zero o piu' movimenti
-//     candidati — es. C.I. Coperture, pagata in piu' rate diverse dall'importo originale) → NON
-//     tocca nulla, la riga resta cosi' com'e' e va decisa a mano (serve eventualmente spezzare la
-//     riga in piu' importi, cosa che questo script non fa mai).
+//
+//   1. Si cerca PRIMA un riscontro bancario pulito (un solo movimento, stesso documento/verso/
+//      importo — l'importo viene filtrato PRIMA di richiedere unicita', cosi' una fattura pagata in
+//      piu' rate di importo diverso non risulta "ambigua" solo perche' il documento ha piu' di un
+//      movimento collegato): se trovato, la riga viene RICONCILIATA (data spostata al pagamento
+//      reale, puntaNetIDMovimento agganciato) — sempre, indipendentemente da cosa risulta ancora
+//      aperto sul documento. Questo e' l'unico modo per non confondere una fattura con piu' rate
+//      ordinarie (una pagata, una no — gia' corretta dal vecchio codice) con una fattura davvero
+//      ristrutturata (trovato in review: Codex, 2026-10-21).
+//   2. Solo se NON si trova un riscontro bancario pulito, si controlla lo stato ESATTO della
+//      singola rata originale (IDDocumento+IDRata) oggi su PuntaNet — non "il documento ha ancora
+//      qualche rata aperta" (troppo impreciso: confonderebbe un'altra rata ordinaria ancora da
+//      pagare con una ristrutturazione), ma la rata SPECIFICA che questa riga rappresenta:
+//        - la rata esiste ancora ed e' Pagato=0 → prova diretta che e' ancora aperta: riportata a
+//          `pagato:false` (data invariata);
+//        - la rata esiste ancora ed e' Pagato=1 → combacia gia' con l'app, nessuna modifica;
+//        - la rata non esiste piu' (sostituita da PuntaNet con rate nuove) → non c'e' modo di
+//          sapere con certezza cosa e' successo a questo importo: nessuna modifica, segnalata come
+//          AMBIGUA per revisione manuale (es. C.I. Coperture).
+//
+// Esclude dai movimenti candidati anche quelli gia' in coda in bozzaImportPuntaNet (non solo quelli
+// gia' in transactions): altrimenti questo script potrebbe agganciare un movimento gia' proposto in
+// bozza, e una successiva conferma manuale di quella bozza creerebbe un duplicato (trovato in
+// review: Codex, 2026-10-21). Valida anche l'anno della data di riconciliazione (stesso controllo
+// anti-corruzione di importaPuntaNet.mjs) prima di scriverla.
+//
 // Non tocca MAI importo, categoria, progetto — solo pagato/date/puntaNetIDMovimento/puntaNetIDRata.
 //
 // Default: DRY-RUN, nessuna scrittura, solo un report di quante righe verrebbero toccate.
@@ -36,6 +52,8 @@ const SQLCMD = String.raw`C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\
 const INSTANCE = String.raw`localhost\SQLEXPRESS`;
 const DB_IMPRESA = 'GC_Impresa2_RO';
 const DATA_INIZIO = '2026-01-01';
+const ANNO_MIN = Number(DATA_INIZIO.slice(0, 4));
+const ANNO_MAX = new Date().getUTCFullYear() + 1;
 
 const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV\35_APP GV ECOSISTEM\04-GV GestioneFINANZIARIA\DATI SALVATI`;
 const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico.gvcf');
@@ -60,6 +78,10 @@ function importoLordoTx(t) {
   return (t.amount || 0) * (1 + vat / 100);
 }
 function importoMovimento(mv) { return mv.ImportoE > 0 ? mv.ImportoE : mv.ImportoU; }
+function dataPlausibile(dataISO) {
+  const anno = Number(dataISO.slice(0, 4));
+  return Number.isFinite(anno) && anno >= ANNO_MIN && anno <= ANNO_MAX;
+}
 
 console.log(`=== Correggi data pagamento fatture (${SCRIVI ? 'SCRITTURA' : 'dry-run'}) ===\n`);
 
@@ -81,10 +103,24 @@ if (oreDalBackup > 20) {
 }
 console.log(`Backup PuntaNet piu' recente ripristinato risale a ${Math.round(oreDalBackup)} ore fa — procedo.\n`);
 
-console.log('--- Scadenze aperte OGGI (qualunque rata, per documento) ---');
-const scadenzeAperte = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT d.IDDocumento, ds.IDRata FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento WHERE ds.Pagato = 0 AND d.Tipo IN (0,1,2,3) AND ds.[Data Rata] >= '${DATA_INIZIO}' FOR JSON PATH`);
-const scadenzeAperteDocIds = new Set(scadenzeAperte.map(s => s.IDDocumento));
-console.log(`Documenti con almeno una rata ancora aperta: ${scadenzeAperteDocIds.size}\n`);
+const gvData = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
+
+// Righe candidate: scritte come scadenza, gia' marcate pagate, mai riconciliate dal nuovo codice.
+function candidate(transactions) {
+  return transactions.filter(t => t.pagato === true && t.puntaNetIDDocumento != null && t.puntaNetIDRata != null && t.puntaNetIDMovimento == null);
+}
+const idDocumentiCoinvolti = [...new Set(candidate(gvData.transactions).map(t => t.puntaNetIDDocumento))];
+console.log(`Righe candidate (pagato:true, mai riconciliate): ${candidate(gvData.transactions).length} su ${idDocumentiCoinvolti.length} documenti.\n`);
+
+if (idDocumentiCoinvolti.length === 0) {
+  console.log('Nulla da controllare — nessuna riga candidata.');
+  process.exit(0);
+}
+
+console.log('--- Stato ESATTO di ogni rata (non solo "qualche rata aperta") per i documenti coinvolti ---');
+const scadenzeTutte = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT ds.IDDocumento, ds.IDRata, ds.Pagato FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento WHERE d.Tipo IN (0,1,2,3) AND ds.IDDocumento IN (${idDocumentiCoinvolti.join(',')}) FOR JSON PATH`);
+const statoRata = new Map(scadenzeTutte.map(s => [`${s.IDDocumento}|${s.IDRata}`, s.Pagato]));
+console.log(`Rate trovate su PuntaNet per questi documenti: ${scadenzeTutte.length}\n`);
 
 console.log('--- Movimenti bancari (Conti Movimenti), per riconciliazione ---');
 const movimenti = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT IDMovimento, Data, IDDocumento, IDRata, ImportoE, ImportoU FROM [Conti Movimenti] WHERE Data >= '${DATA_INIZIO}' AND (ImportoE > 0 OR ImportoU > 0) FOR JSON PATH`);
@@ -92,60 +128,77 @@ console.log(`Movimenti trovati: ${movimenti.length}\n`);
 
 // Calcola gli aggiornamenti da fare su un dato array di transazioni (usata sia per l'anteprima
 // dry-run sul primo read, sia — se --scrivi — su una rilettura fresca subito prima di scrivere).
-function calcolaAggiornamenti(transactions) {
+function calcolaAggiornamenti(transactions, bozzaImportPuntaNet) {
   const esistentiKeyMovimento = new Set();
   for (const t of transactions) if (t.puntaNetIDMovimento != null) esistentiKeyMovimento.add(t.puntaNetIDMovimento);
+  // Movimenti gia' proposti in bozza (in attesa di conferma manuale in app): escluderli, altrimenti
+  // questo script potrebbe agganciarli qui E lasciarli anche in bozza, creando un doppione quando
+  // la bozza viene poi confermata (trovato in review: Codex, 2026-10-21).
+  for (const b of (bozzaImportPuntaNet || [])) {
+    if (b._puntaNetKey?.startsWith('mov:')) esistentiKeyMovimento.add(Number(b._puntaNetKey.slice(4)));
+  }
 
-  const riconciliati = []; // { id, azione: 'riconciliata', date, puntaNetIDMovimento, puntaNetIDRata }
-  const riportatiAperti = []; // { id, azione: 'riportata a non pagata', ... }
-  const ambigui = []; // solo per il report — nessuna modifica
+  const riconciliati = [];
+  const riportatiAperti = [];
+  const ambigui = [];
   const movimentiUsati = new Set();
 
-  for (const t of transactions) {
-    if (t.pagato !== true || t.puntaNetIDDocumento == null || t.puntaNetIDRata == null || t.puntaNetIDMovimento != null) continue;
-
-    if (scadenzeAperteDocIds.has(t.puntaNetIDDocumento)) {
-      riportatiAperti.push({ id: t.id, idDocumento: t.puntaNetIDDocumento, date: t.date, amount: importoLordoTx(t), description: t.description });
-      continue;
-    }
-
+  for (const t of candidate(transactions)) {
+    const importoAtteso = importoLordoTx(t);
+    // 1. Riscontro bancario: filtra PRIMA per importo, poi richiede unicita' — cosi' una fattura
+    // con piu' movimenti collegati allo stesso documento ma importi diversi non risulta ambigua
+    // solo perche' ce ne sono piu' di uno (trovato in review: Codex, 2026-10-21). Nessun vincolo
+    // sulla data rispetto alla scadenza: un pagamento anticipato e' legittimo (trovato in review:
+    // Codex, 2026-10-21) — la plausibilita' della data si controlla a parte, sotto.
     const candidati = movimenti.filter(mv =>
       mv.IDDocumento === t.puntaNetIDDocumento
       && !esistentiKeyMovimento.has(mv.IDMovimento)
       && !movimentiUsati.has(mv.IDMovimento)
       && ((t.type === 'INCOME' && mv.ImportoE > 0) || (t.type === 'EXPENSE' && mv.ImportoU > 0))
-      && mv.Data.slice(0, 10) >= t.date
+      && Math.abs(importoMovimento(mv) - importoAtteso) < 0.5
     );
-    const match = candidati.length === 1 && Math.abs(importoMovimento(candidati[0]) - importoLordoTx(t)) < 0.5 ? candidati[0] : null;
 
-    if (match) {
+    if (candidati.length === 1 && dataPlausibile(candidati[0].Data.slice(0, 10))) {
+      const match = candidati[0];
       movimentiUsati.add(match.IDMovimento);
       riconciliati.push({
-        id: t.id, idDocumento: t.puntaNetIDDocumento, amount: importoLordoTx(t), description: t.description,
+        id: t.id, idDocumento: t.puntaNetIDDocumento, amount: importoAtteso, description: t.description,
         dataVecchia: t.date, dataNuova: match.Data.slice(0, 10),
         puntaNetIDMovimento: match.IDMovimento, puntaNetIDRata: match.IDRata ?? t.puntaNetIDRata,
       });
+      continue;
+    }
+
+    // 2. Nessun riscontro bancario pulito: guarda lo stato ESATTO della rata originale (non
+    // l'aggregato per documento, che confonderebbe un'altra rata ordinaria ancora da pagare con una
+    // ristrutturazione — trovato in review: Codex, 2026-10-21).
+    const pagatoOraSuPuntaNet = statoRata.get(`${t.puntaNetIDDocumento}|${t.puntaNetIDRata}`);
+    if (pagatoOraSuPuntaNet === 0) {
+      riportatiAperti.push({ id: t.id, idDocumento: t.puntaNetIDDocumento, date: t.date, amount: importoAtteso, description: t.description });
+    } else if (pagatoOraSuPuntaNet === 1) {
+      continue; // gia' corretto cosi', nessuna modifica necessaria
     } else {
-      ambigui.push({ id: t.id, idDocumento: t.puntaNetIDDocumento, date: t.date, amount: importoLordoTx(t), description: t.description, candidati: candidati.length });
+      // la rata non esiste piu' su PuntaNet (sostituita da rate nuove) — non si puo' stabilire con
+      // certezza cosa sia successo a questo importo specifico: nessuna modifica, solo segnalazione.
+      ambigui.push({ id: t.id, idDocumento: t.puntaNetIDDocumento, date: t.date, amount: importoAtteso, description: t.description, candidatiBancari: candidati.length });
     }
   }
   return { riconciliati, riportatiAperti, ambigui };
 }
 
-const gvData = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
-const { riconciliati, riportatiAperti, ambigui } = calcolaAggiornamenti(gvData.transactions);
+const { riconciliati, riportatiAperti, ambigui } = calcolaAggiornamenti(gvData.transactions, gvData.bozzaImportPuntaNet);
 
 console.log(`Fatture da RICONCILIARE (data spostata al pagamento reale): ${riconciliati.length}`);
 for (const r of riconciliati.sort((a, b) => b.amount - a.amount)) {
   console.log(`  [${r.id?.slice(0, 8)}] ${r.dataVecchia} → ${r.dataNuova} — ${r.amount.toFixed(2)} € — "${r.description}" (IDDocumento ${r.idDocumento})`);
 }
-console.log(`\nFatture da RIPORTARE a "non pagata" (documento ha ancora rate aperte, marcata pagata per errore): ${riportatiAperti.length}`);
+console.log(`\nFatture da RIPORTARE a "non pagata" (questa rata esatta risulta ancora Pagato=0 su PuntaNet oggi): ${riportatiAperti.length}`);
 for (const r of riportatiAperti.sort((a, b) => b.amount - a.amount)) {
   console.log(`  [${r.id?.slice(0, 8)}] ${r.date} — ${r.amount.toFixed(2)} € — "${r.description}" (IDDocumento ${r.idDocumento})`);
 }
-console.log(`\nFatture AMBIGUE (documento chiuso ma nessun riscontro bancario pulito — da decidere a mano, NESSUNA modifica): ${ambigui.length}`);
+console.log(`\nFatture AMBIGUE (la rata originale non esiste piu' su PuntaNet, nessun riscontro bancario pulito — da decidere a mano, NESSUNA modifica): ${ambigui.length}`);
 for (const r of ambigui.sort((a, b) => b.amount - a.amount)) {
-  console.log(`  [${r.id?.slice(0, 8)}] ${r.date} — ${r.amount.toFixed(2)} € — "${r.description}" (IDDocumento ${r.idDocumento}, ${r.candidati} movimenti candidati)`);
+  console.log(`  [${r.id?.slice(0, 8)}] ${r.date} — ${r.amount.toFixed(2)} € — "${r.description}" (IDDocumento ${r.idDocumento}, ${r.candidatiBancari} movimenti candidati per importo)`);
 }
 
 if (!SCRIVI) {
@@ -166,7 +219,7 @@ fs.copyFileSync(GVCF_PATH, backupPath);
 // Rilettura del file AL MOMENTO della scrittura (stessa convenzione degli altri script): applica
 // gli aggiornamenti sulla versione piu' recente invece di sovrascriverla alla cieca.
 const gvDataFresh = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
-const fresco = calcolaAggiornamenti(gvDataFresh.transactions);
+const fresco = calcolaAggiornamenti(gvDataFresh.transactions, gvDataFresh.bozzaImportPuntaNet);
 const riconciliatiPerId = new Map(fresco.riconciliati.map(r => [r.id, r]));
 const riportatiPerId = new Set(fresco.riportatiAperti.map(r => r.id));
 
