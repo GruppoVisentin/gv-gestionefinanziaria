@@ -356,6 +356,32 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
     return transactionTotal;
   };
 
+  // Quota del consuntivo di un mese/anno relativa a fatture PuntaNet ricevute/emesse ma non
+  // ancora pagate/incassate (campo `pagato: false`) — sono gia' incluse nel totale sopra (dato
+  // fiscale certo per competenza), ma non sono ancora uscite dal conto: questo sotto-totale serve
+  // solo a far vedere "di cui X da pagare", per riconciliare col flusso di cassa reale.
+  const getMonthlyUnpaidTotal = (monthIndex: number) => {
+    return expenseTransactions
+      .filter(t => {
+        const tDate = parseUTCDate(t.date);
+        return (
+          !t.isForecast &&
+          t.pagato === false &&
+          t.ceType !== 'ammortamento' &&
+          tDate.getUTCMonth() === monthIndex &&
+          tDate.getUTCFullYear() === currentYear &&
+          (fixedCategories.includes(t.category) || variableCategories.includes(t.category))
+        );
+      })
+      .reduce((sum, t) => sum + getGrossAmount(t), 0);
+  };
+
+  const getGrandAnnualUnpaidTotal = () => {
+    let total = 0;
+    for (let m = 0; m < 12; m++) total += getMonthlyUnpaidTotal(m);
+    return total;
+  };
+
   const getCategoryAnnualTotal = (category: string, isForecast: boolean) => {
     let total = expenseTransactions.filter(t => {
       const tDate = parseUTCDate(t.date);
@@ -1482,11 +1508,11 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                     <div className="flex items-center gap-1 mb-1"><span className="font-mono font-bold text-rose-700 text-[11px]">{CURRENCY_FORMATTER.format(actualSum)}</span><button onClick={(e) => { e.stopPropagation(); setBreakdownView({ category, monthIndex: mIdx }); }} className="text-rose-400 hover:text-rose-700 transition-colors p-0.5"><ListFilter size={10} /></button></div>
                                                     {actuals.map(t => (
                                                         <div key={t.id} className="group/item flex items-center justify-center w-full relative min-h-[14px]">
-                                                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.sourceRef ? 'bg-blue-400' : 'bg-rose-400'}`}
-                                                                 title={t.sourceRef ?? undefined} />
+                                                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.pagato === false ? 'bg-amber-400' : t.sourceRef ? 'bg-blue-400' : 'bg-rose-400'}`}
+                                                                 title={t.pagato === false ? 'Fattura non ancora pagata' : t.sourceRef ?? undefined} />
                                                             {(isInterestCategory(category) || isPrincipalCategory(category)) && <Landmark size={8} className="text-slate-400 ml-1 shrink-0" />}
-                                                            <span 
-                                                              className={`text-[8px] font-bold ml-1 truncate max-w-[80px] leading-none ${t.sourceRef ? 'text-blue-500' : 'text-slate-500'}`}
+                                                            <span
+                                                              className={`text-[8px] font-bold ml-1 truncate max-w-[80px] leading-none ${t.pagato === false ? 'text-amber-600' : t.sourceRef ? 'text-blue-500' : 'text-slate-500'}`}
                                                               title={t.description}
                                                             >
                                                               {getSupplierName(t)}
@@ -1679,10 +1705,10 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
                                                     <div className="flex items-center gap-1 mb-1"><span className="font-mono font-bold text-violet-700 text-[11px]">{CURRENCY_FORMATTER.format(actualSum)}</span><button onClick={(e) => { e.stopPropagation(); setBreakdownView({ category, monthIndex: mIdx }); }} className="text-violet-400 hover:text-violet-700 transition-colors p-0.5"><ListFilter size={10} /></button></div>
                                                     {actuals.map(t => (
                                                         <div key={t.id} className="group/item flex items-center justify-center w-full relative min-h-[14px]">
-                                                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.sourceRef ? 'bg-blue-400' : 'bg-violet-400'}`}
-                                                                 title={t.sourceRef ?? undefined} />
-                                                            <span 
-                                                              className={`text-[8px] font-bold ml-1 truncate max-w-[80px] leading-none ${t.sourceRef ? 'text-blue-500' : 'text-slate-500'}`}
+                                                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.pagato === false ? 'bg-amber-400' : t.sourceRef ? 'bg-blue-400' : 'bg-violet-400'}`}
+                                                                 title={t.pagato === false ? 'Fattura non ancora pagata' : t.sourceRef ?? undefined} />
+                                                            <span
+                                                              className={`text-[8px] font-bold ml-1 truncate max-w-[80px] leading-none ${t.pagato === false ? 'text-amber-600' : t.sourceRef ? 'text-blue-500' : 'text-slate-500'}`}
                                                               title={t.description}
                                                             >
                                                               {getSupplierName(t)}
@@ -1751,15 +1777,30 @@ const ExpenseTimeline: React.FC<ExpenseTimelineProps> = ({
               {months.map((_, mIdx) => {
                 const totalForecast = getMonthlyTotal(mIdx, true);
                 const totalActual = getMonthlyTotal(mIdx, false);
+                const nonPagato = getMonthlyUnpaidTotal(mIdx);
                 return (
                   <React.Fragment key={`total-${mIdx}`}>
                     <td className={`px-1 py-4 text-center border-r border-rose-200 text-slate-600 font-mono text-[11px] bg-slate-50 backdrop-blur-sm ${COL_SUB_WIDTH}`}>{totalForecast > 0 ? CURRENCY_FORMATTER.format(totalForecast) : ''}</td>
-                    <td className={`px-1 py-4 text-center border-r border-rose-300 text-slate-800 font-mono text-[11px] bg-slate-200 backdrop-blur-sm ${COL_SUB_WIDTH}`}>{totalActual > 0 ? CURRENCY_FORMATTER.format(totalActual) : ''}</td>
+                    <td className={`px-1 py-4 text-center border-r border-rose-300 text-slate-800 font-mono text-[11px] bg-slate-200 backdrop-blur-sm ${COL_SUB_WIDTH}`}>
+                      {totalActual > 0 ? CURRENCY_FORMATTER.format(totalActual) : ''}
+                      {nonPagato > 0 && (
+                        <div className="text-[8px] font-bold text-amber-600 normal-case leading-tight mt-0.5" title="Fatture PuntaNet ricevute/emesse ma non ancora pagate/incassate — gia' incluse nel totale, non ancora uscite dal conto">
+                          di cui {CURRENCY_FORMATTER.format(nonPagato)} da pagare
+                        </div>
+                      )}
+                    </td>
                   </React.Fragment>
                 );
               })}
               <td className={`px-2 py-4 text-center border-l-2 border-rose-300 border-r border-rose-200 text-rose-600 font-mono text-xs bg-rose-200 font-bold sticky right-[120px] z-40 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>{CURRENCY_FORMATTER.format(getGrandAnnualTotal(true))}</td>
-              <td className={`px-2 py-4 text-center border-r border-rose-300 text-rose-800 font-mono text-xs bg-rose-100 font-bold sticky right-0 z-40 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>{CURRENCY_FORMATTER.format(getGrandAnnualTotal(false))}</td>
+              <td className={`px-2 py-4 text-center border-r border-rose-300 text-rose-800 font-mono text-xs bg-rose-100 font-bold sticky right-0 z-40 shadow-[-4px_0_4px_-2px_rgba(0,0,0,0.05)] ${COL_SUMMARY_WIDTH}`}>
+                {CURRENCY_FORMATTER.format(getGrandAnnualTotal(false))}
+                {getGrandAnnualUnpaidTotal() > 0 && (
+                  <div className="text-[8px] font-bold text-amber-700 normal-case leading-tight mt-0.5">
+                    di cui {CURRENCY_FORMATTER.format(getGrandAnnualUnpaidTotal())} da pagare
+                  </div>
+                )}
+              </td>
             </tr>
           </tbody>
         </table>
