@@ -9,8 +9,10 @@
 //
 // L'Excel usa nomi di categoria "vecchi" (es. "NOLEGGI"), l'app li ha rinominati e in alcuni casi
 // SPLITTATI in due categorie (es. RATE E INTERESSI FINANZIAMENTI → Interessi Passivi + Quota
-// Capitale). La mappatura sotto e' presa dai commenti "era: ..." in constants.ts — dove non c'e'
-// un commento esplicito la mappatura e' dedotta per nome e segnalata come tale nel report.
+// Capitale). La mappatura sotto e' presa da CATEGORY_MIGRATION_MAP in constants.ts (la stessa usata
+// dall'app per migrare dati vecchi) — dove un nome vecchio e' stato splittato in piu' categorie
+// nuove, o dove CATEGORY_MIGRATION_MAP non ha un target esplicito, la mappatura e' segnalata come
+// "incerta" nel report (trovato in review: Codex, 2026-10-21).
 //
 // Uso: npx tsx scripts/confrontaFlussoCassaExcel.mjs <percorso.xlsx> <mese1,mese2,...> [anno]
 //   mese: numero 1-12 (1=Gennaio)
@@ -19,6 +21,7 @@
 import fs from 'fs';
 import path from 'path';
 import XLSX from 'xlsx';
+import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants.ts';
 
 const [, , xlsxPathArg, mesiArg, annoArg] = process.argv;
 if (!xlsxPathArg || !mesiArg) {
@@ -26,59 +29,98 @@ if (!xlsxPathArg || !mesiArg) {
   process.exit(1);
 }
 const ANNO = annoArg ? Number(annoArg) : 2026;
-const MESI_RICHIESTI = mesiArg.split(',').map(s => Number(s.trim()) - 1); // 0-based
 
 const NOMI_MESE = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+
+// Valida i mesi richiesti (1-12): un numero fuori range o non numerico (es. un refuso "6,7," con
+// virgola finale) produceva in silenzio un mese sbagliato o un indice di colonna casuale invece di
+// un errore (trovato in review: Codex, 2026-10-21).
+const MESI_RICHIESTI = mesiArg.split(',').map(s => s.trim()).filter(s => s.length > 0).map(s => {
+  const n = Number(s);
+  if (!Number.isInteger(n) || n < 1 || n > 12) {
+    console.error(`✖ Mese non valido: "${s}". Usa numeri interi da 1 (Gennaio) a 12 (Dicembre), separati da virgola.`);
+    process.exit(1);
+  }
+  return n - 1; // 0-based
+});
+if (MESI_RICHIESTI.length === 0) {
+  console.error('✖ Nessun mese valido indicato.');
+  process.exit(1);
+}
 
 const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV\35_APP GV ECOSISTEM\04-GV GestioneFINANZIARIA\DATI SALVATI`;
 const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico.gvcf');
 
-// Excel (nome vecchio) → categorie app corrispondenti (nomi nuovi, da constants.ts). Dove l'Excel
-// aveva UNA voce e l'app l'ha splittata in piu' categorie, qui si sommano per tornare comparabili.
+// Excel (nome vecchio) → categorie app corrispondenti. Dove l'Excel aveva UNA voce e l'app l'ha
+// splittata in piu' categorie, qui si sommano per tornare comparabili. `incerta: true` segnala una
+// mappatura dedotta per nome o uno split non documentato esplicitamente in CATEGORY_MIGRATION_MAP —
+// da verificare a mano, non è detto che il confronto per quella riga sia affidabile.
 const MAPPATURA = {
-  'RIPARAZIONI MACCHINARI E ATTREZZATURE': ['[MEZZI] Riparazioni Macchinari Programmate', '[MEZZI] Riparazioni Macchinari Urgenti'],
-  'NUOVE ATTREZZATURE': ['[INVESTIMENTI] Acquisto Attrezzature e Macchinari'],
-  'TASSE': ['[FISCO] Tasse e Tributi Aziendali (IMU, TARI, ecc.)', '[CANTIERE] Oneri Comunali, Abaco e Occupazioni'], // mappatura INCERTA: "Oneri Comunali" e' una categoria nuova, non ha un "era:" esplicito in constants.ts
-  'SANZIONI': ['[STRAORDINARI] Sanzioni e Penali'],
-  'VERSAMENTO IVA': ['[FISCO] Versamento IVA'],
-  'RATE E INTERESSI FINANZIAMENTI': ['[FINANZA] Interessi Passivi Finanziamenti', '[FINANZA] Quota Capitale Rate Finanziamenti'],
-  'SPESE BANCARIE': ['[FINANZA] Commissioni e Bolli Bancari'], // mappatura DEDOTTA per nome, non "era:" esplicito
-  'ADDEBITO CARTE DI CREDITO': [], // NESSUNA mappatura trovata in constants.ts — da verificare a mano
-  'RITENUTE SU BONIFICI': ["[FISCO] Ritenute su Bonifici (versate)"],
-  'IMPREVISTI': ['[STRAORDINARI] Imprevisti Straordinari'],
-  'REVISIONE MACCHINARI': ['[MEZZI] Revisione Macchinari'],
-  "PUBBLICITA' E MARKETING": ['[MARKETING] Pubblicità e Marketing'],
-  'AFFITTI SEDI': ['[STRUTTURA] Affitti Sedi'],
-  'UTENZE SEDI': ['[STRUTTURA] Utenze Sedi', '[CANTIERE] Utenze Cantiere'], // mappatura INCERTA: Utenze Cantiere e' nuova
-  'CANCELLERIA': ['[STRUTTURA] Cancelleria e Materiali Ufficio'],
-  'SOFTWARE': ['[STRUTTURA] Software e Abbonamenti'],
-  'ASSICURAZIONE MEZZI E BOLLI': ['[MEZZI] Assicurazione Mezzi e Bolli'],
-  'ASSICURAZIONI GENERALI': ['[COMPLIANCE] Assicurazioni Generali'],
-  'CORSI DIPENDENTI': ['[COMPLIANCE] Corsi Dipendenti'],
-  'VISITE MEDICHE DIPENDENTI': ['[COMPLIANCE] Visite Mediche Dipendenti'],
-  'STIPENDI DIPENDENTI UFFICIO': ['[PERSONALE] Stipendi Dipendenti Ufficio'],
-  'CONTRIBUTI DIPENDENTI UFFICIO': ['[PERSONALE] Contributi Dipendenti Ufficio'],
-  'COLLABORATORI FISSI': ['[PERSONALE] Collaboratori Fissi'],
-  'CONSULENTI OPEX20': ['[CONSULENZE] Consulenti Fissi'],
-  'SOA E ISO': ['[CONSULENZE] SOA e ISO'],
-  'COMMERCIALISTA': ['[CONSULENZE] Commercialista'],
-  'VOLONTARIATO': ['[STRAORDINARI] Volontariato e Donazioni'],
-  'COMPENSO AMMINISTRATORI': ['[PERSONALE] Compenso Amministratori'],
-  'PRELIEVO UTILE SOCI + RITENUTA': ['[SOCI] Prelievo Utile Soci', '[SOCI] Ritenuta su Prelievo Soci'],
-  'CARBURANTI': ['[CANTIERE] Carburanti'],
-  'NOLEGGI': ['[CANTIERE] Noleggi Attrezzature e Mezzi'],
-  'ASSICURAZIONE CANTIERI': ['[CANTIERE] Assicurazione Cantieri'],
-  "RITENUTE D'ACCONTO SU PROFESSIONISTI": ["[FISCO] Ritenute d'Acconto su Professionisti"],
-  'PRANZI': ['[CANTIERE] Pranzi e Trasferte Cantiere'],
-  'RIFIUTI E MACERIE': ['[CANTIERE] Rifiuti e Macerie'],
-  'STIPENDI DIPENDENTI OPERATIVI': ['[PERSONALE] Stipendi Dipendenti Operativi'],
-  'CONTRIBUTI DIPENDENTI OPERATIVI': ['[PERSONALE] Contributi Dipendenti Operativi'],
-  'SUBAPPALTI MANODOPERA': ['[PERSONALE] Subappalti Manodopera'],
-  'FORNITORI MATERIALI': ['[FORNITORI] Fornitori Materiali'],
-  'SUBAPPALTI SU CANTIERI': ['[FORNITORI] Subappalti su Cantieri'],
-  'PROFESSIONISTI ESTERNI': ['[CONSULENZE] Professionisti Esterni di Cantiere'],
-  'ACQUISIZIONE TERRENI o IMMOBILI': ['[INVESTIMENTI] Acquisto Terreni per Sviluppo', '[INVESTIMENTI] Acquisto Immobili per Sviluppo'],
+  'RIPARAZIONI MACCHINARI E ATTREZZATURE': { app: ['[MEZZI] Riparazioni Macchinari Programmate', '[MEZZI] Riparazioni Macchinari Urgenti'], incerta: true },
+  'NUOVE ATTREZZATURE': { app: ['[INVESTIMENTI] Acquisto Attrezzature e Macchinari'], incerta: false },
+  'TASSE': { app: ['[FISCO] Tasse e Tributi Aziendali (IMU, TARI, ecc.)', '[CANTIERE] Oneri Comunali, Abaco e Occupazioni'], incerta: true },
+  'SANZIONI': { app: ['[STRAORDINARI] Sanzioni e Penali'], incerta: false },
+  'VERSAMENTO IVA': { app: ['[FISCO] Versamento IVA'], incerta: false },
+  'RATE E INTERESSI FINANZIAMENTI': { app: ['[FINANZA] Interessi Passivi Finanziamenti', '[FINANZA] Quota Capitale Rate Finanziamenti'], incerta: true },
+  'SPESE BANCARIE': { app: ['[FINANZA] Commissioni e Bolli Bancari'], incerta: false },
+  'ADDEBITO CARTE DI CREDITO': { app: [], incerta: true }, // NESSUNA mappatura trovata ne' in CATEGORY_MIGRATION_MAP ne' in MAPPA_USCITE di ImportStoricoModal.tsx
+  'RITENUTE SU BONIFICI': { app: ["[FISCO] Ritenute su Bonifici (versate)"], incerta: false },
+  'IMPREVISTI': { app: ['[STRAORDINARI] Imprevisti Straordinari'], incerta: false },
+  'REVISIONE MACCHINARI': { app: ['[MEZZI] Revisione Macchinari'], incerta: false },
+  "PUBBLICITA' E MARKETING": { app: ['[MARKETING] Pubblicità e Marketing'], incerta: false },
+  'AFFITTI SEDI': { app: ['[STRUTTURA] Affitti Sedi'], incerta: false },
+  'UTENZE SEDI': { app: ['[STRUTTURA] Utenze Sedi', '[CANTIERE] Utenze Cantiere'], incerta: true },
+  'CANCELLERIA': { app: ['[STRUTTURA] Cancelleria e Materiali Ufficio'], incerta: false },
+  'SOFTWARE': { app: ['[STRUTTURA] Software e Abbonamenti'], incerta: false },
+  'ASSICURAZIONE MEZZI E BOLLI': { app: ['[MEZZI] Assicurazione Mezzi e Bolli'], incerta: false },
+  'ASSICURAZIONI GENERALI': { app: ['[COMPLIANCE] Assicurazioni Generali'], incerta: false },
+  'CORSI DIPENDENTI': { app: ['[COMPLIANCE] Corsi Dipendenti'], incerta: false },
+  'VISITE MEDICHE DIPENDENTI': { app: ['[COMPLIANCE] Visite Mediche Dipendenti'], incerta: false },
+  'STIPENDI DIPENDENTI UFFICIO': { app: ['[PERSONALE] Stipendi Dipendenti Ufficio'], incerta: false },
+  'CONTRIBUTI DIPENDENTI UFFICIO': { app: ['[PERSONALE] Contributi Dipendenti Ufficio'], incerta: false },
+  'COLLABORATORI FISSI': { app: ['[PERSONALE] Collaboratori Fissi'], incerta: false },
+  'CONSULENTI OPEX20': { app: ['[CONSULENZE] Consulenti Fissi'], incerta: false },
+  'SOA E ISO': { app: ['[CONSULENZE] SOA e ISO'], incerta: false },
+  'COMMERCIALISTA': { app: ['[CONSULENZE] Commercialista'], incerta: false },
+  'VOLONTARIATO': { app: ['[STRAORDINARI] Volontariato e Donazioni'], incerta: false },
+  'COMPENSO AMMINISTRATORI': { app: ['[PERSONALE] Compenso Amministratori'], incerta: false },
+  'PRELIEVO UTILE SOCI + RITENUTA': { app: ['[SOCI] Prelievo Utile Soci', '[SOCI] Ritenuta su Prelievo Soci'], incerta: true },
+  'CARBURANTI': { app: ['[CANTIERE] Carburanti'], incerta: false },
+  'NOLEGGI': { app: ['[CANTIERE] Noleggi Attrezzature e Mezzi'], incerta: false },
+  'ASSICURAZIONE CANTIERI': { app: ['[CANTIERE] Assicurazione Cantieri'], incerta: false },
+  "RITENUTE D'ACCONTO SU PROFESSIONISTI": { app: ["[FISCO] Ritenute d'Acconto su Professionisti"], incerta: false },
+  'PRANZI': { app: ['[CANTIERE] Pranzi e Trasferte Cantiere'], incerta: false },
+  'RIFIUTI E MACERIE': { app: ['[CANTIERE] Rifiuti e Macerie'], incerta: false },
+  'STIPENDI DIPENDENTI OPERATIVI': { app: ['[PERSONALE] Stipendi Dipendenti Operativi'], incerta: false },
+  'CONTRIBUTI DIPENDENTI OPERATIVI': { app: ['[PERSONALE] Contributi Dipendenti Operativi'], incerta: false },
+  'SUBAPPALTI MANODOPERA': { app: ['[PERSONALE] Subappalti Manodopera'], incerta: false },
+  'FORNITORI MATERIALI': { app: ['[FORNITORI] Fornitori Materiali'], incerta: false },
+  'SUBAPPALTI SU CANTIERI': { app: ['[FORNITORI] Subappalti su Cantieri'], incerta: false },
+  'PROFESSIONISTI ESTERNI': { app: ['[CONSULENZE] Professionisti Esterni di Cantiere'], incerta: false },
+  'ACQUISIZIONE TERRENI o IMMOBILI': { app: ['[INVESTIMENTI] Acquisto Terreni per Sviluppo', '[INVESTIMENTI] Acquisto Immobili per Sviluppo'], incerta: true },
+  "NUOVA SOCIETA'": { app: ['[INVESTIMENTI] Investimento in Nuova Società'], incerta: false }, // mancava: trovato in review, Codex 2026-10-21
 };
+
+// Righe di riepilogo del foglio — NON sono categorie di costo, sommarle raddoppierebbe il totale
+// (stessa lista di ImportStoricoModal.tsx, ESCLUDI_USCITE — trovato in review: Codex, 2026-10-21).
+const ESCLUDI_RIGHE = new Set(['TOTALE PAGATO', 'SALDO MESE', 'FLUSSO NETTO', 'TOTALE', 'TOTALE USCITE', 'NOTE']);
+
+// Converte sia numeri che importi salvati come testo (es. "1.234,56" incollato da un'altra cella) —
+// stessa logica di ImportStoricoModal.tsx, safeParseFloat (trovato in review: Codex, 2026-10-21).
+function safeParseFloat(val) {
+  if (typeof val === 'number') return Number.isFinite(val) ? val : NaN;
+  if (typeof val !== 'string') return NaN;
+  let str = val.trim();
+  if (str === '-' || str === '') return 0;
+  if (str.includes(',') && str.includes('.')) {
+    const lastComma = str.lastIndexOf(',');
+    const lastDot = str.lastIndexOf('.');
+    str = lastComma > lastDot ? str.replace(/\./g, '').replace(',', '.') : str.replace(/,/g, '');
+  } else if (str.includes(',')) {
+    str = (str.split(',').length > 2 || str.match(/,\d{3}$/)) ? str.replace(/,/g, '') : str.replace(',', '.');
+  }
+  return parseFloat(str.replace(/[^\d.-]/g, ''));
+}
 
 function importoLordo(t) {
   if (typeof t.grossAmount === 'number') return t.grossAmount;
@@ -86,17 +128,77 @@ function importoLordo(t) {
   return (t.amount || 0) * (1 + vat / 100);
 }
 
+// Stessi fornitori/pattern di App.tsx, migrateBackupData — riclassificazione retroattiva di
+// transazioni descritte come "subappalti manodopera"/"fornitori materiali" che in realta' sono
+// subappalti su cantieri o acquisizioni terreni (trovato in review: Codex, 2026-10-21: senza
+// questa normalizzazione il confronto per categoria puo' discostarsi da quello che l'app mostra
+// davvero, anche se il totale complessivo non cambia).
+const SUB_CANTIERI_SUPPLIERS = [
+  'Munaretto', 'Solar system', 'Lattoneria Rossanese', 'Asolo Pavimenti', 'il fabbro srl', 'Nart Sonia',
+  'Decorgesso srls', 'Galliazzo Ivano', 'Visentin & Gasparetto', 'Geosolar', 'Agostini Sergio',
+  'Aeerre costruzioni', 'Conte Ambienti Esterni', 'Falegnameria Trentin', 'Visentin Francesco',
+  'Dkh srls', 'Masaro Fabio', 'Roccon Silvio', 'Pozzobon Serramenti', 'M.N. costruzioni srls',
+  'Edilmuli di zogaj', 'Timexpert', 'Termoidraulica G.sc.', 'Cbm martignago', 'Tm toniolo',
+  'Ganeo adriano', 'Bs impianti', 'Colordesign', 'E.p. ponteggi', 'Az. Florovivaistica Giandino',
+  'Bonetto', 'Miftaroski Fikmet', 'Metope', 'Tm toniolo massimo', 'Serramenti Ruffato',
+  'Ikon tecnology', 'Edilmonastier', 'Pedemontana Serramenti', 'Guritenco Igor', 'Soligo Damiano',
+  'Contarin', 'Dametto Simone', 'Dm Posa srls', 'Moro serrande', 'Cetos srl', 'Eurocostruzioni srls',
+  'Giuliano coperture srls', 'Nicola metal design', 'Libra serramenti', 'Paesaggi umbri consorzio',
+  'Sbrissa sebastiano giardini', 'Moretto scavi', 'Lillo Coperture', 'Alpac', 'Edile coperture',
+  'Pizzolato Jody', 'Edillux di Abo Ghazalah', 'Visentin Costruzioni Srl', 'Storgato',
+].map(s => s.toLowerCase());
+
+function categoriaNormalizzata(t) {
+  let categoria = t.category;
+  const descLower = (t.description || '').toLowerCase();
+
+  if (categoria === '[PERSONALE] Subappalti Manodopera' || categoria === '[CANTIERE] Subappalti Manodopera' || categoria === 'SUBAPPALTI MANODOPERA') {
+    const matchesSupplier = SUB_CANTIERI_SUPPLIERS.some(sup => descLower.includes(sup));
+    const matchesPhrase = /sub.*cantier/i.test(descLower) || descLower.includes('sub appalti su cantieri') || descLower.includes('subappalti su cantieri');
+    if (matchesSupplier || matchesPhrase) categoria = '[FORNITORI] Subappalti su Cantieri';
+  }
+  if (categoria === '[FORNITORI] Fornitori Materiali' || categoria === '[CANTIERE] Fornitori Materiali' || categoria === 'FORNITORI MATERIALI') {
+    if (/terreno|terreni/i.test(descLower) || /acquisizione.*terren/i.test(descLower) || /acquisto.*terren/i.test(descLower)) {
+      categoria = '[INVESTIMENTI] Acquisto Terreni per Sviluppo';
+    }
+  }
+  if (categoria && CATEGORY_MIGRATION_MAP[categoria]) categoria = CATEGORY_MIGRATION_MAP[categoria];
+  return categoria;
+}
+
 // --- Lato APP: somma per categoria, mese per mese ---
 const gvData = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
 console.log(`App: dati letti da ${GVCF_PATH} (timestamp file: ${gvData.timestamp || '(assente)'})`);
+
+// Stessa logica di App.tsx, migrateBackupData: esclude le transazioni di sessioni di import
+// annullate (e le righe "Storico Excel" orfane, senza sessione attiva) — trovato in review: Codex,
+// 2026-10-21.
+const sessioniAnnullateIds = new Set((gvData.importSessions || []).filter(s => s.annullata).map(s => s.id));
+const esisteSessioneStoricoAttiva = (gvData.importSessions || []).some(s => !s.annullata && s.nomeFile && s.nomeFile.startsWith('Storico Excel'));
+function transazioneValida(t) {
+  if (t.importSessionId && sessioniAnnullateIds.has(t.importSessionId)) return false;
+  if (!t.importSessionId && t.sourceRef && t.sourceRef.startsWith('Storico Excel') && !esisteSessioneStoricoAttiva) return false;
+  return true;
+}
+
+// Come in App.tsx: usa le liste personalizzate nel file se presenti, altrimenti i default — stessa
+// fonte di diagnosticaScostamentoUscite.mjs (trovato in review: Codex, 2026-10-21: senza questo
+// filtro una categoria rimossa/non configurata finiva nel confronto anche se l'app la esclude dal
+// "TOTALE USCITE" mostrato).
+const fixedCategories = gvData.fixedCategories || [...FIXED_COST_CATEGORIES];
+const variableCategories = gvData.variableCategories || [...VARIABLE_COST_CATEGORIES];
+const categorieValide = new Set([...fixedCategories, ...variableCategories]);
 
 function appPerCategoria(meseIdx) {
   const mappa = new Map();
   for (const t of gvData.transactions) {
     if (t.type !== 'EXPENSE' || t.isForecast || t.ceType === 'ammortamento') continue;
+    if (!transazioneValida(t)) continue;
     const d = new Date(`${t.date}T00:00:00Z`);
     if (d.getUTCFullYear() !== ANNO || d.getUTCMonth() !== meseIdx) continue;
-    mappa.set(t.category, (mappa.get(t.category) || 0) + importoLordo(t));
+    const categoria = categoriaNormalizzata(t);
+    if (!categorieValide.has(categoria)) continue;
+    mappa.set(categoria, (mappa.get(categoria) || 0) + importoLordo(t));
   }
   return mappa;
 }
@@ -112,11 +214,14 @@ if (!ws) {
 const righe = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
 
 // Una riga e' una "categoria" (non un fornitore/dettaglio) se ogni parola e' tutta maiuscola,
-// a parte qualche connettivo italiano comune in minuscolo (es. "ACQUISIZIONE TERRENI o IMMOBILI").
+// a parte qualche connettivo italiano comune in minuscolo (es. "ACQUISIZIONE TERRENI o IMMOBILI"),
+// e non e' una riga di riepilogo del foglio (ESCLUDI_RIGHE).
 const CONNETTIVI = new Set(['o', 'e', 'di', 'su', 'per', 'a', 'da', 'in', 'il', 'la']);
 function eCategoria(valore) {
   if (typeof valore !== 'string') return false;
-  const parole = valore.trim().split(/\s+/);
+  const s = valore.trim();
+  if (ESCLUDI_RIGHE.has(s.toUpperCase())) return false;
+  const parole = s.split(/\s+/);
   let haParolaMaiuscola = false;
   for (const p of parole) {
     const pulita = p.replace(/[^\p{L}]/gu, '');
@@ -144,8 +249,8 @@ function excelPerCategoria(meseIdx) {
   for (let i = inizioUscite; i < fineUscite; i++) {
     const nome = righe[i]?.[0];
     if (!eCategoria(nome)) continue;
-    const v = righe[i]?.[colConsuntivoUscite];
-    if (typeof v === 'number') mappa.set(nome.trim(), v);
+    const v = safeParseFloat(righe[i]?.[colConsuntivoUscite]);
+    if (!Number.isNaN(v)) mappa.set(nome.trim(), v);
   }
   return mappa;
 }
@@ -155,21 +260,35 @@ for (const meseIdx of MESI_RICHIESTI) {
   const appCat = appPerCategoria(meseIdx);
   const excelCat = excelPerCategoria(meseIdx);
   const appCategorieUsate = new Set();
+  const excelCategorieUsate = new Set();
 
   console.log(`\n\n=== ${NOMI_MESE[meseIdx]} ${ANNO} — confronto categoria per categoria (consuntivo) ===`);
   const righeTabella = [];
-  for (const [catExcel, catsApp] of Object.entries(MAPPATURA)) {
+  for (const [catExcel, { app: catsApp, incerta }] of Object.entries(MAPPATURA)) {
+    if (!excelCat.has(catExcel) && catsApp.every(c => !appCat.has(c))) continue; // categoria assente da entrambi i lati questo mese
+    excelCategorieUsate.add(catExcel);
     const valExcel = excelCat.get(catExcel) || 0;
     let valApp = 0;
     for (const c of catsApp) { valApp += appCat.get(c) || 0; appCategorieUsate.add(c); }
     const delta = valApp - valExcel;
-    righeTabella.push({ catExcel, catsApp, valExcel, valApp, delta });
+    righeTabella.push({ catExcel, catsApp, incerta, valExcel, valApp, delta });
   }
   righeTabella.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   for (const r of righeTabella) {
     if (Math.abs(r.delta) < 1) continue;
-    const incerta = r.catsApp.length === 0 ? '  [NESSUNA MAPPATURA APP]' : (r.catsApp.length > 1 ? `  [=${r.catsApp.join(' + ')}]` : '');
-    console.log(`  Δ ${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(2).padStart(12)} €   app=${r.valApp.toFixed(2).padStart(12)}  excel=${r.valExcel.toFixed(2).padStart(12)}   ${r.catExcel}${incerta}`);
+    const dettaglio = r.catsApp.length === 0 ? '[NESSUNA MAPPATURA APP]' : (r.catsApp.length > 1 ? `[=${r.catsApp.join(' + ')}]` : '');
+    const avviso = r.incerta ? '  ⚠️ MAPPATURA INCERTA' : '';
+    console.log(`  Δ ${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(2).padStart(12)} €   app=${r.valApp.toFixed(2).padStart(12)}  excel=${r.valExcel.toFixed(2).padStart(12)}   ${r.catExcel} ${dettaglio}${avviso}`);
+  }
+
+  // Categorie Excel presenti nel foglio ma assenti da MAPPATURA — altrimenti scomparirebbero nel
+  // totale senza essere mai mostrate (trovato in review: Codex, 2026-10-21).
+  const excelNonMappate = [...excelCat.entries()].filter(([c]) => !excelCategorieUsate.has(c));
+  if (excelNonMappate.length > 0) {
+    console.log(`  Categorie EXCEL senza corrispondenza nella mappatura dello script (da aggiungere a MAPPATURA):`);
+    for (const [c, v] of excelNonMappate.sort((a, b) => b[1] - a[1])) {
+      console.log(`    ${v.toFixed(2).padStart(12)} €   ${c}`);
+    }
   }
 
   // Categorie APP presenti nel mese ma non coperte da nessuna mappatura sopra (costi "nuovi" rispetto all'Excel)
