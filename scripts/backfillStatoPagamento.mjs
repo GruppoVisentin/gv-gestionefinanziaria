@@ -56,17 +56,23 @@ console.log(`=== Backfill stato pagamento (${SCRIVI ? 'SCRITTURA' : 'dry-run'}) 
 // "pagata" per sbaglio e restrebbe cosi' per sempre (trovato in review: Codex, 2026-10-21; stesso
 // problema reale gia' scoperto il 2026-09-24 — 15 giorni di copia locale congelata). Meglio
 // fermarsi che rischiare un dato sbagliato permanente.
-const [storicoRestore] = runSql('msdb', `SET NOCOUNT ON; SELECT TOP 1 restore_date FROM msdb.dbo.restorehistory WHERE destination_database_name = '${DB_IMPRESA}' ORDER BY restore_date DESC FOR JSON PATH`);
-if (!storicoRestore?.restore_date) {
+//
+// Controlla l'eta' del BACKUP (backupset.backup_finish_date), non quella del ripristino
+// (restorehistory.restore_date): se PuntaNet smette di produrre backup nuovi ma
+// aggiornaCopiaLocale.ps1 continua a girare, ri-ripristina ogni giorno lo stesso .bak vecchio —
+// restore_date risulterebbe sempre "oggi" anche se il contenuto e' fermo (trovato in review:
+// Codex, 2026-10-21, sulla PR che introduceva il controllo basato su restore_date).
+const [storicoRestore] = runSql('msdb', `SET NOCOUNT ON; SELECT TOP 1 bs.backup_finish_date FROM msdb.dbo.restorehistory rh JOIN msdb.dbo.backupset bs ON bs.backup_set_id = rh.backup_set_id WHERE rh.destination_database_name = '${DB_IMPRESA}' ORDER BY rh.restore_date DESC FOR JSON PATH`);
+if (!storicoRestore?.backup_finish_date) {
   console.error(`\n✖ Nessun ripristino mai registrato per ${DB_IMPRESA} in msdb.dbo.restorehistory — non posso fidarmi della copia locale. Esegui prima scripts\\aggiornaCopiaLocale.ps1.`);
   process.exit(1);
 }
-const oreDaUltimoRipristino = (Date.now() - new Date(storicoRestore.restore_date).getTime()) / 3600000;
-if (oreDaUltimoRipristino > 20) {
-  console.error(`\n✖ La copia locale di PuntaNet (${DB_IMPRESA}) non viene ripristinata da ${Math.round(oreDaUltimoRipristino)} ore (ultimo ripristino: ${storicoRestore.restore_date}). Mi fermo: eseguire scripts\\aggiornaCopiaLocale.ps1 prima di questo backfill, altrimenti rischio di marcare "pagate" fatture che non lo sono.`);
+const oreDalBackup = (Date.now() - new Date(storicoRestore.backup_finish_date).getTime()) / 3600000;
+if (oreDalBackup > 20) {
+  console.error(`\n✖ Il backup PuntaNet piu' recente ripristinato su ${DB_IMPRESA} risale a ${Math.round(oreDalBackup)} ore fa (backup_finish_date: ${storicoRestore.backup_finish_date}) — anche se il ripristino locale gira regolarmente, il contenuto non e' aggiornato. Mi fermo: verificare che PuntaNet stia ancora producendo backup nuovi prima di questo backfill, altrimenti rischio di marcare "pagate" fatture che non lo sono.`);
   process.exit(1);
 }
-console.log(`Copia locale aggiornata ${Math.round(oreDaUltimoRipristino)} ore fa — procedo.\n`);
+console.log(`Backup PuntaNet piu' recente ripristinato risale a ${Math.round(oreDalBackup)} ore fa — procedo.\n`);
 
 console.log('--- Scadenze aperte OGGI (stessa query di importaPuntaNet.mjs) ---');
 const scadenzeAperte = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT d.IDDocumento, ds.IDRata FROM [Documenti Scadenze] ds JOIN Documenti d ON d.IDDocumento = ds.IDDocumento WHERE ds.Pagato = 0 AND d.Tipo IN (0,1,2,3) AND ds.[Data Rata] >= '${DATA_INIZIO}' FOR JSON PATH`);
