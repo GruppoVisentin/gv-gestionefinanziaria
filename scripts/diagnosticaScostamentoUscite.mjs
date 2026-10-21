@@ -33,9 +33,12 @@ const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico
 
 const ANNO = 2026;
 const NOMI_MESE = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
-// Da gennaio al mese corrente incluso (non solo giugno-settembre: vedi nota sopra).
-const meseCorrente = new Date().getUTCMonth();
-const MESI = NOMI_MESE.slice(0, meseCorrente + 1).map((nome, idx) => ({ idx, nome }));
+// Da gennaio al mese corrente incluso (non solo giugno-settembre: vedi nota sopra). Se lo script
+// viene eseguito in un anno successivo ad ANNO, quell'anno e' gia' tutto storico: copre tutti e 12
+// i mesi invece di fermarsi al mese corrente di ESECUZIONE (trovato in review: Codex, 2026-10-21).
+const oggi = new Date();
+const ultimoMeseDaCoprire = oggi.getUTCFullYear() === ANNO ? oggi.getUTCMonth() : 11;
+const MESI = NOMI_MESE.slice(0, ultimoMeseDaCoprire + 1).map((nome, idx) => ({ idx, nome }));
 
 function importoLordo(t) {
   if (typeof t.grossAmount === 'number') return t.grossAmount;
@@ -85,7 +88,10 @@ for (const mese of MESI) {
     perChiave.get(chiave).push(t);
   }
   const sospetti = [...perChiave.values()].filter(list => list.length > 1);
-  riepilogo.push({ nome: mese.nome, totale, nonPagato, duplicati: sospetti.length });
+  // Righe in eccesso per gruppo (list.length - 1), non il numero di gruppi: 3 righe identiche
+  // sono 2 duplicati, non 1 (trovato in review: Codex, 2026-10-21).
+  const righeInEccesso = sospetti.reduce((s, list) => s + (list.length - 1), 0);
+  riepilogo.push({ nome: mese.nome, totale, nonPagato, duplicati: righeInEccesso });
   if (sospetti.length > 0) {
     console.log(`  ⚠️  Possibili DUPLICATI (stessa data + stesso importo lordo):`);
     for (const list of sospetti) {
