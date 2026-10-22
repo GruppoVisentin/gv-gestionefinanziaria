@@ -35,6 +35,8 @@ const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico
 const BACKUP_DIR = path.join(NAS_DATI, 'BACKUP');
 
 const CATEGORIE_MANODOPERA = new Set(['[PERSONALE] Subappalti Manodopera', '[CANTIERE] Subappalti Manodopera', 'SUBAPPALTI MANODOPERA']);
+const CATEGORIA_NUOVA = '[FORNITORI] Subappalti su Cantieri';
+const TOLLERANZA_PREVISIONE = 0.5; // arrotondamenti, stessa tolleranza di importaPuntaNet.mjs
 
 function importoLordo(t) {
   if (typeof t.grossAmount === 'number') return t.grossAmount;
@@ -42,12 +44,43 @@ function importoLordo(t) {
   return (t.amount || 0) * (1 + vat / 100);
 }
 
+// Capienza residua di una previsione sulle transazioni ATTUALI del file, escludendo il consuntivo
+// che stiamo per ricollegare altrove (altrimenti la sua copertura verrebbe contata due volte).
+function residuoPrevisione(forecast, transactions, idDaEscludere) {
+  const totale = importoLordo(forecast);
+  const copertura = transactions
+    .filter(t => t.id !== idDaEscludere && t.type === forecast.type && !t.isForecast && (
+      t.linkedForecastId === forecast.id || (forecast.loanSourceId && t.loanSourceId === forecast.loanSourceId)
+    ))
+    .reduce((sum, t) => sum + importoLordo(t), 0);
+  return totale - copertura;
+}
+
+// Se un consuntivo gia' collegato a una previsione (linkedForecastId) cambia categoria, il
+// collegamento vecchio punterebbe a una previsione di una categoria diversa da quella ora corretta
+// — la previsione vecchia (Manodopera) risulterebbe "realizzata" da soldi che in realta' sono finiti
+// su un'altra categoria (Subappalti su Cantieri), falsando il confronto previsto-vs-reale per
+// categoria (Codex review PR #29, 2026-10-22). Le previsioni sono dati manuali dell'utente, mai
+// modificabili da uno script — quindi non si tocca la previsione: si cerca una previsione ESISTENTE
+// gia' nella nuova categoria con capienza residua sufficiente (stessa logica di
+// trovaLinkedForecastId in importaPuntaNet.mjs), altrimenti si scollega semplicemente il consuntivo
+// (undefined), lasciando la vecchia previsione tornare non realizzata come dovrebbe essere.
+function trovaNuovoLinkedForecastId(transactions, tipo, progetto, categoria, importo, idDaEscludere) {
+  const txProj = progetto || 'Generale';
+  const candidati = transactions
+    .filter(f => f.isForecast && f.type === tipo && (f.project || 'Generale') === txProj && f.category === categoria)
+    .map(f => ({ f, residuo: residuoPrevisione(f, transactions, idDaEscludere) }))
+    .filter(c => c.residuo >= importo - TOLLERANZA_PREVISIONE)
+    .sort((a, b) => a.residuo - b.residuo);
+  return candidati.length > 0 ? candidati[0].f.id : undefined;
+}
+
 function calcolaAggiornamenti(transactions) {
   const daCorreggere = [];
   for (const t of transactions) {
     if (t.type !== 'EXPENSE' || !CATEGORIE_MANODOPERA.has(t.category)) continue;
     if (!isSubappaltoSuCantiere(t.description || '')) continue;
-    daCorreggere.push({ id: t.id, date: t.date, amount: importoLordo(t), description: t.description, categoriaVecchia: t.category });
+    daCorreggere.push({ id: t.id, date: t.date, amount: importoLordo(t), description: t.description, categoriaVecchia: t.category, linkedForecastId: t.linkedForecastId });
   }
   return daCorreggere;
 }
@@ -67,6 +100,11 @@ for (const r of daCorreggere) {
 }
 for (const [desc, somma] of [...perFornitore.entries()].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${somma.toFixed(2).padStart(12)} €   ${desc}`);
+}
+
+const conPrevisioneCollegata = daCorreggere.filter(r => r.linkedForecastId);
+if (conPrevisioneCollegata.length > 0) {
+  console.log(`\n${conPrevisioneCollegata.length} di queste righe sono collegate a una previsione (linkedForecastId): verra' cercata una previsione gia' esistente nella nuova categoria con capienza residua, altrimenti il collegamento verra' rimosso (la previsione stessa non viene mai toccata).`);
 }
 
 if (!SCRIVI) {
@@ -90,11 +128,26 @@ const freschi = calcolaAggiornamenti(gvDataFresh.transactions);
 const perId = new Set(freschi.map(r => r.id));
 
 let applicati = 0;
+let riagganciati = 0;
+let scollegati = 0;
 for (const t of gvDataFresh.transactions) {
-  if (perId.has(t.id)) {
-    t.category = '[FORNITORI] Subappalti su Cantieri';
-    t.ceType = CATEGORY_TO_CE_TYPE[t.category] ?? t.ceType;
-    applicati++;
+  if (!perId.has(t.id)) continue;
+  t.category = CATEGORIA_NUOVA;
+  t.ceType = CATEGORY_TO_CE_TYPE[t.category] ?? t.ceType;
+  applicati++;
+
+  if (t.linkedForecastId) {
+    const forecastAttuale = gvDataFresh.transactions.find(f => f.id === t.linkedForecastId);
+    if (!forecastAttuale || forecastAttuale.category !== CATEGORIA_NUOVA) {
+      const nuovoId = trovaNuovoLinkedForecastId(gvDataFresh.transactions, t.type, t.project, CATEGORIA_NUOVA, importoLordo(t), t.id);
+      if (nuovoId) {
+        t.linkedForecastId = nuovoId;
+        riagganciati++;
+      } else {
+        delete t.linkedForecastId;
+        scollegati++;
+      }
+    }
   }
 }
 
@@ -104,4 +157,7 @@ const tmpPath = `${GVCF_PATH}.tmp_${process.pid}`;
 fs.writeFileSync(tmpPath, JSON.stringify(gvDataFresh, null, 2));
 fs.renameSync(tmpPath, GVCF_PATH);
 
-console.log(`\n✔ Corrette ${applicati} transazioni (rilette fresche al momento della scrittura). Backup pre-scrittura: ${backupPath}`);
+console.log(`\n✔ Corrette ${applicati} transazioni (rilette fresche al momento della scrittura).`);
+if (riagganciati > 0) console.log(`  Ricollegate a una previsione gia' esistente nella nuova categoria: ${riagganciati}`);
+if (scollegati > 0) console.log(`  Scollegate da previsione (nessuna previsione compatibile nella nuova categoria trovata): ${scollegati}`);
+console.log(`Backup pre-scrittura: ${backupPath}`);

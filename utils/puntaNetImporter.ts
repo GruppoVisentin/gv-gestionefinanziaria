@@ -961,13 +961,16 @@ export const normalizzaRagioneSociale = (s: string): string =>
     .join('');
 
 // "Termoidraulica G.sc." non compare mai nella ragione sociale reale ("G.SC. DI GATTO TARCISIO, SCREMIN
-// VASCO & C.") — corretto in "Gatto Tarcisio", frammento che invece combacia davvero.
+// VASCO & C.") — aggiunto "Gatto Tarcisio", frammento che invece combacia davvero. Tenuto anche il
+// vecchio alias: resta un preset UI valido (SUPPLIER_PRESETS in constants.ts) e potrebbe comparire
+// come descrizione in transazioni gia' esistenti — rimuoverlo farebbe regredire quei casi (Codex
+// review PR #29, 2026-10-22).
 export const SUBAPPALTI_SU_CANTIERI_SUPPLIERS = [
   'Munaretto', 'Solar system', 'Lattoneria Rossanese', 'Asolo Pavimenti', 'il fabbro srl', 'Nart Sonia',
   'Decorgesso srls', 'Galliazzo Ivano', 'Visentin & Gasparetto', 'Geosolar', 'Agostini Sergio',
   'Aeerre costruzioni', 'Conte Ambienti Esterni', 'Falegnameria Trentin', 'Visentin Francesco',
   'Dkh srls', 'Masaro Fabio', 'Roccon Silvio', 'Pozzobon Serramenti', 'M.N. costruzioni srls',
-  'Edilmuli di zogaj', 'Timexpert', 'Gatto Tarcisio', 'Cbm martignago', 'Tm toniolo',
+  'Edilmuli di zogaj', 'Timexpert', 'Termoidraulica G.sc.', 'Gatto Tarcisio', 'Cbm martignago', 'Tm toniolo',
   'Ganeo adriano', 'Bs impianti', 'Colordesign', 'E.p. ponteggi', 'Az. Florovivaistica Giandino',
   'Bonetto', 'Miftaroski Fikmet', 'Metope', 'Tm toniolo massimo', 'Serramenti Ruffato',
   'Ikon tecnology', 'Edilmonastier', 'Pedemontana Serramenti', 'Guritenco Igor', 'Soligo Damiano',

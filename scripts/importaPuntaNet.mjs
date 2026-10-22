@@ -357,6 +357,15 @@ for (const mv of movimenti) {
       categoria = cls.categoria; ceType = cls.ceType; confidenza = cls.confidenza; matchKey = cls.matchKey;
       if (vatRate == null) vatRate = cls.vatRateSuggerito;
     }
+    // Anche la classificazione di fallback (regole su descrizione/entity) puo' assegnare
+    // Manodopera per un fornitore che lavora solo su cantiere (es. regola fornitore salvata,
+    // o il fallback testuale per "Timexpert") — stessa correzione del ramo tipologia sopra,
+    // va riapplicata anche qui o la riga resta scritta nella categoria sbagliata (Codex review
+    // PR #29, 2026-10-22).
+    if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizioneBanca)) {
+      categoria = '[FORNITORI] Subappalti su Cantieri';
+      ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
+    }
   }
 
   // Collegamento a previsione ESISTENTE (solo lettura, mai modificata). Nessun vincolo di stesso
@@ -510,6 +519,12 @@ for (const s of scadenzeAperte) {
     const riga = { data: new Date(s.DataRata), descrizione: s.Controparte, entity: s.Controparte, importo: s.ImportoRata, tipo, flagConto: 'B', tipoMovimento: 'ALTRO' };
     const cls = classificaRiga(riga, regolePuntaNet, cantiereApp);
     if (cls.categoria) { categoria = cls.categoria; ceType = cls.ceType; confidenza = cls.confidenza; matchKey = cls.matchKey; }
+  }
+  // Stessa correzione del ramo tipologia sopra, riapplicata dopo il fallback (vedi nota identica
+  // nel loop Conti Movimenti).
+  if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizione)) {
+    categoria = '[FORNITORI] Subappalti su Cantieri';
+    ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
   }
 
   const vatRate = calcolaVatRate(s.Imponibile, s.Imposte);
