@@ -932,6 +932,63 @@ export const mappaTipologiaACategoriaApp = (
   return null;
 };
 
+// ─── SUBAPPALTI SU CANTIERI vs MANODOPERA ────────────────────────
+// PuntaNet non distingue sempre in modo affidabile, a livello di "Tipologia" (vedi
+// mappaTipologiaACategoriaApp sopra), un subappalto generico da uno specificamente "su cantiere" — molti
+// fornitori che lavorano solo su cantiere vengono comunque fatturati con una Tipologia generica "sub
+// appalti", finendo quindi in [PERSONALE] Subappalti Manodopera invece che [FORNITORI] Subappalti su
+// Cantieri. Questa lista di fornitori noti corregge quei casi, in base al nome nella descrizione
+// (es. "Pagamento FEP n. X - NOME FORNITORE").
+//
+// Il confronto normalizza sia la lista sia la descrizione (maiuscolo, nessun accento, punteggiatura
+// rimossa, connettivi come "di"/"e"/"srl" eliminati) prima di cercare il nome come sottostringa:
+// confrontare lettera per lettera il nome breve della lista con la ragione sociale completa di
+// PuntaNet falliva per differenze banali di spazi/punteggiatura (es. "Edilmuli di zogaj" nella lista
+// non trovava mai "EDIL MULI DI ZOGAJ FLAMUR" in PuntaNet, perche' la prima non ha lo spazio tra "Edil"
+// e "muli" — trovato in audit 2026-10-22: 622.810€ di fatture di 5 fornitori diversi restavano
+// classificate come Manodopera per questo solo motivo).
+const CONNETTIVI_RAGIONE_SOCIALE = new Set(['DI', 'E', 'C', 'SRL', 'SRLS', 'SNC', 'SAS', 'SPA', 'FLLI']);
+
+export const normalizzaRagioneSociale = (s: string): string =>
+  s
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\./g, '') // rimuove i punti SENZA inserire uno spazio (es. "F.lli" -> "FLLI", non "F" + "LLI")
+    .replace(/[^A-Z0-9\s]/g, ' ') // il resto della punteggiatura diventa spazio
+    .split(/\s+/)
+    .filter(tok => tok && !CONNETTIVI_RAGIONE_SOCIALE.has(tok))
+    .join('');
+
+// "Termoidraulica G.sc." non compare mai nella ragione sociale reale ("G.SC. DI GATTO TARCISIO, SCREMIN
+// VASCO & C.") — aggiunto "Gatto Tarcisio", frammento che invece combacia davvero. Tenuto anche il
+// vecchio alias: resta un preset UI valido (SUPPLIER_PRESETS in constants.ts) e potrebbe comparire
+// come descrizione in transazioni gia' esistenti — rimuoverlo farebbe regredire quei casi (Codex
+// review PR #29, 2026-10-22).
+export const SUBAPPALTI_SU_CANTIERI_SUPPLIERS = [
+  'Munaretto', 'Solar system', 'Lattoneria Rossanese', 'Asolo Pavimenti', 'il fabbro srl', 'Nart Sonia',
+  'Decorgesso srls', 'Galliazzo Ivano', 'Visentin & Gasparetto', 'Geosolar', 'Agostini Sergio',
+  'Aeerre costruzioni', 'Conte Ambienti Esterni', 'Falegnameria Trentin', 'Visentin Francesco',
+  'Dkh srls', 'Masaro Fabio', 'Roccon Silvio', 'Pozzobon Serramenti', 'M.N. costruzioni srls',
+  'Edilmuli di zogaj', 'Timexpert', 'Termoidraulica G.sc.', 'Gatto Tarcisio', 'Cbm martignago', 'Tm toniolo',
+  'Ganeo adriano', 'Bs impianti', 'Colordesign', 'E.p. ponteggi', 'Az. Florovivaistica Giandino',
+  'Bonetto', 'Miftaroski Fikmet', 'Metope', 'Tm toniolo massimo', 'Serramenti Ruffato',
+  'Ikon tecnology', 'Edilmonastier', 'Pedemontana Serramenti', 'Guritenco Igor', 'Soligo Damiano',
+  'Contarin', 'Dametto Simone', 'Dm Posa srls', 'Moro serrande', 'Cetos srl', 'Eurocostruzioni srls',
+  'Giuliano coperture srls', 'Nicola metal design', 'Libra serramenti', 'Paesaggi umbri consorzio',
+  'Sbrissa sebastiano giardini', 'Moretto scavi', 'Lillo Coperture', 'Alpac', 'Edile coperture',
+  'Pizzolato Jody', 'Edillux di Abo Ghazalah', 'Visentin Costruzioni Srl', 'Storgato',
+  'Elettrosystem', // mancava del tutto - trovato in audit 2026-10-22, 80.000€
+].map(normalizzaRagioneSociale);
+
+export const isSubappaltoSuCantiere = (descrizione: string): boolean => {
+  const normalizzata = normalizzaRagioneSociale(descrizione);
+  const matchesSupplier = SUBAPPALTI_SU_CANTIERI_SUPPLIERS.some(sup => normalizzata.includes(sup));
+  const descLower = descrizione.toLowerCase();
+  const matchesPhrase = /sub.*cantier/i.test(descLower) || descLower.includes('sub appalti su cantieri') || descLower.includes('subappalti su cantieri');
+  return matchesSupplier || matchesPhrase;
+};
+
 // ─── CLASSIFICAZIONE AUTOMATICA (Fallback) ───────────────────────
 
 const matchesPattern = (text: string, pattern: string): boolean => {

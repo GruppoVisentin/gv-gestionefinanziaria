@@ -51,6 +51,7 @@ import ImportPuntaNetModal from './components/ImportPuntaNetModal';
 import ImportStoricoModal from './components/ImportStoricoModal';
 import { DiagnosticModal } from './components/DiagnosticModal';
 import { generateDefault2025Snapshot, parseUTCDate, getLocalYMD } from './utils/gasCoreEngine';
+import { isSubappaltoSuCantiere } from './utils/puntaNetImporter';
 import { 
   FIXED_COST_CATEGORIES, 
   VARIABLE_COST_CATEGORIES, 
@@ -385,21 +386,6 @@ function migrateBackupData(data: BackupData): BackupData {
 
   // 1. Migrate transactions and ensure they map to the correct ceType dynamically
   if (data.transactions) {
-    const subCantieriSuppliers = [
-      'Munaretto', 'Solar system', 'Lattoneria Rossanese', 'Asolo Pavimenti', 'il fabbro srl', 'Nart Sonia',
-      'Decorgesso srls', 'Galliazzo Ivano', 'Visentin & Gasparetto', 'Geosolar', 'Agostini Sergio',
-      'Aeerre costruzioni', 'Conte Ambienti Esterni', 'Falegnameria Trentin', 'Visentin Francesco',
-      'Dkh srls', 'Masaro Fabio', 'Roccon Silvio', 'Pozzobon Serramenti', 'M.N. costruzioni srls',
-      'Edilmuli di zogaj', 'Timexpert', 'Termoidraulica G.sc.', 'Cbm martignago', 'Tm toniolo',
-      'Ganeo adriano', 'Bs impianti', 'Colordesign', 'E.p. ponteggi', 'Az. Florovivaistica Giandino',
-      'Bonetto', 'Miftaroski Fikmet', 'Metope', 'Tm toniolo massimo', 'Serramenti Ruffato',
-      'Ikon tecnology', 'Edilmonastier', 'Pedemontana Serramenti', 'Guritenco Igor', 'Soligo Damiano',
-      'Contarin', 'Dametto Simone', 'Dm Posa srls', 'Moro serrande', 'Cetos srl', 'Eurocostruzioni srls',
-      'Giuliano coperture srls', 'Nicola metal design', 'Libra serramenti', 'Paesaggi umbri consorzio',
-      'Sbrissa sebastiano giardini', 'Moretto scavi', 'Lillo Coperture', 'Alpac', 'Edile coperture',
-      'Pizzolato Jody', 'Edillux di Abo Ghazalah', 'Visentin Costruzioni Srl', 'Storgato'
-    ].map(s => s.toLowerCase());
-
     const historicalRowNames = [
       'SUBAPPALTI MANODOPERA', 'SUBAPPALTI SU CANTIERI', 'FORNITORI MATERIALI', 'PROFESSIONISTI ESTERNI',
       'NOLEGGI', 'CARBURANTI', 'RIFIUTI E MACERIE', 'PRANZI', 'ASSICURAZIONE CANTIERI',
@@ -494,9 +480,7 @@ function migrateBackupData(data: BackupData): BackupData {
 
       // Correzione retroattiva subappalti su cantieri finiti in subappalti manodopera
       if (category === '[PERSONALE] Subappalti Manodopera' || category === '[CANTIERE] Subappalti Manodopera' || category === 'SUBAPPALTI MANODOPERA') {
-        const matchesSupplier = subCantieriSuppliers.some(sup => descLower.includes(sup));
-        const matchesPhrase = /sub.*cantier/i.test(descLower) || descLower.includes('sub appalti su cantieri') || descLower.includes('subappalti su cantieri');
-        if (matchesSupplier || matchesPhrase) {
+        if (isSubappaltoSuCantiere(description)) {
           category = '[FORNITORI] Subappalti su Cantieri';
         }
       }

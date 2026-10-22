@@ -43,6 +43,7 @@ import {
   inferisciTipoEntrata,
   estraiEntity,
   isDuplicato,
+  isSubappaltoSuCantiere,
 } from '../utils/puntaNetImporter.ts';
 import { CATEGORY_TO_CE_TYPE } from '../constants.ts';
 
@@ -327,6 +328,14 @@ for (const mv of movimenti) {
     } else {
       const tipologia = dominante(tipologiaPerDoc, mv.IDDocumento);
       if (tipologia) { categoria = mappaTipologiaACategoriaApp(tipologia, 'FEP'); ceType = categoria ? (CATEGORY_TO_CE_TYPE[categoria] ?? 'costo_variabile') : null; if (categoria) { confidenza = 'alta'; matchKey = `tipologia:${tipologia}`; } }
+      // PuntaNet non distingue sempre in modo affidabile subappalti generici da quelli "su cantiere"
+      // (vedi nota in utils/puntaNetImporter.ts, isSubappaltoSuCantiere) — stessa correzione gia'
+      // applicata da App.tsx al caricamento, qui scritta direttamente cosi' il file resta coerente
+      // anche per gli script che lo leggono senza passare dall'app (trovato in audit 2026-10-22).
+      if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizioneBanca)) {
+        categoria = '[FORNITORI] Subappalti su Cantieri';
+        ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
+      }
       cantiereApp = cantiereUPerDocLookup(mv.IDDocumento);
       // Utenze "doppio uso" (Duferco, Enel Energia, ecc.): se il documento e' attribuito a un
       // cantiere reale (non Costi Generali/Magazzino/nessuna attribuzione), la spesa e' di quel
@@ -347,6 +356,15 @@ for (const mv of movimenti) {
     if (cls.categoria) {
       categoria = cls.categoria; ceType = cls.ceType; confidenza = cls.confidenza; matchKey = cls.matchKey;
       if (vatRate == null) vatRate = cls.vatRateSuggerito;
+    }
+    // Anche la classificazione di fallback (regole su descrizione/entity) puo' assegnare
+    // Manodopera per un fornitore che lavora solo su cantiere (es. regola fornitore salvata,
+    // o il fallback testuale per "Timexpert") — stessa correzione del ramo tipologia sopra,
+    // va riapplicata anche qui o la riga resta scritta nella categoria sbagliata (Codex review
+    // PR #29, 2026-10-22).
+    if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizioneBanca)) {
+      categoria = '[FORNITORI] Subappalti su Cantieri';
+      ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
     }
   }
 
@@ -485,6 +503,11 @@ for (const s of scadenzeAperte) {
   } else {
     const tipologia = dominante(tipologiaPerDoc, s.IDDocumento);
     if (tipologia) { categoria = mappaTipologiaACategoriaApp(tipologia, 'FEP'); ceType = categoria ? (CATEGORY_TO_CE_TYPE[categoria] ?? 'costo_variabile') : null; if (categoria) { confidenza = 'alta'; matchKey = `tipologia:${tipologia}`; } }
+    // Stessa correzione del ramo Conti Movimenti sopra, vedi nota li'.
+    if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizione)) {
+      categoria = '[FORNITORI] Subappalti su Cantieri';
+      ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
+    }
     cantiereApp = cantiereUPerDocLookup(s.IDDocumento);
     // Utenze "doppio uso" (Duferco, Enel Energia, ecc.): vedi nota identica piu' sopra.
     if (categoria === '[STRUTTURA] Utenze Sedi' && cantiereApp) {
@@ -496,6 +519,12 @@ for (const s of scadenzeAperte) {
     const riga = { data: new Date(s.DataRata), descrizione: s.Controparte, entity: s.Controparte, importo: s.ImportoRata, tipo, flagConto: 'B', tipoMovimento: 'ALTRO' };
     const cls = classificaRiga(riga, regolePuntaNet, cantiereApp);
     if (cls.categoria) { categoria = cls.categoria; ceType = cls.ceType; confidenza = cls.confidenza; matchKey = cls.matchKey; }
+  }
+  // Stessa correzione del ramo tipologia sopra, riapplicata dopo il fallback (vedi nota identica
+  // nel loop Conti Movimenti).
+  if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizione)) {
+    categoria = '[FORNITORI] Subappalti su Cantieri';
+    ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
   }
 
   const vatRate = calcolaVatRate(s.Imponibile, s.Imposte);
