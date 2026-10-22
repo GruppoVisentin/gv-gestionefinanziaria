@@ -114,7 +114,7 @@ function notaRevisione(dataOk) {
 
 // Costruisce una riga in formato "bozza" (RigaClassificata) da mettere in bozzaImportPuntaNet,
 // per revisione manuale in app — stessa forma che produce la modalita' interattiva del modale.
-function costruisciBozza({ dataISO, descrizione, entity, importo, tipo, tipoMovimento, categoria, ceType, confidenza, matchKey, vatRateSuggerito, vatRateNota, cantiereApp, idDocumento, idRata, idMovimento, dataDocumento }) {
+function costruisciBozza({ dataISO, descrizione, entity, importo, tipo, tipoMovimento, categoria, ceType, confidenza, matchKey, vatRateSuggerito, vatRateNota, cantiereApp, idDocumento, idRata, idMovimento, dataDocumento, pagato }) {
   return {
     riga: { data: new Date(dataISO), descrizione, entity, importo, tipo, flagConto: 'B', tipoMovimento },
     categoria: categoria || null,
@@ -134,6 +134,15 @@ function costruisciBozza({ dataISO, descrizione, entity, importo, tipo, tipoMovi
     cantiereMatchFonte: cantiereApp ? (tipo === 'INCOME' ? 'cliente_fea' : 'fornitore_fep') : null,
     tipoEntrata: null,
     dataDocumento: dataDocumento || null,
+    // Collegamento PuntaNet gia' noto in fase di classificazione (non solo nella chiave opaca
+    // _puntaNetKey sotto, usata solo per l'anti-doppione di QUESTO giro): se la riga viene
+    // confermata in app, ImportPuntaNetModal lo ripristina sulla Transaction finale, cosi' il giro
+    // di import successivo la riconosce ancora come "gia' gestita" e la riconciliazione automatica
+    // del pagamento (per le scadenze) continua a funzionare (Codex review, PR #34, 2026-10-22).
+    puntaNetIDDocumento: idDocumento ?? null,
+    puntaNetIDRata: idRata ?? null,
+    puntaNetIDMovimento: idMovimento ?? null,
+    pagato: pagato ?? undefined,
     // Campi extra (non nello schema RigaClassificata dell'app, ignorati dalla UI) — servono solo
     // a questo script per non riproporre la stessa riga in bozza il giorno dopo. Preferisce
     // IDMovimento (sempre presente per i movimenti bancari) a IDDocumento|IDRata (spesso assente
@@ -309,6 +318,41 @@ function trovaLinkedForecastId(tipo, cantiereApp, categoria, importo) {
   return candidati.length > 0 ? candidati[0].f.id : undefined;
 }
 
+// Priorita' finale di classificazione, applicata DOPO tipologia PuntaNet + fallback in entrambi i
+// loop sotto (Conti Movimenti e Documenti Scadenze). Due correzioni, in ordine (l'ultima vince):
+//
+// 1) Un fornitore della lista "su Cantieri" vince ORA SEMPRE, non solo quando la categoria di
+//    partenza era Manodopera come prima: lasciava scritte in Materiali (o altro) le fatture dello
+//    stesso fornitore ogni volta che PuntaNet le classificava diversamente (trovato in audit
+//    2026-10-22: TM di Toniolo, Lattoneria Rossanese, Falegnameria Trentin, 15.463,56€ — PR #34).
+//
+// 2) Una regola utente salvata (regolePuntaNet, creata automaticamente quando l'utente conferma
+//    una riga in sospeso in app — vedi ImportPuntaNetModal.tsx) vince SEMPRE, anche sulla lista
+//    "su Cantieri": e' una decisione umana esplicita. Prima, classificaRiga (che gia' controlla
+//    regolePuntaNet) veniva interpellata SOLO quando la tipologia PuntaNet non produceva alcuna
+//    categoria — quindi confermare una riga in sospeso in app non serviva a nulla per la fattura
+//    SUCCESSIVA dello stesso fornitore, se la tipologia PuntaNet continuava a classificarla
+//    diversamente: l'utente avrebbe dovuto correggerla di nuovo ogni volta. Trovato 2026-10-22,
+//    rispondendo alla richiesta esplicita dell'utente di eliminare il bisogno di un controllo
+//    manuale ricorrente — lo scopo dell'app e' sostituire l'inserimento manuale, non riproporlo.
+function applicaPrioritaFinale(tipo, categoria, ceType, confidenza, matchKey, entity, descrizionePerSuCantiere) {
+  if (tipo === 'EXPENSE' && isSubappaltoSuCantiere(descrizionePerSuCantiere) && categoria !== '[FORNITORI] Subappalti su Cantieri') {
+    categoria = '[FORNITORI] Subappalti su Cantieri';
+    ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
+    confidenza = 'alta';
+    matchKey = 'lista-su-cantieri';
+  }
+  const entityKey = (entity || '').trim().toUpperCase().slice(0, 40);
+  const regolaUtente = entityKey ? regolePuntaNet.find(r => r.entityKey === entityKey) : undefined;
+  if (regolaUtente) {
+    categoria = regolaUtente.categoria;
+    ceType = regolaUtente.ceType;
+    confidenza = 'alta';
+    matchKey = `regola-utente:${entityKey}`;
+  }
+  return { categoria, ceType, confidenza, matchKey };
+}
+
 for (const mv of movimenti) {
   if (esistentiKeyMovimento.has(mv.IDMovimento)) continue; // gia' importato in un giro precedente (per IDMovimento)
   const key = `${mv.IDDocumento}|${mv.IDRata}`;
@@ -340,14 +384,6 @@ for (const mv of movimenti) {
     } else {
       const tipologia = dominante(tipologiaPerDoc, mv.IDDocumento);
       if (tipologia) { categoria = mappaTipologiaACategoriaApp(tipologia, 'FEP'); ceType = categoria ? (CATEGORY_TO_CE_TYPE[categoria] ?? 'costo_variabile') : null; if (categoria) { confidenza = 'alta'; matchKey = `tipologia:${tipologia}`; } }
-      // PuntaNet non distingue sempre in modo affidabile subappalti generici da quelli "su cantiere"
-      // (vedi nota in utils/puntaNetImporter.ts, isSubappaltoSuCantiere) — stessa correzione gia'
-      // applicata da App.tsx al caricamento, qui scritta direttamente cosi' il file resta coerente
-      // anche per gli script che lo leggono senza passare dall'app (trovato in audit 2026-10-22).
-      if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizioneBanca)) {
-        categoria = '[FORNITORI] Subappalti su Cantieri';
-        ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
-      }
       cantiereApp = cantiereUPerDocLookup(mv.IDDocumento);
       // Utenze "doppio uso" (Duferco, Enel Energia, ecc.): se il documento e' attribuito a un
       // cantiere reale (non Costi Generali/Magazzino/nessuna attribuzione), la spesa e' di quel
@@ -369,16 +405,8 @@ for (const mv of movimenti) {
       categoria = cls.categoria; ceType = cls.ceType; confidenza = cls.confidenza; matchKey = cls.matchKey;
       if (vatRate == null) vatRate = cls.vatRateSuggerito;
     }
-    // Anche la classificazione di fallback (regole su descrizione/entity) puo' assegnare
-    // Manodopera per un fornitore che lavora solo su cantiere (es. regola fornitore salvata,
-    // o il fallback testuale per "Timexpert") — stessa correzione del ramo tipologia sopra,
-    // va riapplicata anche qui o la riga resta scritta nella categoria sbagliata (Codex review
-    // PR #29, 2026-10-22).
-    if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizioneBanca)) {
-      categoria = '[FORNITORI] Subappalti su Cantieri';
-      ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
-    }
   }
+  ({ categoria, ceType, confidenza, matchKey } = applicaPrioritaFinale(tipo, categoria, ceType, confidenza, matchKey, entity, descrizioneBanca));
 
   // Collegamento a previsione ESISTENTE (solo lettura, mai modificata). Nessun vincolo di stesso
   // mese: un incasso puo' arrivare mesi dopo quello previsto. Una previsione puo' anche essere
@@ -515,11 +543,6 @@ for (const s of scadenzeAperte) {
   } else {
     const tipologia = dominante(tipologiaPerDoc, s.IDDocumento);
     if (tipologia) { categoria = mappaTipologiaACategoriaApp(tipologia, 'FEP'); ceType = categoria ? (CATEGORY_TO_CE_TYPE[categoria] ?? 'costo_variabile') : null; if (categoria) { confidenza = 'alta'; matchKey = `tipologia:${tipologia}`; } }
-    // Stessa correzione del ramo Conti Movimenti sopra, vedi nota li'.
-    if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizione)) {
-      categoria = '[FORNITORI] Subappalti su Cantieri';
-      ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
-    }
     cantiereApp = cantiereUPerDocLookup(s.IDDocumento);
     // Utenze "doppio uso" (Duferco, Enel Energia, ecc.): vedi nota identica piu' sopra.
     if (categoria === '[STRUTTURA] Utenze Sedi' && cantiereApp) {
@@ -532,12 +555,7 @@ for (const s of scadenzeAperte) {
     const cls = classificaRiga(riga, regolePuntaNet, cantiereApp);
     if (cls.categoria) { categoria = cls.categoria; ceType = cls.ceType; confidenza = cls.confidenza; matchKey = cls.matchKey; }
   }
-  // Stessa correzione del ramo tipologia sopra, riapplicata dopo il fallback (vedi nota identica
-  // nel loop Conti Movimenti).
-  if (categoria === '[PERSONALE] Subappalti Manodopera' && isSubappaltoSuCantiere(descrizione)) {
-    categoria = '[FORNITORI] Subappalti su Cantieri';
-    ceType = CATEGORY_TO_CE_TYPE[categoria] ?? ceType;
-  }
+  ({ categoria, ceType, confidenza, matchKey } = applicaPrioritaFinale(tipo, categoria, ceType, confidenza, matchKey, entity, descrizione));
 
   const vatRate = calcolaVatRate(s.Imponibile, s.Imposte);
   const grossAmount = isNotaCredito ? -s.ImportoRata : s.ImportoRata;
@@ -590,6 +608,7 @@ for (const s of scadenzeAperte) {
       dataISO, descrizione, entity, importo: s.ImportoRata, tipo, tipoMovimento,
       categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate, vatRateNota: notaRevisione(dataOk),
       cantiereApp, idDocumento: s.IDDocumento, idRata: s.IDRata, dataDocumento: s.DataDocumento ? s.DataDocumento.slice(0, 10) : undefined,
+      pagato: false, // scadenzeAperte e' per costruzione Pagato=0 — la riga rappresenta una fattura non ancora pagata
     }));
   }
 }
@@ -693,6 +712,12 @@ if (pagamentiAggiornati > 0) {
 
 const daScrivere = [...autoConsuntivo, ...autoScadenze].filter(t => {
   if (t.puntaNetIDMovimento != null && movimentiRiconciliati.has(t.puntaNetIDMovimento)) return false;
+  // Mancava il controllo su esistentiKeyMovimentoFresh: se un'altra bozza con lo stesso IDMovimento
+  // fosse comparsa proprio tra l'inizio dello script e questa rilettura fresca, questo filtro
+  // controllava solo la chiave documento (quasi sempre assente per un movimento bancario puro) e
+  // lasciava passare la scrittura diretta — un doppione (bozza + transazione definitiva) per la
+  // stessa identica riga (Codex review, PR #34, 2026-10-22).
+  if (t.puntaNetIDMovimento != null && esistentiKeyMovimentoFresh.has(t.puntaNetIDMovimento)) return false;
   const k = `${t.puntaNetIDDocumento}|${t.puntaNetIDRata}`;
   return !esistentiKeyFresh.has(k);
 });

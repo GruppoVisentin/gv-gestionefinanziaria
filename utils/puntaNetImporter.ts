@@ -115,6 +115,23 @@ export interface RigaClassificata {
   cantiereMatchFonte: 'cliente_fea' | 'fornitore_fep' | 'nome_cantiere' | 'testo_banca' | null;
   tipoEntrata: 'sal' | 'acconto' | 'saldo' | 'immobile' | 'altro' | null;
   dataDocumento?: string | null; // YYYY-MM-DD
+  // Collegamento PuntaNet della riga (quando noto gia' in fase di classificazione, non solo nella
+  // chiave opaca _puntaNetKey usata per il solo anti-doppione): se presente, va ripristinato sulla
+  // Transaction finale alla conferma, altrimenti il giro di import successivo non la riconosce piu'
+  // come "gia' gestita" e puo' riproporla/duplicarla (trovato in Codex review, PR #34, 2026-10-22).
+  puntaNetIDDocumento?: number | null;
+  puntaNetIDRata?: number | null;
+  puntaNetIDMovimento?: number | null;
+  // Presente solo per le scadenze non ancora pagate al momento della classificazione: va
+  // ripristinato sulla Transaction finale, altrimenti la riconciliazione automatica del pagamento
+  // (vedi importaPuntaNet.mjs) non si applica mai piu' a questa fattura.
+  pagato?: boolean;
+  // Presente SOLO sulle righe create da uno script di correzione per sospendere in revisione una
+  // transazione GIA' esistente (es. scripts/sospendiClassificazioneDubbia.mjs) invece di una nuova
+  // riga mai importata prima: la transazione ORIGINALE completa, cosi' "Annulla Import" puo'
+  // ripristinarla com'era invece di farla sparire insieme alle righe davvero scartabili (lo stesso
+  // bug trovato in Codex review, PR #34, 2026-10-22).
+  _transazioneOriginale?: Transaction;
 }
 
 // ─── FUNZIONI UTILI ──────────────────────────────────────────────

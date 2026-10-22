@@ -31,6 +31,7 @@ import {
   matchesPattern,
   REGOLE_BUILTIN,
   estraiEntity,
+  isSpesaBancaria,
 } from '../utils/puntaNetImporter.ts';
 
 const SCRIVI = process.argv.includes('--scrivi');
@@ -54,9 +55,14 @@ const FRAMMENTI_PATTERN_DA_SOSPENDERE = [
   'GEOCONSULT',
   'NORMATEMPO',
 ];
-const patternDaSospendere = REGOLE_BUILTIN.filter(r =>
-  FRAMMENTI_PATTERN_DA_SOSPENDERE.some(f => r.pattern.toUpperCase().includes(f))
-);
+// Ordinati per lunghezza decrescente, stessa precedenza di classificaRiga/auditDistribuzioneFornitori:
+// un pattern piu' specifico e lungo (es. "SEMENZIN E SERNAGIOTTO") deve vincere su uno piu' corto
+// e generico che lo contiene come sottostringa (es. "SERNAGIOTTO SRL"), altrimenti una riga gia'
+// classificata correttamente dal pattern giusto risulterebbe erroneamente "in disaccordo" con quello
+// sbagliato trovato per primo (Codex review, PR #34, 2026-10-22).
+const patternDaSospendere = REGOLE_BUILTIN
+  .filter(r => FRAMMENTI_PATTERN_DA_SOSPENDERE.some(f => r.pattern.toUpperCase().includes(f)))
+  .sort((a, b) => b.pattern.length - a.pattern.length);
 
 function importoLordo(t) {
   if (typeof t.grossAmount === 'number') return t.grossAmount;
@@ -70,6 +76,10 @@ function importoLordo(t) {
 function trovaCasoListaSuCantieri(t) {
   if (t.type !== 'EXPENSE' || t.isForecast) return null;
   if (t.category !== CATEGORIA_MATERIALI) return null;
+  // Una riga di spesa bancaria (es. "SPESE PER BONIFICO - RIF.TO <fornitore>") nomina il fornitore
+  // solo come riferimento del bonifico: e' gia' classificata giustamente, non e' affatto un dubbio
+  // di categoria (stesso filtro usato dall'audit, Codex review PR #34, 2026-10-22).
+  if (isSpesaBancaria(t.description || '')) return null;
   if (!isSubappaltoSuCantiere(t.description || '')) return null;
   return { nota: 'Fornitore in lista "su Cantieri" ma scritto in Fornitori Materiali — la correzione automatica copre solo le righe provenienti da Manodopera. Verificare e classificare manualmente.' };
 }
@@ -79,6 +89,7 @@ function trovaCasoListaSuCantieri(t) {
 // (potrebbe essere lui stesso datato/sbagliato), quindi si sospende anziche' correggere alla cieca.
 function trovaCasoBuiltin(t) {
   if (t.type !== 'EXPENSE' || t.isForecast) return null;
+  if (isSpesaBancaria(t.description || '')) return null;
   const entity = estraiEntity(t.description || '');
   const regola = patternDaSospendere.find(r => matchesPattern(entity, r.pattern) || matchesPattern(t.description || '', r.pattern));
   if (!regola) return null;
@@ -117,8 +128,20 @@ function costruisciBozzaSospesa(t, nota) {
     cantiereMatchFonte: null,
     tipoEntrata: null,
     dataDocumento: t.invoiceDate || null,
+    // Ripristinati da ImportPuntaNetModal sulla Transaction finale alla conferma — senza questi,
+    // il giro di import automatico successivo non riconoscerebbe piu' questa fattura/movimento come
+    // "gia' gestito" (rischio di doppione) e la riconciliazione automatica del pagamento non si
+    // applicherebbe piu' (Codex review, PR #34, 2026-10-22).
+    puntaNetIDDocumento: t.puntaNetIDDocumento ?? null,
+    puntaNetIDRata: t.puntaNetIDRata ?? null,
+    puntaNetIDMovimento: t.puntaNetIDMovimento ?? null,
+    pagato: t.pagato,
     _puntaNetKey: puntaNetKey,
     _fonte: 'sospensione-classificazione-dubbia-2026-10-22',
+    // Transazione originale COMPLETA (non solo i campi sopra): "Annulla Import" in app la ripristina
+    // com'era se l'utente annulla la revisione, invece di farla sparire insieme alle righe di
+    // importazione davvero nuove e scartabili (Codex review, PR #34, 2026-10-22).
+    _transazioneOriginale: t,
   };
 }
 
@@ -188,7 +211,14 @@ for (const t of gvDataFresh.transactions) {
   else transazioniRimaste.push(t);
 }
 gvDataFresh.transactions = transazioniRimaste;
-gvDataFresh.bozzaImportPuntaNet = [...(gvDataFresh.bozzaImportPuntaNet || []), ...nuoveBozze];
+// Se una bozza con la STESSA chiave PuntaNet esistesse gia' (anomalia pre-esistente: una
+// transazione e una bozza per la stessa fattura/movimento), quella nuova appena costruita dalla
+// transazione reale la sostituisce — non si accoda, altrimenti l'utente vedrebbe due righe per lo
+// stesso identico pagamento e potrebbe confermarle entrambe, duplicando la transazione (Codex
+// review, PR #34, 2026-10-22).
+const chiaviNuove = new Set(nuoveBozze.map(b => b._puntaNetKey).filter(Boolean));
+const bozzaEsistenteFiltrata = (gvDataFresh.bozzaImportPuntaNet || []).filter(b => !b._puntaNetKey || !chiaviNuove.has(b._puntaNetKey));
+gvDataFresh.bozzaImportPuntaNet = [...bozzaEsistenteFiltrata, ...nuoveBozze];
 gvDataFresh.timestamp = new Date().toISOString();
 
 const tmpPath = `${GVCF_PATH}.tmp_${process.pid}`;
