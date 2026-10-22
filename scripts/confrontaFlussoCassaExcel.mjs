@@ -22,6 +22,7 @@ import fs from 'fs';
 import path from 'path';
 import XLSX from 'xlsx';
 import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants.ts';
+import { isSubappaltoSuCantiere } from '../utils/puntaNetImporter.ts';
 
 const [, , xlsxPathArg, mesiArg, annoArg] = process.argv;
 if (!xlsxPathArg || !mesiArg) {
@@ -128,34 +129,18 @@ function importoLordo(t) {
   return (t.amount || 0) * (1 + vat / 100);
 }
 
-// Stessi fornitori/pattern di App.tsx, migrateBackupData — riclassificazione retroattiva di
-// transazioni descritte come "subappalti manodopera"/"fornitori materiali" che in realta' sono
-// subappalti su cantieri o acquisizioni terreni (trovato in review: Codex, 2026-10-21: senza
-// questa normalizzazione il confronto per categoria puo' discostarsi da quello che l'app mostra
-// davvero, anche se il totale complessivo non cambia).
-const SUB_CANTIERI_SUPPLIERS = [
-  'Munaretto', 'Solar system', 'Lattoneria Rossanese', 'Asolo Pavimenti', 'il fabbro srl', 'Nart Sonia',
-  'Decorgesso srls', 'Galliazzo Ivano', 'Visentin & Gasparetto', 'Geosolar', 'Agostini Sergio',
-  'Aeerre costruzioni', 'Conte Ambienti Esterni', 'Falegnameria Trentin', 'Visentin Francesco',
-  'Dkh srls', 'Masaro Fabio', 'Roccon Silvio', 'Pozzobon Serramenti', 'M.N. costruzioni srls',
-  'Edilmuli di zogaj', 'Timexpert', 'Termoidraulica G.sc.', 'Cbm martignago', 'Tm toniolo',
-  'Ganeo adriano', 'Bs impianti', 'Colordesign', 'E.p. ponteggi', 'Az. Florovivaistica Giandino',
-  'Bonetto', 'Miftaroski Fikmet', 'Metope', 'Tm toniolo massimo', 'Serramenti Ruffato',
-  'Ikon tecnology', 'Edilmonastier', 'Pedemontana Serramenti', 'Guritenco Igor', 'Soligo Damiano',
-  'Contarin', 'Dametto Simone', 'Dm Posa srls', 'Moro serrande', 'Cetos srl', 'Eurocostruzioni srls',
-  'Giuliano coperture srls', 'Nicola metal design', 'Libra serramenti', 'Paesaggi umbri consorzio',
-  'Sbrissa sebastiano giardini', 'Moretto scavi', 'Lillo Coperture', 'Alpac', 'Edile coperture',
-  'Pizzolato Jody', 'Edillux di Abo Ghazalah', 'Visentin Costruzioni Srl', 'Storgato',
-].map(s => s.toLowerCase());
-
+// Stessa funzione condivisa di App.tsx/importaPuntaNet.mjs (utils/puntaNetImporter.ts,
+// isSubappaltoSuCantiere) — prima questo script manteneva una copia propria della lista
+// fornitori con un confronto lettera-per-lettera senza normalizzazione (lo stesso bug corretto
+// in PR #29 sulla fonte condivisa): oltre a duplicare la lista, restava disallineato ad ogni
+// aggiunta successiva, riportando scostamenti di categoria che non riflettevano quelli reali
+// dell'app (Codex review PR #30, 2026-10-22).
 function categoriaNormalizzata(t) {
   let categoria = t.category;
   const descLower = (t.description || '').toLowerCase();
 
   if (categoria === '[PERSONALE] Subappalti Manodopera' || categoria === '[CANTIERE] Subappalti Manodopera' || categoria === 'SUBAPPALTI MANODOPERA') {
-    const matchesSupplier = SUB_CANTIERI_SUPPLIERS.some(sup => descLower.includes(sup));
-    const matchesPhrase = /sub.*cantier/i.test(descLower) || descLower.includes('sub appalti su cantieri') || descLower.includes('subappalti su cantieri');
-    if (matchesSupplier || matchesPhrase) categoria = '[FORNITORI] Subappalti su Cantieri';
+    if (isSubappaltoSuCantiere(t.description || '')) categoria = '[FORNITORI] Subappalti su Cantieri';
   }
   if (categoria === '[FORNITORI] Fornitori Materiali' || categoria === '[CANTIERE] Fornitori Materiali' || categoria === 'FORNITORI MATERIALI') {
     if (/terreno|terreni/i.test(descLower) || /acquisizione.*terren/i.test(descLower) || /acquisto.*terren/i.test(descLower)) {

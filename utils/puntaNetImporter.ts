@@ -979,6 +979,12 @@ export const SUBAPPALTI_SU_CANTIERI_SUPPLIERS = [
   'Sbrissa sebastiano giardini', 'Moretto scavi', 'Lillo Coperture', 'Alpac', 'Edile coperture',
   'Pizzolato Jody', 'Edillux di Abo Ghazalah', 'Visentin Costruzioni Srl', 'Storgato',
   'Elettrosystem', // mancava del tutto - trovato in audit 2026-10-22, 80.000€
+  // Trovati in audit 2026-10-22, dopo PR #29 (confronto diretto con la ragione sociale PuntaNet):
+  'C.I. Coperture', // "C.I. Coperture Innovative s.r.l." — "Coperture" da solo avrebbe preso anche
+                     // Giuliano/Lillo/Edile coperture gia' in lista, da qui il prefisso "C.I."
+  'Edil Coperture', // "EDIL COPERTURE E RESTAURI SRLS" — "Edile coperture" (gia' in lista) non
+                     // combacia ("Edile" vs "Edil" + "e Restauri"); nessuna fattura in anagrafica
+                     // ancora, ma future fatture di questo fornitore sarebbero finite in Manodopera
 ].map(normalizzaRagioneSociale);
 
 export const isSubappaltoSuCantiere = (descrizione: string): boolean => {
