@@ -1,4 +1,4 @@
-# Avviato automaticamente da Windows al login (Attivita Pianificata "GV_ImportaPuntaNet").
+﻿# Avviato automaticamente da Windows al login (Attivita Pianificata "GV_ImportaPuntaNet").
 # Esegue lo script di estrazione/classificazione PuntaNet in modalita dry-run (nessuna
 # scrittura sul file dati vero) e salva un log leggibile per verificare cosa e' successo.
 
