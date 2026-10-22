@@ -93,10 +93,18 @@ console.log(`File dati: ${GVCF_PATH} (timestamp: ${gvData.timestamp || '(assente
 
 // Per ogni entity (normalizzata) estratta dalle descrizioni, le categorie trovate nell'anno,
 // con conteggio e importo totale per categoria.
+//
+// Esclude '[FINANZA] Commissioni e Bolli Bancari': righe come "SPESE PER BONIFICO - RIF.TO
+// <fornitore>" nominano il fornitore solo come riferimento del bonifico, sono gia' classificate
+// giustamente e non dicono nulla su come sono classificate le SUE fatture — includerle gonfiava
+// sia la Verifica A che la C con "incoerenze" che non sono mai state un problema (trovato
+// rileggendo il primo report reale, 2026-10-22).
+const CATEGORIA_COMMISSIONI = '[FINANZA] Commissioni e Bolli Bancari';
 const categoriePerEntity = new Map();
 for (const t of gvData.transactions) {
   if (t.type !== 'EXPENSE' || t.isForecast) continue;
   if (!t.date || !t.date.startsWith(String(ANNO))) continue;
+  if (t.category === CATEGORIA_COMMISSIONI) continue;
   const entity = estraiEntity(t.description || '');
   const norm = normalizzaRagioneSociale(entity);
   if (!norm) continue;
@@ -112,11 +120,19 @@ for (const t of gvData.transactions) {
 // Un fornitore (ragione sociale PuntaNet) puo' comparire in descrizione accorciata o allungata
 // rispetto all'entity estratta — combacia in una direzione o nell'altra, come fa gia'
 // isSubappaltoSuCantiere per i singoli nomi della lista.
+//
+// Soglia minima di lunghezza: senza questa, una entity cortissima dopo la normalizzazione (es.
+// "TIM S.p.A." -> "TIM", "S.p.A." e' un connettivo rimosso) risultava "contenuta" per puro caso
+// in ragioni sociali lunghe non correlate (es. "TIMEXPERT..." contiene letteralmente "TIM"),
+// attribuendo le fatture di un fornitore a tutt'altro (trovato rileggendo il primo report reale,
+// 2026-10-22). 5 caratteri e' la stessa soglia gia' usata da matchesPattern per lo stesso motivo.
+const LUNGHEZZA_MINIMA_MATCH = 5;
 function trovaCategorieAttuali(ragioneSociale) {
   const normRS = normalizzaRagioneSociale(ragioneSociale);
   let trovato = null;
   for (const [normEntity, perCat] of categoriePerEntity) {
     if (!normEntity) continue;
+    if (Math.min(normRS.length, normEntity.length) < LUNGHEZZA_MINIMA_MATCH) continue;
     if (normRS.includes(normEntity) || normEntity.includes(normRS)) {
       if (!trovato) trovato = new Map();
       for (const [cat, info] of perCat) {
