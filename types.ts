@@ -73,6 +73,8 @@ export interface Transaction {
   grossAmount?: number; // Exact gross amount imported from PuntaNet / bank
   puntaNetIDDocumento?: number; // ← NUOVO — Documenti.IDDocumento reale, per dedup esatto (pipeline SQL)
   puntaNetIDRata?: number;      // ← NUOVO — Documenti Scadenze.IDRata reale, per dedup esatto (pipeline SQL)
+  puntaNetIDMovimento?: number; // ← NUOVO — Conti Movimenti.IDMovimento reale, per dedup esatto (pipeline SQL;
+                                 // gia' usata a runtime da scripts/importaPuntaNet.mjs, mai dichiarata qui finora)
 
   // Fattura PuntaNet ricevuta/emessa ma non ancora pagata/incassata al momento dell'import —
   // scritta comunque come consuntivo (isForecast: false, mai previsionale: vedi nota storica

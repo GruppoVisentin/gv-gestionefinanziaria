@@ -600,6 +600,15 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
       if (r.cantiereSuggerito) {
         tx.project = r.cantiereSuggerito;
       }
+      // Ripristina il collegamento PuntaNet e lo stato di pagamento quando gia' noti in fase di
+      // classificazione (riga._puntaNetKey da solo e' opaca, ignorata qui): senza questo, il giro
+      // di import automatico successivo non riconosce piu' questa fattura/movimento come "gia'
+      // gestito" e puo' riproporlo o duplicarlo, e la riconciliazione automatica del pagamento non
+      // si applica piu' (Codex review, PR #34, 2026-10-22).
+      if (r.puntaNetIDDocumento != null) tx.puntaNetIDDocumento = r.puntaNetIDDocumento;
+      if (r.puntaNetIDRata != null) tx.puntaNetIDRata = r.puntaNetIDRata;
+      if (r.puntaNetIDMovimento != null) tx.puntaNetIDMovimento = r.puntaNetIDMovimento;
+      if (r.pagato !== undefined) tx.pagato = r.pagato;
 
       // Reconciliation for INCOME and EXPENSE
       const txDate = parseUTCDate(tx.date);
@@ -1194,13 +1203,24 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
               <button 
                 onClick={() => {
                   if (window.confirm("Sei sicuro di voler annullare questa importazione in sospeso? Tutti i dati analizzati verranno persi.")) {
+                    // Le righe create per sospendere in revisione una transazione GIA' esistente
+                    // (es. scripts/sospendiClassificazioneDubbia.mjs) portano con se' l'originale
+                    // completo in _transazioneOriginale: vanno ripristinate com'erano, non devono
+                    // sparire nel nulla insieme alle righe di importazione davvero nuove e
+                    // scartabili (Codex review, PR #34, 2026-10-22).
+                    const daRipristinare = righe
+                      .map(r => r._transazioneOriginale)
+                      .filter((t): t is Transaction => t != null);
+                    if (daRipristinare.length > 0) {
+                      onImport(daRipristinare, []);
+                    }
                     onAggiornaBozza([]);
                     setFileBanca(null);
                     handleSetFileFEP(null);
                     handleSetFileFEA(null);
                     setStep('upload');
                   }
-                }} 
+                }}
                 className="px-4 py-2 text-xs font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-xl transition-all"
               >
                 Annulla Import
