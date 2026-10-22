@@ -200,6 +200,18 @@ const bozzaKeyEsistenti = new Set();
 for (const b of (gvData.bozzaImportPuntaNet || [])) {
   if (b._puntaNetKey) bozzaKeyEsistenti.add(b._puntaNetKey);
 }
+// Una riga gia' in bozzaImportPuntaNet (in attesa di revisione manuale in app — confermata da un
+// utente oppure messa li' apposta, es. per un dubbio di classificazione) va trattata come "gia'
+// gestita" tanto quanto una gia' scritta in transactions: altrimenti il giro automatico di domani
+// la ri-classifica da zero e, se la confidenza risulta ancora "alta", la riscrive direttamente in
+// transactions — duplicando la fattura (una copia in bozza, una in transactions) e, se la
+// bozza era li' apposta perche' la categoria era in dubbio, vanificando silenziosamente quel dubbio
+// (trovato progettando scripts/sospendiClassificazioneDubbia.mjs, 2026-10-22: bozzaKeyEsistenti
+// veniva gia' calcolato qui ma non era mai stato effettivamente incrociato con questi due Set).
+for (const k of bozzaKeyEsistenti) {
+  if (k.startsWith('mov:')) esistentiKeyMovimento.add(Number(k.slice(4)));
+  else if (k.startsWith('doc:')) esistentiKey.add(k.slice(4));
+}
 
 // ─── Dati arricchimento fattura (categoria/cantiere), da giugno anno precedente in poi ──
 const docCantiereU = runSql(DB_IMPRESA, `SET NOCOUNT ON; SELECT dic.IDDocumento, dic.IDCantiere, dic.Imponibile FROM [Documenti Imponibili Cantiere] dic JOIN Documenti d ON d.IDDocumento = dic.IDDocumento WHERE d.Tipo = 1 AND d.Data >= '2025-06-01' FOR JSON PATH`);
@@ -612,6 +624,13 @@ for (const t of gvDataFresh.transactions) {
 const bozzaKeyFresh = new Set();
 for (const b of (gvDataFresh.bozzaImportPuntaNet || [])) {
   if (b._puntaNetKey) bozzaKeyFresh.add(b._puntaNetKey);
+}
+// Stessa unione di esistentiKey/esistentiKeyMovimento sopra, qui sulla rilettura fresca: una
+// bozza aggiunta da un altro processo proprio mentre questo script girava non deve finire scritta
+// direttamente in daScrivere, che controlla solo esistentiKeyFresh (vedi nota sopra).
+for (const k of bozzaKeyFresh) {
+  if (k.startsWith('mov:')) esistentiKeyMovimentoFresh.add(Number(k.slice(4)));
+  else if (k.startsWith('doc:')) esistentiKeyFresh.add(k.slice(4));
 }
 
 // ─── Aggiornamento pagamenti: fatture gia' scritte come "non pagate" che oggi risultano saldate ──
