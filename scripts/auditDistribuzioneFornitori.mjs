@@ -45,6 +45,7 @@ import {
   REGOLE_BUILTIN,
   matchesPattern,
   estraiEntity,
+  isSpesaBancaria,
 } from '../utils/puntaNetImporter.ts';
 
 const SQLCMD = String.raw`C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\110\Tools\Binn\SQLCMD.EXE`;
@@ -94,17 +95,19 @@ console.log(`File dati: ${GVCF_PATH} (timestamp: ${gvData.timestamp || '(assente
 // Per ogni entity (normalizzata) estratta dalle descrizioni, le categorie trovate nell'anno,
 // con conteggio e importo totale per categoria.
 //
-// Esclude '[FINANZA] Commissioni e Bolli Bancari': righe come "SPESE PER BONIFICO - RIF.TO
-// <fornitore>" nominano il fornitore solo come riferimento del bonifico, sono gia' classificate
-// giustamente e non dicono nulla su come sono classificate le SUE fatture — includerle gonfiava
-// sia la Verifica A che la C con "incoerenze" che non sono mai state un problema (trovato
-// rileggendo il primo report reale, 2026-10-22).
-const CATEGORIA_COMMISSIONI = '[FINANZA] Commissioni e Bolli Bancari';
+// Esclude le righe di spesa/commissione bancaria riconosciute DALLA DESCRIZIONE (isSpesaBancaria,
+// la stessa funzione usata da classificaRiga): righe come "SPESE PER BONIFICO - RIF.TO <fornitore>"
+// nominano il fornitore solo come riferimento del bonifico e non dicono nulla su come sono
+// classificate le SUE fatture — includerle gonfiava sia la Verifica A che la C con "incoerenze"
+// che non sono mai state un problema. Il filtro guarda la descrizione, non la categoria gia'
+// scritta: quest'ultima e' proprio quella sotto verifica, quindi una fattura vera finita per
+// errore in questa categoria (il tipo di bug che l'audit deve scovare) resterebbe altrimenti
+// nascosta (Codex review PR #32, 2026-10-22).
 const categoriePerEntity = new Map();
 for (const t of gvData.transactions) {
   if (t.type !== 'EXPENSE' || t.isForecast) continue;
   if (!t.date || !t.date.startsWith(String(ANNO))) continue;
-  if (t.category === CATEGORIA_COMMISSIONI) continue;
+  if (isSpesaBancaria(t.description || '')) continue;
   const entity = estraiEntity(t.description || '');
   const norm = normalizzaRagioneSociale(entity);
   if (!norm) continue;
@@ -121,19 +124,27 @@ for (const t of gvData.transactions) {
 // rispetto all'entity estratta — combacia in una direzione o nell'altra, come fa gia'
 // isSubappaltoSuCantiere per i singoli nomi della lista.
 //
-// Soglia minima di lunghezza: senza questa, una entity cortissima dopo la normalizzazione (es.
-// "TIM S.p.A." -> "TIM", "S.p.A." e' un connettivo rimosso) risultava "contenuta" per puro caso
-// in ragioni sociali lunghe non correlate (es. "TIMEXPERT..." contiene letteralmente "TIM"),
-// attribuendo le fatture di un fornitore a tutt'altro (trovato rileggendo il primo report reale,
-// 2026-10-22). 5 caratteri e' la stessa soglia gia' usata da matchesPattern per lo stesso motivo.
+// Soglia minima di lunghezza SOLO per un contenimento tra stringhe DIVERSE: senza questa, una
+// entity cortissima dopo la normalizzazione (es. "TIM S.p.A." -> "TIM", "S.p.A." e' un connettivo
+// rimosso) risultava "contenuta" per puro caso in ragioni sociali lunghe non correlate (es.
+// "TIMEXPERT..." contiene letteralmente "TIM"), attribuendo le fatture di un fornitore a
+// tutt'altro (trovato rileggendo il primo report reale, 2026-10-22). 5 caratteri e' la stessa
+// soglia gia' usata da matchesPattern per lo stesso motivo.
+//
+// Una corrispondenza ESATTA (stessa stringa normalizzata su entrambi i lati) resta sempre valida
+// anche se corta — non e' un contenimento casuale, e' lo stesso nome: altrimenti un fornitore il
+// cui nome normalizza gia' a una stringa corta (come "TIM" stesso) risulterebbe sempre "non
+// verificabile", nascondendo le sue vere fatture invece di confrontarle (Codex review PR #32,
+// 2026-10-22).
 const LUNGHEZZA_MINIMA_MATCH = 5;
 function trovaCategorieAttuali(ragioneSociale) {
   const normRS = normalizzaRagioneSociale(ragioneSociale);
   let trovato = null;
   for (const [normEntity, perCat] of categoriePerEntity) {
     if (!normEntity) continue;
-    if (Math.min(normRS.length, normEntity.length) < LUNGHEZZA_MINIMA_MATCH) continue;
-    if (normRS.includes(normEntity) || normEntity.includes(normRS)) {
+    const uguali = normRS === normEntity;
+    if (!uguali && Math.min(normRS.length, normEntity.length) < LUNGHEZZA_MINIMA_MATCH) continue;
+    if (uguali || normRS.includes(normEntity) || normEntity.includes(normRS)) {
       if (!trovato) trovato = new Map();
       for (const [cat, info] of perCat) {
         const prev = trovato.get(cat) || { count: 0, totale: 0, esempio: info.esempio };

@@ -1002,6 +1002,13 @@ export const isSubappaltoSuCantiere = (descrizione: string): boolean => {
 
 // ─── CLASSIFICAZIONE AUTOMATICA (Fallback) ───────────────────────
 
+const REGEX_SPESA_BANCARIA = /spese bonifico|spese per bonifico|spese per bonigfico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|spese per incasso|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i;
+
+// Esportata cosi' chi deve riconoscere una riga di spesa/commissione bancaria (es. uno strumento
+// di audit che non puo' fidarsi della categoria gia' scritta, visto che e' proprio quella sotto
+// verifica) usa lo STESSO riconoscimento di classificaRiga sotto, invece di duplicare il regex.
+export const isSpesaBancaria = (testo: string): boolean => REGEX_SPESA_BANCARIA.test(testo);
+
 // Esportata (invariata) cosi' gli strumenti di audit possono verificare i pattern BUILTIN sulla
 // ragione sociale reale con lo STESSO confronto usato in produzione, invece di reimplementarlo.
 export const matchesPattern = (text: string, pattern: string): boolean => {
@@ -1056,10 +1063,7 @@ export const classificaRiga = (
   }
 
   // Riconoscimento automatico spese e commissioni bancarie / bolli / interessi
-  if (
-    /spese bonifico|spese per bonifico|spese per bonigfico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|spese per incasso|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(descLower) ||
-    /spese bonifico|spese per bonifico|spese per bonigfico|spese rid|spese per rid|addebito rid|spese per sepa|spese sepa|spese per incasso|commissione|commissioni|cbill|imposta di bollo|spese tenuta conto|canone home banking|estratto conto|competenze|spese di scritturazione/i.test(entLower)
-  ) {
+  if (isSpesaBancaria(descLower) || isSpesaBancaria(entLower)) {
     const isInteressi = /interessi/i.test(descLower) || /interessi/i.test(entLower);
     const categoria = isInteressi 
       ? '[FINANZA] Interessi Passivi Finanziamenti' 
