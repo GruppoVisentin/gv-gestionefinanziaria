@@ -1,24 +1,24 @@
-# Avviato automaticamente da Windows ogni giorno alle 9:00 (Attivita Pianificata "GV_ImportaPuntaNet").
+﻿# Avviato automaticamente da Windows ogni giorno alle 9:00 (Attivita Pianificata "GV_ImportaPuntaNet").
 # Esegue PRIMA DI TUTTO "git pull" su questa cartella (dal 2026-09-24): senza questo passaggio,
 # una correzione allo script pubblicata su GitHub resta senza effetto finche' qualcuno non
-# aggiorna questa copia a mano — successo tre volte di fila nella pratica (anagrafica clienti,
+# aggiorna questa copia a mano - successo tre volte di fila nella pratica (anagrafica clienti,
 # collegamento cantieri PuntaNet, filtro fornitori per cantiere: tutte corrette su GitHub ma mai
 # arrivate qui finche' non aggiornata manualmente). Se questa cartella non e' un clone git, il
 # log lo segnala chiaramente invece di fallire in silenzio.
 # Poi esegue scripts\aggiornaCopiaLocale.ps1 (dal 2026-09-24), che ripristina la copia
-# locale PuntaNet dall'ultimo backup automatico — richiede pochi secondi (verificato: ~5 secondi
+# locale PuntaNet dall'ultimo backup automatico - richiede pochi secondi (verificato: ~5 secondi
 # in totale sui tre database), quindi non serve una seconda Attivita Pianificata separata con un
 # orario sfalsato: un'unica attivita' alle 9:00 basta, con la sequenza sempre garantita. Senza
 # questo passaggio l'import legge sempre la stessa fotografia congelata, "con successo" ma senza
 # trovare mai nulla di nuovo (bug reale: 15 giorni di silenzio perche' il ripristino non era mai
-# stato automatizzato — un solo ripristino manuale il 9 settembre, mai ripetuto).
+# stato automatizzato - un solo ripristino manuale il 9 settembre, mai ripetuto).
 # Esegue l'estrazione/classificazione PuntaNet in modalita SCRITTURA (--scrivi): i movimenti ad
 # alta confidenza vengono scritti direttamente nel file dati reale, gli altri finiscono in
 # bozzaImportPuntaNet per la revisione manuale in app (banner giallo "movimenti da classificare").
 # Esegue anche l'estrazione dell'anagrafica fornitori (tab "Fornitori") in modalita SCRITTURA
 # (--scrivi), sempre alla stessa ora: i fornitori nuovi vengono aggiunti (categoria "Da
 # Categorizzare", da assegnare in app quando si vuole) e quelli gia' noti aggiornati SOLO nei
-# campi economici (fatturato/numero fatture/ultima fattura) — mai contatti/categoria/note, che
+# campi economici (fatturato/numero fatture/ultima fattura) - mai contatti/categoria/note, che
 # restano le scelte fatte a mano in app. Niente piu' passaggio manuale di selezione file
 # (richiesto 2026-09-16): il banner "N fornitori aggiornati" in app segnala cosa e' successo.
 # Esegue anche il collegamento automatico commessa <-> Cantiere PuntaNet (per nome,
@@ -52,7 +52,7 @@ if (Test-Path (Join-Path $ProjectDir ".git")) {
         "=== ERRORE aggiornamento codice (si prosegue comunque con la versione locale attuale): $($_.Exception.Message) ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
     }
 } else {
-    "=== ATTENZIONE: $ProjectDir non e' un clone git — il codice qui non si aggiorna mai da solo. Per attivare l'aggiornamento automatico, sostituire questa cartella con un clone di https://github.com/GruppoVisentin/gv-gestionefinanziaria una volta sola (stesso percorso, o aggiornando la variable ProjectDir in cima a questo script). ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+    "=== ATTENZIONE: $ProjectDir non e' un clone git - il codice qui non si aggiorna mai da solo. Per attivare l'aggiornamento automatico, sostituire questa cartella con un clone di https://github.com/GruppoVisentin/gv-gestionefinanziaria una volta sola (stesso percorso, o aggiornando la variable ProjectDir in cima a questo script). ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
 }
 
 "=== Avvio aggiornaCopiaLocale.ps1 - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
