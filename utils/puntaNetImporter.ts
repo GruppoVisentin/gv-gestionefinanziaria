@@ -965,7 +965,10 @@ export const normalizzaRagioneSociale = (s: string): string =>
 // vecchio alias: resta un preset UI valido (SUPPLIER_PRESETS in constants.ts) e potrebbe comparire
 // come descrizione in transazioni gia' esistenti — rimuoverlo farebbe regredire quei casi (Codex
 // review PR #29, 2026-10-22).
-export const SUBAPPALTI_SU_CANTIERI_SUPPLIERS = [
+// Nomi "grezzi" cosi' come scritti dall'utente (non normalizzati) — esportati separatamente cosi'
+// gli strumenti di audit possono riferirsi al nome leggibile originale invece di duplicare la lista
+// (vedi scripts/auditDistribuzioneFornitori.mjs).
+export const SUBAPPALTI_SU_CANTIERI_SUPPLIERS_RAW = [
   'Munaretto', 'Solar system', 'Lattoneria Rossanese', 'Asolo Pavimenti', 'il fabbro srl', 'Nart Sonia',
   'Decorgesso srls', 'Galliazzo Ivano', 'Visentin & Gasparetto', 'Geosolar', 'Agostini Sergio',
   'Aeerre costruzioni', 'Conte Ambienti Esterni', 'Falegnameria Trentin', 'Visentin Francesco',
@@ -985,7 +988,9 @@ export const SUBAPPALTI_SU_CANTIERI_SUPPLIERS = [
   'Edil Coperture', // "EDIL COPERTURE E RESTAURI SRLS" — "Edile coperture" (gia' in lista) non
                      // combacia ("Edile" vs "Edil" + "e Restauri"); nessuna fattura in anagrafica
                      // ancora, ma future fatture di questo fornitore sarebbero finite in Manodopera
-].map(normalizzaRagioneSociale);
+];
+
+export const SUBAPPALTI_SU_CANTIERI_SUPPLIERS = SUBAPPALTI_SU_CANTIERI_SUPPLIERS_RAW.map(normalizzaRagioneSociale);
 
 export const isSubappaltoSuCantiere = (descrizione: string): boolean => {
   const normalizzata = normalizzaRagioneSociale(descrizione);
@@ -997,7 +1002,9 @@ export const isSubappaltoSuCantiere = (descrizione: string): boolean => {
 
 // ─── CLASSIFICAZIONE AUTOMATICA (Fallback) ───────────────────────
 
-const matchesPattern = (text: string, pattern: string): boolean => {
+// Esportata (invariata) cosi' gli strumenti di audit possono verificare i pattern BUILTIN sulla
+// ragione sociale reale con lo STESSO confronto usato in produzione, invece di reimplementarlo.
+export const matchesPattern = (text: string, pattern: string): boolean => {
   const normalizza = (s: string) =>
     s.toUpperCase()
       .normalize('NFD')
@@ -1490,7 +1497,9 @@ export const rigaToTransaction = (
 
 // ─── REGOLE BUILTIN ──────────────────────────────────────────────
 
-const REGOLE_BUILTIN: Array<{
+// Esportata (invariata) per lo stesso motivo di matchesPattern sopra: verificare i 587+ pattern
+// contro la ragione sociale reale senza mantenerne una copia separata altrove.
+export const REGOLE_BUILTIN: Array<{
   pattern: string;
   categoria: string;
   ceType: string;
