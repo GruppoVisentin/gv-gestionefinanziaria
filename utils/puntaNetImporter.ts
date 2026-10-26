@@ -1518,6 +1518,40 @@ export const rigaToTransaction = (
 
 // ─── REGOLE BUILTIN ──────────────────────────────────────────────
 
+// Frammenti (sottostringa, maiuscolo) che individuano i SOLI pattern BUILTIN verificati a mano
+// come abbastanza affidabili da vincere SEMPRE sulla tipologia PuntaNet gia' prodotta (non solo
+// come fallback quando nessuna categoria esiste) — vedi applicaPrioritaFinale in
+// importaPuntaNet.mjs e trovaCasoBuiltin in sospendiClassificazioneDubbia.mjs, che importano
+// questa stessa lista per restare allineati.
+//
+// NON e' tutto REGOLE_BUILTIN: un primo tentativo (2026-10-26) di usare TUTTI i pattern "alta
+// confidenza" ha fatto emergere, nel dry-run reale di sospendiClassificazioneDubbia.mjs, decine di
+// migliaia di euro di falsi positivi — pattern scritti per un contesto specifico (spesso
+// un'unica fattura passata) che NON generalizzano a "questo fornitore appartiene sempre a questa
+// categoria". Esempi reali trovati: "VISENTIN MARCO"/"VISENTIN RONNY" (~170.000€, 20+ righe) si
+// aspettano "Professionisti Esterni di Cantiere" ma sono i compensi mensili RICORRENTI degli
+// amministratori, gia' giustamente "Compenso Amministratori"; "CO.I.M.", "ALTO TREVIGIANO SERVIZI
+// SPA" (utenza acqua), "Enel Energia"/"Duferco Energia" (utenze energia) si aspettano "Fornitori
+// Materiali" ma sono bollette di utenze; e la collisione nota "BERTON" che intercetta "ROBELON
+// S.A.S. DI GRAZIANO BERTONCELLO" (fornitore scorrelato, stesso problema gia' documentato in
+// precedenza per questo pattern). Per questo qui restano SOLO i pattern controllati uno per uno.
+export const FRAMMENTI_PATTERN_SEMPRE_VINCENTE = [
+  'TVM RENT',
+  'VELLO',
+  'STUDIO VISENTIN',
+  'LONDERO MARIO',
+  'SERNAGIOTTO',
+  'GEOCONSULT',
+  'NORMATEMPO',
+  'DE FILIPPO GIOVANNI',
+  'SELMEDIN NESIMOSKI',
+  'NESIMOSKI SELMEDIN',
+  'ESNA',
+  'BUREAU VERITAS',
+  'DAMETTO WANDA',
+  'MARENGON',
+];
+
 // Esportata (invariata) per lo stesso motivo di matchesPattern sopra: verificare i 587+ pattern
 // contro la ragione sociale reale senza mantenerne una copia separata altrove.
 export const REGOLE_BUILTIN: Array<{
