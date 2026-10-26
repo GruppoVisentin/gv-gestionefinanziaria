@@ -288,8 +288,11 @@ function excelPerCategoria(meseIdx) {
 // 3) I finanziamenti sono registrati in una riga di riepilogo SEPARATA, "ENTRATE DA ALTRI
 //    FINANZIAMENTI", dentro la sezione "LIQUIDITA' IN CONTO CORRENTE" molto piu' in basso nel
 //    foglio (fuori da qualunque intervallo ENTRATE/USCITE delimitato da "TOTALE INCASSATO") — con
-//    l'etichetta in COLONNA B, non in colonna A come tutte le altre righe di questo script, ma con
-//    la STESSA colonna consuntivo per mese (4+m*5) della sezione ENTRATE normale. Confermato sui
+//    l'etichetta in COLONNA C (non A o B: un primo tentativo assumeva B sulla base dello screenshot,
+//    ma la diagnostica raw su dati reali, 2026-10-26, ha mostrato C616="ENTRATE DA ALTRI
+//    FINANZIAMENTI", non B616 — l'intera sezione di riepilogo usa la colonna C per le etichette, es.
+//    anche C615="ENTRATE" e C617="ENTRATE-USCITE"), ma con la STESSA colonna consuntivo per mese
+//    (4+m*5) della sezione ENTRATE normale (confermato: D616=E616=792800 a gennaio). Confermato sui
 //    dati reali: 792.800€ a gennaio, identico a [FINANZA] Finanziamenti Ricevuti nell'app.
 const fineEntrate = inizioUscite - 1; // la riga "TOTALE INCASSATO" stessa resta esclusa
 
@@ -297,7 +300,8 @@ function trovaRigaFinanziamenti() {
   for (let i = 0; i < righe.length; i++) {
     const a = righe[i]?.[0];
     const b = righe[i]?.[1];
-    const testo = [a, b].filter(v => typeof v === 'string').join(' ');
+    const c = righe[i]?.[2];
+    const testo = [a, b, c].filter(v => typeof v === 'string').join(' ');
     if (/ENTRATE\s+DA\s+ALTRI\s+FINANZIAMENTI/i.test(testo)) return i;
   }
   return -1;
