@@ -21,7 +21,7 @@
 import fs from 'fs';
 import path from 'path';
 import XLSX from 'xlsx';
-import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES, INCOME_CATEGORIES } from '../constants.ts';
+import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants.ts';
 import { isSubappaltoSuCantiere } from '../utils/puntaNetImporter.ts';
 
 const [, , xlsxPathArg, mesiArg, annoArg] = process.argv;
@@ -173,8 +173,6 @@ function transazioneValida(t) {
 const fixedCategories = gvData.fixedCategories || [...FIXED_COST_CATEGORIES];
 const variableCategories = gvData.variableCategories || [...VARIABLE_COST_CATEGORIES];
 const categorieValide = new Set([...fixedCategories, ...variableCategories]);
-const incomeCategories = gvData.incomeCategories || [...INCOME_CATEGORIES];
-const categorieValideEntrate = new Set(incomeCategories);
 
 function appPerCategoria(meseIdx) {
   const mappa = new Map();
@@ -191,8 +189,14 @@ function appPerCategoria(meseIdx) {
 }
 
 // Lato ENTRATE (ricavi/incassi) — richiesto dall'utente il 2026-10-26, dopo il confronto sulle
-// uscite, per verificare anche le entrate. Stessa logica della funzione gemella sopra, ma per
-// t.type === 'INCOME' e sulla lista categorie INCOME_CATEGORIES invece di quella dei costi.
+// uscite, per verificare anche le entrate. A differenza di appPerCategoria sopra, NON filtra per
+// una lista di categorie valide: IncomeTimeline.tsx (components/IncomeTimeline.tsx, riga 173,
+// incomeTransactions = transactions.filter(t => t.type === 'INCOME')) mostra il totale di TUTTE le
+// entrate non previsionali, qualunque sia la categoria — filtrare qui avrebbe fatto leggere al
+// confronto un totale app diverso da quello che l'utente vede davvero in app, anche in presenza di
+// entrate con categoria mancante o non (ancora) elencata (trovato in review: Codex, 2026-10-26).
+// Le categorie non riconosciute restano comunque visibili: finiscono nell'elenco "senza
+// corrispondenza Excel" piu' sotto, invece di sparire in silenzio dal totale.
 function appPerCategoriaEntrate(meseIdx) {
   const mappa = new Map();
   for (const t of gvData.transactions) {
@@ -202,7 +206,7 @@ function appPerCategoriaEntrate(meseIdx) {
     if (d.getUTCFullYear() !== ANNO || d.getUTCMonth() !== meseIdx) continue;
     let categoria = t.category;
     if (categoria && CATEGORY_MIGRATION_MAP[categoria]) categoria = CATEGORY_MIGRATION_MAP[categoria];
-    if (!categorieValideEntrate.has(categoria)) continue;
+    if (!categoria) categoria = '(categoria mancante)';
     mappa.set(categoria, (mappa.get(categoria) || 0) + importoLordo(t));
   }
   return mappa;
@@ -261,29 +265,63 @@ function excelPerCategoria(meseIdx) {
 }
 
 // --- Lato EXCEL: sezione ENTRATE (ricavi/incassi), righe PRIMA di "TOTALE INCASSATO" ---
-// Richiesto dall'utente il 2026-10-26, dopo il confronto sulle uscite: stessa logica a specchio
-// (stesso layout a blocchi di 5 colonne per mese), ma sulla sezione ENTRATE del foglio. A
-// differenza di MAPPATURA (uscite — verificata su piu' mesi reali in sessioni precedenti), qui
-// NON si conoscono ancora i nomi letterali delle righe categoria dell'Excel per le entrate:
-// MAPPATURA_ENTRATE parte vuota apposta, cosi' il primo confronto reale mostra SOLO le due liste
-// "senza mappatura" (nomi reali Excel e nomi reali app, con i rispettivi importi), da cui costruire
-// la mappatura corretta in un secondo passaggio — invece di indovinarla alla cieca (stesso errore
-// da evitare dopo la lezione sui pattern BUILTIN "sempre vincenti" generalizzati senza verifica,
-// 2026-10-26). Il totale app vs excel sotto, pero', e' gia' affidabile da subito: non dipende da
-// MAPPATURA_ENTRATE, solo dalla somma di tutte le entrate di ciascun lato.
+// Richiesto dall'utente il 2026-10-26, dopo il confronto sulle uscite. Il primo tentativo
+// riusava a specchio la logica delle uscite (colonna 6+m*5, righe "categoria" tutte in maiuscolo)
+// ed e' risultato sbagliato su tutti e due i punti (trovato in review: Codex, 2026-10-26,
+// confrontando con la stessa sezione ENTRATE gia' gestita da components/ImportStoricoModal.tsx):
+//
+// 1) Colonna: il blocco di 5 colonne per mese ha la colonna CONSUNTIVO delle entrate a 4+m*5
+//    (colEntrataCons), non 6+m*5 (colUscitaCons) — quest'ultima e' solo per le uscite.
+//
+// 2) Formato righe: a differenza delle uscite (righe-categoria in maiuscolo, es. "NOLEGGI"), la
+//    sezione ENTRATE del foglio NON ha righe-categoria: ha una riga per ogni cliente/incasso (nome
+//    in maiuscolo/minuscolo qualunque), che l'importer storico mappa SEMPRE sulla stessa categoria
+//    app "[CANTIERE] SAL — Stato Avanzamento Lavori" (vedi parseExcelStorico, ImportStoricoModal.tsx
+//    riga ~209) — a parte le righe di finanziamento bancario (ESCLUDI_ENTRATE_PATTERN sotto, stessa
+//    lista dell'importer), per cui l'importer storico non crea una transazione app (l'utente la
+//    inserisce a mano altrove), ma la riga con il suo importo esiste comunque nel foglio: va tenuta
+//    in una voce SEPARATA, non scartata, altrimenti il totale Excel non copre piu' le stesse
+//    transazioni del totale app (che include sempre [FINANZA] Finanziamenti Ricevuti, via
+//    IncomeTimeline.getMonthlyTotal) — scarto strutturale finto, non un vero problema di
+//    riconciliazione (trovato in review: Codex, 2026-10-26, sulla correzione del punto 3 qui sotto).
+//    Non essendoci piu' categorie distinte da abbinare una per una, MAPPATURA_ENTRATE ha due voci:
+//    la somma delle righe cliente (su SAL) e la somma delle righe di finanziamento (su Finanziamenti
+//    Ricevuti).
 const fineEntrate = inizioUscite - 1; // la riga "TOTALE INCASSATO" stessa resta esclusa
+const ESCLUDI_ENTRATE_PATTERN = [
+  /accredito mutuo/i, /finanziamento/i, /prestito/i,
+  /apertura fido/i, /linea credito/i,
+];
 function excelPerCategoriaEntrate(meseIdx) {
-  const colConsuntivo = 6 + meseIdx * 5; // stesso layout a colonne della sezione USCITE
-  const mappa = new Map();
+  const colConsuntivo = 4 + meseIdx * 5; // colEntrataCons in ImportStoricoModal.tsx
+  let sommaClienti = 0;
+  let sommaFinanziamenti = 0;
   for (let i = 0; i < fineEntrate; i++) {
     const nome = righe[i]?.[0];
-    if (!eCategoria(nome)) continue;
+    if (typeof nome !== 'string') continue;
+    const label = nome.trim();
+    if (!label || label === 'MESE') continue;
+    if (ESCLUDI_RIGHE.has(label.toUpperCase())) continue;
     const v = safeParseFloat(righe[i]?.[colConsuntivo]);
-    if (!Number.isNaN(v)) mappa.set(nome.trim(), v);
+    if (Number.isNaN(v) || v <= 0) continue;
+    if (ESCLUDI_ENTRATE_PATTERN.some(p => p.test(label))) sommaFinanziamenti += v;
+    else sommaClienti += v;
   }
+  const mappa = new Map();
+  if (sommaClienti > 0) mappa.set('INCASSI CLIENTI (somma righe nel foglio, mappate su SAL dall\'importer storico)', sommaClienti);
+  if (sommaFinanziamenti > 0) mappa.set('FINANZIAMENTI (righe bancarie nel foglio, non create come transazione dall\'importer storico)', sommaFinanziamenti);
   return mappa;
 }
-const MAPPATURA_ENTRATE = {};
+// "incerta: true": l'importer storico mappa OGNI riga cliente su SAL, ma non e' detto che la somma
+// del foglio corrisponda esattamente solo a questa categoria app nel 2026 (import automatico da
+// PuntaNet, non piu' dall'Excel) — potrebbe includere anche cio' che oggi l'app distingue come
+// "Saldo Finale Commessa" o "Anticipi da Clienti su Commessa". Questi ultimi, se presenti, compaiono
+// comunque nell'elenco "APP senza corrispondenza Excel" qui sotto con il loro importo reale, per
+// decidere a mano se vanno sommati alla stessa riga invece di lasciarli come mappatura separata.
+const MAPPATURA_ENTRATE = {
+  'INCASSI CLIENTI (somma righe nel foglio, mappate su SAL dall\'importer storico)': { app: ['[CANTIERE] SAL — Stato Avanzamento Lavori'], incerta: true },
+  'FINANZIAMENTI (righe bancarie nel foglio, non create come transazione dall\'importer storico)': { app: ['[FINANZA] Finanziamenti Ricevuti'], incerta: false },
+};
 
 // --- Confronto ---
 for (const meseIdx of MESI_RICHIESTI) {
