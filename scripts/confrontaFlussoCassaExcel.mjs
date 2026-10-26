@@ -21,7 +21,7 @@
 import fs from 'fs';
 import path from 'path';
 import XLSX from 'xlsx';
-import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants.ts';
+import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES, INCOME_CATEGORIES } from '../constants.ts';
 import { isSubappaltoSuCantiere } from '../utils/puntaNetImporter.ts';
 
 const [, , xlsxPathArg, mesiArg, annoArg] = process.argv;
@@ -173,6 +173,8 @@ function transazioneValida(t) {
 const fixedCategories = gvData.fixedCategories || [...FIXED_COST_CATEGORIES];
 const variableCategories = gvData.variableCategories || [...VARIABLE_COST_CATEGORIES];
 const categorieValide = new Set([...fixedCategories, ...variableCategories]);
+const incomeCategories = gvData.incomeCategories || [...INCOME_CATEGORIES];
+const categorieValideEntrate = new Set(incomeCategories);
 
 function appPerCategoria(meseIdx) {
   const mappa = new Map();
@@ -183,6 +185,24 @@ function appPerCategoria(meseIdx) {
     if (d.getUTCFullYear() !== ANNO || d.getUTCMonth() !== meseIdx) continue;
     const categoria = categoriaNormalizzata(t);
     if (!categorieValide.has(categoria)) continue;
+    mappa.set(categoria, (mappa.get(categoria) || 0) + importoLordo(t));
+  }
+  return mappa;
+}
+
+// Lato ENTRATE (ricavi/incassi) — richiesto dall'utente il 2026-10-26, dopo il confronto sulle
+// uscite, per verificare anche le entrate. Stessa logica della funzione gemella sopra, ma per
+// t.type === 'INCOME' e sulla lista categorie INCOME_CATEGORIES invece di quella dei costi.
+function appPerCategoriaEntrate(meseIdx) {
+  const mappa = new Map();
+  for (const t of gvData.transactions) {
+    if (t.type !== 'INCOME' || t.isForecast) continue;
+    if (!transazioneValida(t)) continue;
+    const d = new Date(`${t.date}T00:00:00Z`);
+    if (d.getUTCFullYear() !== ANNO || d.getUTCMonth() !== meseIdx) continue;
+    let categoria = t.category;
+    if (categoria && CATEGORY_MIGRATION_MAP[categoria]) categoria = CATEGORY_MIGRATION_MAP[categoria];
+    if (!categorieValideEntrate.has(categoria)) continue;
     mappa.set(categoria, (mappa.get(categoria) || 0) + importoLordo(t));
   }
   return mappa;
@@ -240,6 +260,31 @@ function excelPerCategoria(meseIdx) {
   return mappa;
 }
 
+// --- Lato EXCEL: sezione ENTRATE (ricavi/incassi), righe PRIMA di "TOTALE INCASSATO" ---
+// Richiesto dall'utente il 2026-10-26, dopo il confronto sulle uscite: stessa logica a specchio
+// (stesso layout a blocchi di 5 colonne per mese), ma sulla sezione ENTRATE del foglio. A
+// differenza di MAPPATURA (uscite — verificata su piu' mesi reali in sessioni precedenti), qui
+// NON si conoscono ancora i nomi letterali delle righe categoria dell'Excel per le entrate:
+// MAPPATURA_ENTRATE parte vuota apposta, cosi' il primo confronto reale mostra SOLO le due liste
+// "senza mappatura" (nomi reali Excel e nomi reali app, con i rispettivi importi), da cui costruire
+// la mappatura corretta in un secondo passaggio — invece di indovinarla alla cieca (stesso errore
+// da evitare dopo la lezione sui pattern BUILTIN "sempre vincenti" generalizzati senza verifica,
+// 2026-10-26). Il totale app vs excel sotto, pero', e' gia' affidabile da subito: non dipende da
+// MAPPATURA_ENTRATE, solo dalla somma di tutte le entrate di ciascun lato.
+const fineEntrate = inizioUscite - 1; // la riga "TOTALE INCASSATO" stessa resta esclusa
+function excelPerCategoriaEntrate(meseIdx) {
+  const colConsuntivo = 6 + meseIdx * 5; // stesso layout a colonne della sezione USCITE
+  const mappa = new Map();
+  for (let i = 0; i < fineEntrate; i++) {
+    const nome = righe[i]?.[0];
+    if (!eCategoria(nome)) continue;
+    const v = safeParseFloat(righe[i]?.[colConsuntivo]);
+    if (!Number.isNaN(v)) mappa.set(nome.trim(), v);
+  }
+  return mappa;
+}
+const MAPPATURA_ENTRATE = {};
+
 // --- Confronto ---
 for (const meseIdx of MESI_RICHIESTI) {
   const appCat = appPerCategoria(meseIdx);
@@ -288,6 +333,51 @@ for (const meseIdx of MESI_RICHIESTI) {
   const totExcel = [...excelCat.values()].reduce((s, v) => s + v, 0);
   const totApp = [...appCat.values()].reduce((s, v) => s + v, 0);
   console.log(`  TOTALE — app: ${totApp.toFixed(2)} €   excel: ${totExcel.toFixed(2)} €   Δ: ${(totApp - totExcel).toFixed(2)} €`);
+
+  // --- Confronto ENTRATE (stessa struttura; MAPPATURA_ENTRATE ancora da costruire — vedi nota sopra) ---
+  const appCatE = appPerCategoriaEntrate(meseIdx);
+  const excelCatE = excelPerCategoriaEntrate(meseIdx);
+  const appCategorieUsateE = new Set();
+  const excelCategorieUsateE = new Set();
+
+  console.log(`\n--- ${NOMI_MESE[meseIdx]} ${ANNO} — confronto ENTRATE (consuntivo) ---`);
+  const righeTabellaE = [];
+  for (const [catExcel, { app: catsApp, incerta }] of Object.entries(MAPPATURA_ENTRATE)) {
+    if (!excelCatE.has(catExcel) && catsApp.every(c => !appCatE.has(c))) continue;
+    excelCategorieUsateE.add(catExcel);
+    const valExcel = excelCatE.get(catExcel) || 0;
+    let valApp = 0;
+    for (const c of catsApp) { valApp += appCatE.get(c) || 0; appCategorieUsateE.add(c); }
+    const delta = valApp - valExcel;
+    righeTabellaE.push({ catExcel, catsApp, incerta, valExcel, valApp, delta });
+  }
+  righeTabellaE.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  for (const r of righeTabellaE) {
+    if (Math.abs(r.delta) < 1) continue;
+    const dettaglio = r.catsApp.length === 0 ? '[NESSUNA MAPPATURA APP]' : (r.catsApp.length > 1 ? `[=${r.catsApp.join(' + ')}]` : '');
+    const avviso = r.incerta ? '  ⚠️ MAPPATURA INCERTA' : '';
+    console.log(`  Δ ${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(2).padStart(12)} €   app=${r.valApp.toFixed(2).padStart(12)}  excel=${r.valExcel.toFixed(2).padStart(12)}   ${r.catExcel} ${dettaglio}${avviso}`);
+  }
+
+  const excelNonMappateE = [...excelCatE.entries()].filter(([c]) => !excelCategorieUsateE.has(c));
+  if (excelNonMappateE.length > 0) {
+    console.log(`  Categorie EXCEL (entrate) senza mappatura (nomi reali del foglio, da verificare e aggiungere a MAPPATURA_ENTRATE):`);
+    for (const [c, v] of excelNonMappateE.sort((a, b) => b[1] - a[1])) {
+      console.log(`    ${v.toFixed(2).padStart(12)} €   ${c}`);
+    }
+  }
+
+  const nonMappateE = [...appCatE.entries()].filter(([c]) => !appCategorieUsateE.has(c));
+  if (nonMappateE.length > 0) {
+    console.log(`  Categorie APP (entrate) senza corrispondenza Excel:`);
+    for (const [c, v] of nonMappateE.sort((a, b) => b[1] - a[1])) {
+      console.log(`    ${v.toFixed(2).padStart(12)} €   ${c}`);
+    }
+  }
+
+  const totExcelE = [...excelCatE.values()].reduce((s, v) => s + v, 0);
+  const totAppE = [...appCatE.values()].reduce((s, v) => s + v, 0);
+  console.log(`  TOTALE ENTRATE — app: ${totAppE.toFixed(2)} €   excel: ${totExcelE.toFixed(2)} €   Δ: ${(totAppE - totExcelE).toFixed(2)} €`);
 }
 
 console.log('\n\n=== Fine confronto — nessun dato e\' stato modificato ===');
