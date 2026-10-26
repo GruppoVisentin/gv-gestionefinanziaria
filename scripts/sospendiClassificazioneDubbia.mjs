@@ -9,11 +9,19 @@
 // produce per le righe a bassa confidenza. L'utente la conferma o la corregge in app, esattamente
 // come farebbe con un nuovo movimento importato.
 //
-// Lista CURATA (non tutto cio' che l'audit segnala dal vivo in un dato momento): solo i casi gia'
-// controllati a mano in questa sessione (vedi report 2026-10-22). Non si riesegue l'audit dal vivo
-// qui apposta, per non sospendere anche i suoi falsi positivi noti (es. il pattern "BERTON" che
-// incrocia "Robelon", o "MESE DI GIUGNO" nella Verifica C — nomi di fantasia generati dall'estrazione
-// entity su descrizioni che non sono affatto nomi di fornitore).
+// Caso 2 (pattern BUILTIN) copriva all'inizio solo una lista CURATA a mano (vedi report
+// 2026-10-22). Esteso il 2026-10-26, dopo la scoperta via confrontaFlussoCassaExcel.mjs che
+// [PERSONALE] Collaboratori Fissi, [CONSULENZE] SOA e ISO e [INVESTIMENTI] Acquisto Attrezzature e
+// Macchinari risultavano SEMPRE a 0€ nell'app (gennaio-settembre 2026) nonostante pattern BUILTIN
+// dedicati e importi reali ogni mese in Excel: stesso identico bug architetturale di
+// applicaPrioritaFinale in importaPuntaNet.mjs (tipologia PuntaNet che produce una categoria
+// qualsiasi impedisce di interpellare il pattern BUILTIN specifico), ma per le transazioni GIA'
+// importate prima della correzione di quel bug, che restano scritte con la categoria sbagliata
+// finche' qualcuno non le ricontrolla. Ora scansiona TUTTI i pattern BUILTIN "alta confidenza"
+// (non solo la lista curata), con le stesse protezioni dell'audit (isSpesaBancaria, precedenza per
+// lunghezza di pattern, soglia di 5 caratteri per i pattern corti gia' incorporata in
+// matchesPattern) — un pattern "media" resta escluso, e' per definizione meno affidabile di una
+// classificazione gia' scritta e sospenderla alla cieca produrrebbe piu' rumore che segnale.
 //
 // Prerequisito (fatto nello stesso commit): importaPuntaNet.mjs ora riconosce una riga gia' in
 // bozzaImportPuntaNet come "gia' gestita" — altrimenti il giro automatico di domani avrebbe
@@ -42,26 +50,14 @@ const BACKUP_DIR = path.join(NAS_DATI, 'BACKUP');
 
 const CATEGORIA_MATERIALI = '[FORNITORI] Fornitori Materiali';
 
-// Pattern BUILTIN gia' esaminati a mano con la sessione locale (report 2026-10-22): per ciascuno,
-// un frammento che individua il pattern REGOLE_BUILTIN giusto (non il nome del fornitore — alcuni
-// pattern includono anche il nome del titolare, es. "SERNAGIOTTO" puo' comparire dentro un pattern
-// piu' lungo "SEMENZIN E SERNAGIOTTO").
-const FRAMMENTI_PATTERN_DA_SOSPENDERE = [
-  'TVM RENT',
-  'VELLO',
-  'STUDIO VISENTIN',
-  'LONDERO MARIO',
-  'SERNAGIOTTO',
-  'GEOCONSULT',
-  'NORMATEMPO',
-];
-// Ordinati per lunghezza decrescente, stessa precedenza di classificaRiga/auditDistribuzioneFornitori:
-// un pattern piu' specifico e lungo (es. "SEMENZIN E SERNAGIOTTO") deve vincere su uno piu' corto
-// e generico che lo contiene come sottostringa (es. "SERNAGIOTTO SRL"), altrimenti una riga gia'
-// classificata correttamente dal pattern giusto risulterebbe erroneamente "in disaccordo" con quello
-// sbagliato trovato per primo (Codex review, PR #34, 2026-10-22).
+// Tutti i pattern BUILTIN "alta confidenza", ordinati per lunghezza decrescente — stessa
+// precedenza di classificaRiga/auditDistribuzioneFornitori/applicaPrioritaFinale: un pattern piu'
+// specifico e lungo (es. "SEMENZIN E SERNAGIOTTO") deve vincere su uno piu' corto e generico che lo
+// contiene come sottostringa (es. "SERNAGIOTTO SRL"), altrimenti una riga gia' classificata
+// correttamente dal pattern giusto risulterebbe erroneamente "in disaccordo" con quello sbagliato
+// trovato per primo (Codex review, PR #34, 2026-10-22).
 const patternDaSospendere = REGOLE_BUILTIN
-  .filter(r => FRAMMENTI_PATTERN_DA_SOSPENDERE.some(f => r.pattern.toUpperCase().includes(f)))
+  .filter(r => r.confidenza === 'alta')
   .sort((a, b) => b.pattern.length - a.pattern.length);
 
 function importoLordo(t) {
@@ -84,8 +80,8 @@ function trovaCasoListaSuCantieri(t) {
   return { nota: 'Fornitore in lista "su Cantieri" ma scritto in Fornitori Materiali — la correzione automatica copre solo le righe provenienti da Manodopera. Verificare e classificare manualmente.' };
 }
 
-// Caso 2: un pattern BUILTIN della lista curata sopra combacia con la descrizione, ma la categoria
-// gia' scritta e' diversa da quella attesa dal pattern — non e' detto che il pattern abbia ragione
+// Caso 2: un pattern BUILTIN "alta confidenza" combacia con la descrizione, ma la categoria gia'
+// scritta e' diversa da quella attesa dal pattern — non e' detto che il pattern abbia ragione
 // (potrebbe essere lui stesso datato/sbagliato), quindi si sospende anziche' correggere alla cieca.
 function trovaCasoBuiltin(t) {
   if (t.type !== 'EXPENSE' || t.isForecast) return null;
@@ -137,7 +133,7 @@ function costruisciBozzaSospesa(t, nota) {
     puntaNetIDMovimento: t.puntaNetIDMovimento ?? null,
     pagato: t.pagato,
     _puntaNetKey: puntaNetKey,
-    _fonte: 'sospensione-classificazione-dubbia-2026-10-22',
+    _fonte: 'sospensione-classificazione-dubbia',
     // Transazione originale COMPLETA (non solo i campi sopra): "Annulla Import" in app la ripristina
     // com'era se l'utente annulla la revisione, invece di farla sparire insieme alle righe di
     // importazione davvero nuove e scartabili (Codex review, PR #34, 2026-10-22).

@@ -44,6 +44,9 @@ import {
   estraiEntity,
   isDuplicato,
   isSubappaltoSuCantiere,
+  isSpesaBancaria,
+  matchesPattern,
+  REGOLE_BUILTIN,
 } from '../utils/puntaNetImporter.ts';
 import { CATEGORY_TO_CE_TYPE } from '../constants.ts';
 
@@ -318,23 +321,45 @@ function trovaLinkedForecastId(tipo, cantiereApp, categoria, importo) {
   return candidati.length > 0 ? candidati[0].f.id : undefined;
 }
 
+// Pattern BUILTIN "alta confidenza" ordinati per lunghezza decrescente (stesso criterio di
+// classificaRiga, vedi utils/puntaNetImporter.ts): calcolato una sola volta qui, invece che ad
+// ogni riga come dentro classificaRiga.
+const REGOLE_BUILTIN_ALTA_ORDINATE = REGOLE_BUILTIN
+  .filter(r => r.confidenza === 'alta')
+  .sort((a, b) => b.pattern.length - a.pattern.length);
+
 // Priorita' finale di classificazione, applicata DOPO tipologia PuntaNet + fallback in entrambi i
-// loop sotto (Conti Movimenti e Documenti Scadenze). Due correzioni, in ordine (l'ultima vince):
+// loop sotto (Conti Movimenti e Documenti Scadenze). Tre correzioni, in ordine (l'ultima vince):
 //
 // 1) Un fornitore della lista "su Cantieri" vince ORA SEMPRE, non solo quando la categoria di
 //    partenza era Manodopera come prima: lasciava scritte in Materiali (o altro) le fatture dello
 //    stesso fornitore ogni volta che PuntaNet le classificava diversamente (trovato in audit
 //    2026-10-22: TM di Toniolo, Lattoneria Rossanese, Falegnameria Trentin, 15.463,56€ — PR #34).
 //
-// 2) Una regola utente salvata (regolePuntaNet, creata automaticamente quando l'utente conferma
-//    una riga in sospeso in app — vedi ImportPuntaNetModal.tsx) vince SEMPRE, anche sulla lista
-//    "su Cantieri": e' una decisione umana esplicita. Prima, classificaRiga (che gia' controlla
-//    regolePuntaNet) veniva interpellata SOLO quando la tipologia PuntaNet non produceva alcuna
-//    categoria — quindi confermare una riga in sospeso in app non serviva a nulla per la fattura
-//    SUCCESSIVA dello stesso fornitore, se la tipologia PuntaNet continuava a classificarla
-//    diversamente: l'utente avrebbe dovuto correggerla di nuovo ogni volta. Trovato 2026-10-22,
-//    rispondendo alla richiesta esplicita dell'utente di eliminare il bisogno di un controllo
-//    manuale ricorrente — lo scopo dell'app e' sostituire l'inserimento manuale, non riproporlo.
+// 2) Un pattern BUILTIN "alta confidenza" per un fornitore specifico (es. "DAMETTO WANDA" ->
+//    Acquisto Attrezzature, "DE FILIPPO GIOVANNI" -> Collaboratori Fissi) vince ORA SEMPRE, non
+//    solo quando la tipologia PuntaNet non produceva alcuna categoria come prima: stessa identica
+//    classe di bug del punto 1, ma sui pattern BUILTIN invece che su regolePuntaNet/lista-su-
+//    cantieri — scoperta confrontando l'export mensile con l'Excel storico (2026-10-26):
+//    [PERSONALE] Collaboratori Fissi, [CONSULENZE] SOA e ISO e [INVESTIMENTI] Acquisto Attrezzature
+//    e Macchinari risultavano SEMPRE a 0€ nell'app da gennaio a settembre 2026, pur avendo pattern
+//    BUILTIN dedicati e importi reali ogni mese in Excel, perche' la tipologia PuntaNet di quei
+//    documenti produceva gia' (sbagliando) un'altra categoria e il pattern specifico non veniva mai
+//    interpellato. Solo i pattern "alta confidenza" vincono qui: uno "media" resta un suggerimento
+//    di fallback, non deve scavalcare una classificazione gia' riuscita (rischio diverso: un pattern
+//    "media" e' per definizione meno affidabile di una classificazione gia' ottenuta).
+//    Esclude le spese bancarie (bonifico con causale che nomina un fornitore come riferimento):
+//    stesso motivo per cui l'audit e il backfill le escludono altrove (isSpesaBancaria).
+//
+// 3) Una regola utente salvata (regolePuntaNet, creata automaticamente quando l'utente conferma
+//    una riga in sospeso in app — vedi ImportPuntaNetModal.tsx) vince SEMPRE, anche sui punti 1 e
+//    2: e' una decisione umana esplicita. Prima, classificaRiga (che gia' controlla regolePuntaNet)
+//    veniva interpellata SOLO quando la tipologia PuntaNet non produceva alcuna categoria — quindi
+//    confermare una riga in sospeso in app non serviva a nulla per la fattura SUCCESSIVA dello
+//    stesso fornitore, se la tipologia PuntaNet continuava a classificarla diversamente: l'utente
+//    avrebbe dovuto correggerla di nuovo ogni volta. Trovato 2026-10-22, rispondendo alla richiesta
+//    esplicita dell'utente di eliminare il bisogno di un controllo manuale ricorrente — lo scopo
+//    dell'app e' sostituire l'inserimento manuale, non riproporlo.
 function applicaPrioritaFinale(tipo, categoria, ceType, confidenza, matchKey, entity, descrizionePerSuCantiere) {
   if (tipo === 'EXPENSE' && isSubappaltoSuCantiere(descrizionePerSuCantiere) && categoria !== '[FORNITORI] Subappalti su Cantieri') {
     categoria = '[FORNITORI] Subappalti su Cantieri';
@@ -342,6 +367,17 @@ function applicaPrioritaFinale(tipo, categoria, ceType, confidenza, matchKey, en
     confidenza = 'alta';
     matchKey = 'lista-su-cantieri';
   }
+
+  if (tipo === 'EXPENSE' && entity && !isSpesaBancaria(descrizionePerSuCantiere || '') && !isSpesaBancaria(entity)) {
+    const regolaBuiltin = REGOLE_BUILTIN_ALTA_ORDINATE.find(r => matchesPattern(entity, r.pattern));
+    if (regolaBuiltin && categoria !== regolaBuiltin.categoria) {
+      categoria = regolaBuiltin.categoria;
+      ceType = regolaBuiltin.ceType;
+      confidenza = 'alta';
+      matchKey = `builtin:${regolaBuiltin.pattern}`;
+    }
+  }
+
   const entityKey = (entity || '').trim().toUpperCase().slice(0, 40);
   const regolaUtente = entityKey ? regolePuntaNet.find(r => r.entityKey === entityKey) : undefined;
   if (regolaUtente) {
