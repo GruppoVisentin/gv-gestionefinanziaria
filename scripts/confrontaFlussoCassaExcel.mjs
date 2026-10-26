@@ -278,9 +278,15 @@ function excelPerCategoria(meseIdx) {
 //    in maiuscolo/minuscolo qualunque), che l'importer storico mappa SEMPRE sulla stessa categoria
 //    app "[CANTIERE] SAL — Stato Avanzamento Lavori" (vedi parseExcelStorico, ImportStoricoModal.tsx
 //    riga ~209) — a parte le righe di finanziamento bancario (ESCLUDI_ENTRATE_PATTERN sotto, stessa
-//    lista dell'importer), che l'utente inserisce a mano e qui restano escluse dal confronto. Non
-//    essendoci piu' categorie distinte da abbinare una per una, MAPPATURA_ENTRATE ha un'unica voce:
-//    la somma di tutte le righe cliente contro l'unica categoria app a cui l'importer le assegna.
+//    lista dell'importer), per cui l'importer storico non crea una transazione app (l'utente la
+//    inserisce a mano altrove), ma la riga con il suo importo esiste comunque nel foglio: va tenuta
+//    in una voce SEPARATA, non scartata, altrimenti il totale Excel non copre piu' le stesse
+//    transazioni del totale app (che include sempre [FINANZA] Finanziamenti Ricevuti, via
+//    IncomeTimeline.getMonthlyTotal) — scarto strutturale finto, non un vero problema di
+//    riconciliazione (trovato in review: Codex, 2026-10-26, sulla correzione del punto 3 qui sotto).
+//    Non essendoci piu' categorie distinte da abbinare una per una, MAPPATURA_ENTRATE ha due voci:
+//    la somma delle righe cliente (su SAL) e la somma delle righe di finanziamento (su Finanziamenti
+//    Ricevuti).
 const fineEntrate = inizioUscite - 1; // la riga "TOTALE INCASSATO" stessa resta esclusa
 const ESCLUDI_ENTRATE_PATTERN = [
   /accredito mutuo/i, /finanziamento/i, /prestito/i,
@@ -288,19 +294,22 @@ const ESCLUDI_ENTRATE_PATTERN = [
 ];
 function excelPerCategoriaEntrate(meseIdx) {
   const colConsuntivo = 4 + meseIdx * 5; // colEntrataCons in ImportStoricoModal.tsx
-  let somma = 0;
+  let sommaClienti = 0;
+  let sommaFinanziamenti = 0;
   for (let i = 0; i < fineEntrate; i++) {
     const nome = righe[i]?.[0];
     if (typeof nome !== 'string') continue;
     const label = nome.trim();
     if (!label || label === 'MESE') continue;
     if (ESCLUDI_RIGHE.has(label.toUpperCase())) continue;
-    if (ESCLUDI_ENTRATE_PATTERN.some(p => p.test(label))) continue; // finanziamenti bancari, inseriti a mano
     const v = safeParseFloat(righe[i]?.[colConsuntivo]);
-    if (!Number.isNaN(v) && v > 0) somma += v;
+    if (Number.isNaN(v) || v <= 0) continue;
+    if (ESCLUDI_ENTRATE_PATTERN.some(p => p.test(label))) sommaFinanziamenti += v;
+    else sommaClienti += v;
   }
   const mappa = new Map();
-  if (somma > 0) mappa.set('INCASSI CLIENTI (somma righe nel foglio, mappate su SAL dall\'importer storico)', somma);
+  if (sommaClienti > 0) mappa.set('INCASSI CLIENTI (somma righe nel foglio, mappate su SAL dall\'importer storico)', sommaClienti);
+  if (sommaFinanziamenti > 0) mappa.set('FINANZIAMENTI (righe bancarie nel foglio, non create come transazione dall\'importer storico)', sommaFinanziamenti);
   return mappa;
 }
 // "incerta: true": l'importer storico mappa OGNI riga cliente su SAL, ma non e' detto che la somma
@@ -311,6 +320,7 @@ function excelPerCategoriaEntrate(meseIdx) {
 // decidere a mano se vanno sommati alla stessa riga invece di lasciarli come mappatura separata.
 const MAPPATURA_ENTRATE = {
   'INCASSI CLIENTI (somma righe nel foglio, mappate su SAL dall\'importer storico)': { app: ['[CANTIERE] SAL — Stato Avanzamento Lavori'], incerta: true },
+  'FINANZIAMENTI (righe bancarie nel foglio, non create come transazione dall\'importer storico)': { app: ['[FINANZA] Finanziamenti Ricevuti'], incerta: false },
 };
 
 // --- Confronto ---
