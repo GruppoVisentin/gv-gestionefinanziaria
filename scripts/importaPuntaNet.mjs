@@ -49,7 +49,11 @@ import {
   REGOLE_BUILTIN,
   FRAMMENTI_PATTERN_SEMPRE_VINCENTE,
 } from '../utils/puntaNetImporter.ts';
-import { CATEGORY_TO_CE_TYPE } from '../constants.ts';
+import { CATEGORY_TO_CE_TYPE, EXPENSE_CATEGORIES } from '../constants.ts';
+
+// Usato per riconoscere un'entrata classificata per errore con una categoria di spesa (vedi nota
+// su categoriaDiSpesaSuEntrata piu' sotto).
+const CATEGORIE_SPESA = new Set(EXPENSE_CATEGORIES);
 
 const SCRIVI = process.argv.includes('--scrivi');
 
@@ -496,7 +500,16 @@ for (const mv of movimenti) {
   // charge dichiarato (0%), gonfiando silenziosamente il credito IVA mostrato in app (bug
   // trovato in audit il 2026-09-14 sui dati storici 2023-2025, mai coperto per il flusso
   // automatico 2026+). Ora, se manca l'aliquota, la riga finisce in bozza da rivedere a mano.
-  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk && !possibileDoppioneDocumento;
+  //
+  // Un'entrata non deve mai avere una categoria di SPESA: quando la tipologia PuntaNet non
+  // produce nulla, il fallback classificaRiga (e i suoi 535+ pattern BUILTIN) non distingue
+  // entrata da uscita e puo' assegnare una categoria di spesa a un rimborso/accredito in arrivo
+  // (trovato confrontando Excel vs app sulle entrate, 2026-10-26: rimborso Enel Energia,
+  // accrediti Edilcassa, risarcimento Unipol SAI finiti su categorie come "[FORNITORI] Fornitori
+  // Materiali" invece di una categoria di ricavo). Va sempre in bozza per la categoria giusta,
+  // mai scritta automaticamente con una categoria che non puo' essere corretta.
+  const categoriaDiSpesaSuEntrata = tipo === 'INCOME' && !!categoria && CATEGORIE_SPESA.has(categoria);
+  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk && !possibileDoppioneDocumento && !categoriaDiSpesaSuEntrata;
 
   const base = {
     id: crypto.randomUUID(),
@@ -526,7 +539,9 @@ for (const mv of movimenti) {
       categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate,
       vatRateNota: possibileDoppioneDocumento
         ? `Possibile doppione: il documento PuntaNet IDDocumento ${mv.IDDocumento} risulta gia' coperto per intero da una riga esistente (fattura scritta come scadenza aperta, poi pagata in piu' rate) — verificare prima di confermare.`
-        : notaRevisione(dataOk),
+        : categoriaDiSpesaSuEntrata
+          ? `Entrata classificata con una categoria di spesa ("${categoria}") — probabile rimborso/accredito in arrivo (es. da un fornitore o un ente), non un ricavo operativo. Assegnare la categoria di entrata corretta.`
+          : notaRevisione(dataOk),
       cantiereApp, idDocumento: mv.IDDocumento, idRata: mv.IDRata, idMovimento: mv.IDMovimento, dataDocumento: invoiceDate,
     }));
   }
@@ -607,8 +622,11 @@ for (const s of scadenzeAperte) {
   const dataISO = s.DataRata.slice(0, 10);
   const dataOk = dataPlausibile(dataISO);
   // Vedi nota identica piu' sopra (ramo movimenti bancari): anche qui un'entrata senza aliquota
-  // nota va in revisione manuale, non scritta come se fosse reverse charge dichiarato.
-  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk;
+  // nota va in revisione manuale, non scritta come se fosse reverse charge dichiarato; e
+  // un'entrata con una categoria di spesa (classificaRiga non distingue entrata/uscita) va
+  // sempre in bozza, mai scritta automaticamente.
+  const categoriaDiSpesaSuEntrata = tipo === 'INCOME' && !!categoria && CATEGORIE_SPESA.has(categoria);
+  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk && !categoriaDiSpesaSuEntrata;
 
   // Collegamento a previsione ESISTENTE (solo lettura, mai modificata) — una fattura emessa e
   // non ancora incassata/pagata puo' gia' corrispondere a qualcosa che l'utente ha pianificato.
@@ -646,7 +664,10 @@ for (const s of scadenzeAperte) {
   } else {
     revisioneScadenze.push(costruisciBozza({
       dataISO, descrizione, entity, importo: s.ImportoRata, tipo, tipoMovimento,
-      categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate, vatRateNota: notaRevisione(dataOk),
+      categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate,
+      vatRateNota: categoriaDiSpesaSuEntrata
+        ? `Entrata classificata con una categoria di spesa ("${categoria}") — probabile rimborso/accredito in arrivo (es. da un fornitore o un ente), non un ricavo operativo. Assegnare la categoria di entrata corretta.`
+        : notaRevisione(dataOk),
       cantiereApp, idDocumento: s.IDDocumento, idRata: s.IDRata, dataDocumento: s.DataDocumento ? s.DataDocumento.slice(0, 10) : undefined,
       pagato: false, // scadenzeAperte e' per costruzione Pagato=0 — la riga rappresenta una fattura non ancora pagata
     }));
