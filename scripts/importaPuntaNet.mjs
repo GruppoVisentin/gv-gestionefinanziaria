@@ -47,6 +47,7 @@ import {
   isSpesaBancaria,
   matchesPattern,
   REGOLE_BUILTIN,
+  FRAMMENTI_PATTERN_SEMPRE_VINCENTE,
 } from '../utils/puntaNetImporter.ts';
 import { CATEGORY_TO_CE_TYPE } from '../constants.ts';
 
@@ -321,11 +322,11 @@ function trovaLinkedForecastId(tipo, cantiereApp, categoria, importo) {
   return candidati.length > 0 ? candidati[0].f.id : undefined;
 }
 
-// Pattern BUILTIN "alta confidenza" ordinati per lunghezza decrescente (stesso criterio di
-// classificaRiga, vedi utils/puntaNetImporter.ts): calcolato una sola volta qui, invece che ad
-// ogni riga come dentro classificaRiga.
-const REGOLE_BUILTIN_ALTA_ORDINATE = REGOLE_BUILTIN
-  .filter(r => r.confidenza === 'alta')
+// Solo i pattern BUILTIN della lista curata FRAMMENTI_PATTERN_SEMPRE_VINCENTE (vedi
+// utils/puntaNetImporter.ts per il perche' NON e' tutto REGOLE_BUILTIN), ordinati per lunghezza
+// decrescente come classificaRiga.
+const REGOLE_BUILTIN_SEMPRE_VINCENTE_ORDINATE = REGOLE_BUILTIN
+  .filter(r => r.confidenza === 'alta' && FRAMMENTI_PATTERN_SEMPRE_VINCENTE.some(f => r.pattern.toUpperCase().includes(f)))
   .sort((a, b) => b.pattern.length - a.pattern.length);
 
 // Priorita' finale di classificazione, applicata DOPO tipologia PuntaNet + fallback in entrambi i
@@ -336,20 +337,23 @@ const REGOLE_BUILTIN_ALTA_ORDINATE = REGOLE_BUILTIN
 //    stesso fornitore ogni volta che PuntaNet le classificava diversamente (trovato in audit
 //    2026-10-22: TM di Toniolo, Lattoneria Rossanese, Falegnameria Trentin, 15.463,56€ — PR #34).
 //
-// 2) Un pattern BUILTIN "alta confidenza" per un fornitore specifico (es. "DAMETTO WANDA" ->
-//    Acquisto Attrezzature, "DE FILIPPO GIOVANNI" -> Collaboratori Fissi) vince ORA SEMPRE, non
-//    solo quando la tipologia PuntaNet non produceva alcuna categoria come prima: stessa identica
-//    classe di bug del punto 1, ma sui pattern BUILTIN invece che su regolePuntaNet/lista-su-
-//    cantieri — scoperta confrontando l'export mensile con l'Excel storico (2026-10-26):
-//    [PERSONALE] Collaboratori Fissi, [CONSULENZE] SOA e ISO e [INVESTIMENTI] Acquisto Attrezzature
-//    e Macchinari risultavano SEMPRE a 0€ nell'app da gennaio a settembre 2026, pur avendo pattern
-//    BUILTIN dedicati e importi reali ogni mese in Excel, perche' la tipologia PuntaNet di quei
-//    documenti produceva gia' (sbagliando) un'altra categoria e il pattern specifico non veniva mai
-//    interpellato. Solo i pattern "alta confidenza" vincono qui: uno "media" resta un suggerimento
-//    di fallback, non deve scavalcare una classificazione gia' riuscita (rischio diverso: un pattern
-//    "media" e' per definizione meno affidabile di una classificazione gia' ottenuta).
-//    Esclude le spese bancarie (bonifico con causale che nomina un fornitore come riferimento):
-//    stesso motivo per cui l'audit e il backfill le escludono altrove (isSpesaBancaria).
+// 2) Un pattern BUILTIN della lista curata FRAMMENTI_PATTERN_SEMPRE_VINCENTE (vedi
+//    utils/puntaNetImporter.ts) per un fornitore specifico (es. "DAMETTO WANDA" -> Acquisto
+//    Attrezzature, "DE FILIPPO GIOVANNI" -> Collaboratori Fissi) vince ORA SEMPRE, non solo quando
+//    la tipologia PuntaNet non produceva alcuna categoria come prima: stessa identica classe di bug
+//    del punto 1, ma sui pattern BUILTIN invece che su regolePuntaNet/lista-su-cantieri — scoperta
+//    confrontando l'export mensile con l'Excel storico (2026-10-26): [PERSONALE] Collaboratori
+//    Fissi, [CONSULENZE] SOA e ISO e [INVESTIMENTI] Acquisto Attrezzature e Macchinari risultavano
+//    SEMPRE a 0€ nell'app da gennaio a settembre 2026, pur avendo pattern BUILTIN dedicati e importi
+//    reali ogni mese in Excel, perche' la tipologia PuntaNet di quei documenti produceva gia'
+//    (sbagliando) un'altra categoria e il pattern specifico non veniva mai interpellato.
+//    NON tutti i pattern BUILTIN sono qui: un primo tentativo con TUTTI i pattern "alta confidenza"
+//    ha prodotto, nel dry-run reale di sospendiClassificazioneDubbia.mjs, decine di migliaia di euro
+//    di falsi positivi (es. "VISENTIN MARCO"/"VISENTIN RONNY" scavalcavano il loro stesso compenso
+//    amministratori ricorrente, gia' corretto) — vedi il commento sulla costante in
+//    utils/puntaNetImporter.ts per l'elenco completo dei casi trovati. Esclude anche le spese
+//    bancarie (bonifico con causale che nomina un fornitore come riferimento): stesso motivo per cui
+//    l'audit e il backfill le escludono altrove (isSpesaBancaria).
 //
 // 3) Una regola utente salvata (regolePuntaNet, creata automaticamente quando l'utente conferma
 //    una riga in sospeso in app — vedi ImportPuntaNetModal.tsx) vince SEMPRE, anche sui punti 1 e
@@ -369,7 +373,7 @@ function applicaPrioritaFinale(tipo, categoria, ceType, confidenza, matchKey, en
   }
 
   if (tipo === 'EXPENSE' && entity && !isSpesaBancaria(descrizionePerSuCantiere || '') && !isSpesaBancaria(entity)) {
-    const regolaBuiltin = REGOLE_BUILTIN_ALTA_ORDINATE.find(r => matchesPattern(entity, r.pattern));
+    const regolaBuiltin = REGOLE_BUILTIN_SEMPRE_VINCENTE_ORDINATE.find(r => matchesPattern(entity, r.pattern));
     if (regolaBuiltin && categoria !== regolaBuiltin.categoria) {
       categoria = regolaBuiltin.categoria;
       ceType = regolaBuiltin.ceType;
