@@ -50,19 +50,37 @@ console.log(`=== Ricerca PuntaNet (${DB_IMPRESA}) per 4 incassi mancanti nell'ap
 for (const frammento of FRAMMENTI) {
   console.log(`--- Frammento: "${frammento}" ---`);
 
+  // Ricerca per TESTO nei movimenti bancari 2026 — indipendente dal cliente in anagrafica: una
+  // controparte puo' comparire nel movimento con un nome scritto diversamente da quello registrato
+  // (o il movimento puo' non essere affatto collegato a un cliente in anagrafica). Girava solo
+  // dentro il ramo "cliente trovato" e veniva saltata del tutto quando nessun cliente combaciava,
+  // perdendo esattamente i movimenti non collegati che questa diagnostica deve scovare (trovato in
+  // review: Codex, PR #50, 2026-10-27).
+  const movimentiPerTesto = runSql(`SET NOCOUNT ON; SELECT IDMovimento, Data, Causale, Descrizione, ImportoE, ImportoU, IDDocumento FROM [Conti Movimenti] WHERE Data >= '2026-01-01' AND (Causale LIKE '%${frammento}%' OR Descrizione LIKE '%${frammento}%') FOR JSON PATH`);
+  const movimentiVisti = new Set();
+  function stampaMovimento(m) {
+    if (movimentiVisti.has(m.IDMovimento)) return;
+    movimentiVisti.add(m.IDMovimento);
+    console.log(`    Movimento bancario ${m.IDMovimento}  Data=${m.Data}  Entrata=${m.ImportoE}  Uscita=${m.ImportoU}  IDDocumento=${m.IDDocumento ?? '(nessuno)'}  "${m.Descrizione || m.Causale || ''}"`);
+  }
+
   // 1) Il cliente/fornitore esiste in anagrafica?
   const clienti = runSql(`SET NOCOUNT ON; SELECT IDCliFor, [Ragione Sociale] FROM [Clienti Fornitori] WHERE [Ragione Sociale] LIKE '%${frammento}%' FOR JSON PATH`);
   if (clienti.length === 0) {
-    console.log('  Nessun cliente/fornitore in anagrafica con questo nome.\n');
-    continue;
+    console.log('  Nessun cliente/fornitore in anagrafica con questo nome.');
   }
   for (const c of clienti) {
     console.log(`  Cliente: IDCliFor=${c.IDCliFor}  "${c['Ragione Sociale']}"`);
 
-    // 2) Documenti (fatture/note) collegati a questo cliente nel 2026
-    const documenti = runSql(`SET NOCOUNT ON; SELECT d.IDDocumento, d.Tipo, d.Data, d.Totale FROM Documenti d WHERE d.IDCliFor = ${c.IDCliFor} AND d.Data >= '2026-01-01' ORDER BY d.Data FOR JSON PATH`);
+    // 2) TUTTI i documenti (fatture/note) di questo cliente, qualunque sia l'anno del documento:
+    //    una fattura emessa prima del 2026 puo' avere una rata in scadenza o un pagamento proprio
+    //    nel 2026 — filtrare qui per data documento l'avrebbe esclusa prima ancora di poter
+    //    guardare le sue scadenze/movimenti (trovato in review: Codex, PR #50, 2026-10-27, stesso
+    //    principio gia' seguito da importaPuntaNet.mjs: seleziona le rate per la LORO data, non per
+    //    quella del documento).
+    const documenti = runSql(`SET NOCOUNT ON; SELECT d.IDDocumento, d.Tipo, d.Data, d.Totale FROM Documenti d WHERE d.IDCliFor = ${c.IDCliFor} ORDER BY d.Data FOR JSON PATH`);
     if (documenti.length === 0) {
-      console.log('    Nessun documento 2026 per questo cliente.');
+      console.log('    Nessun documento per questo cliente.');
     } else {
       for (const d of documenti) {
         console.log(`    Documento ${d.IDDocumento}  Tipo=${d.Tipo}  Data=${d.Data}  Totale=${d.Totale}`);
@@ -73,23 +91,18 @@ for (const frammento of FRAMMENTI) {
       }
     }
 
-    // 3) Movimenti bancari (Conti Movimenti) collegati a questo cliente nel 2026, via IDDocumento
-    //    dei documenti trovati sopra, O per descrizione/causale che contiene il frammento (nel caso
-    //    il movimento non sia collegato a nessun documento).
+    // 3) Movimenti bancari collegati via IDDocumento ai documenti trovati sopra (qualunque sia la
+    //    data del movimento, per lo stesso motivo del punto 2).
     const idDocumenti = documenti.map(d => d.IDDocumento);
     const movimentiPerDoc = idDocumenti.length > 0
       ? runSql(`SET NOCOUNT ON; SELECT IDMovimento, Data, Causale, Descrizione, ImportoE, ImportoU, IDDocumento FROM [Conti Movimenti] WHERE IDDocumento IN (${idDocumenti.join(',')}) FOR JSON PATH`)
       : [];
-    const movimentiPerTesto = runSql(`SET NOCOUNT ON; SELECT IDMovimento, Data, Causale, Descrizione, ImportoE, ImportoU, IDDocumento FROM [Conti Movimenti] WHERE Data >= '2026-01-01' AND (Causale LIKE '%${frammento}%' OR Descrizione LIKE '%${frammento}%') FOR JSON PATH`);
-    const movimentiVisti = new Set();
-    for (const m of [...movimentiPerDoc, ...movimentiPerTesto]) {
-      if (movimentiVisti.has(m.IDMovimento)) continue;
-      movimentiVisti.add(m.IDMovimento);
-      console.log(`    Movimento bancario ${m.IDMovimento}  Data=${m.Data}  Entrata=${m.ImportoE}  Uscita=${m.ImportoU}  IDDocumento=${m.IDDocumento ?? '(nessuno)'}  "${m.Descrizione || m.Causale || ''}"`);
-    }
-    if (movimentiVisti.size === 0) {
-      console.log('    Nessun movimento bancario 2026 trovato per questo cliente (né collegato a documento né per testo).');
-    }
+    for (const m of movimentiPerDoc) stampaMovimento(m);
+  }
+
+  for (const m of movimentiPerTesto) stampaMovimento(m);
+  if (movimentiVisti.size === 0) {
+    console.log('  Nessun movimento bancario 2026 trovato per questo frammento (né collegato a un documento né per testo in causale/descrizione).');
   }
   console.log('');
 }
