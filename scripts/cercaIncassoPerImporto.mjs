@@ -42,10 +42,24 @@ const gvData = JSON.parse(fs.readFileSync(GVCF_PATH, 'utf8'));
 console.log(`App: dati letti da ${GVCF_PATH} (timestamp file: ${gvData.timestamp || '(assente)'})`);
 console.log(`Cerco transazioni INCOME nell'anno ${ANNO} con importo vicino a: ${IMPORTI.join(', ')} € (tolleranza ±${TOLLERANZA}€)\n`);
 
+// Stessa validazione di elencaMovimentiPerCategoria.mjs/confrontaFlussoCassaExcel.mjs: esclude le
+// transazioni di sessioni di import annullate (e le righe "Storico Excel" orfane, senza sessione
+// attiva) — senza questo filtro una riga che l'app stessa non conta più poteva risultare "trovata"
+// in un mese diverso, facendo sembrare risolto un buco di riconciliazione che non lo è (trovato in
+// review: Codex, PR #49, 2026-10-27).
+const sessioniAnnullateIds = new Set((gvData.importSessions || []).filter(s => s.annullata).map(s => s.id));
+const esisteSessioneStoricoAttiva = (gvData.importSessions || []).some(s => !s.annullata && s.nomeFile && s.nomeFile.startsWith('Storico Excel'));
+function transazioneValida(t) {
+  if (t.importSessionId && sessioniAnnullateIds.has(t.importSessionId)) return false;
+  if (!t.importSessionId && t.sourceRef && t.sourceRef.startsWith('Storico Excel') && !esisteSessioneStoricoAttiva) return false;
+  return true;
+}
+
 for (const importoCercato of IMPORTI) {
   console.log(`=== Importo vicino a ${importoCercato.toFixed(2)} € ===`);
   const trovate = gvData.transactions.filter(t => {
     if (t.type !== 'INCOME' || t.isForecast) return false;
+    if (!transazioneValida(t)) return false;
     if (!t.date || !t.date.startsWith(String(ANNO))) return false;
     return Math.abs(importoLordo(t) - importoCercato) <= TOLLERANZA;
   });
