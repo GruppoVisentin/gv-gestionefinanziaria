@@ -23,6 +23,7 @@ import path from 'path';
 import XLSX from 'xlsx';
 import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants.ts';
 import { isSubappaltoSuCantiere } from '../utils/puntaNetImporter.ts';
+import { MAPPATURA_USCITE as MAPPATURA, MAPPATURA_ENTRATE } from './mappaturaCategorieExcelApp.mjs';
 
 const [, , xlsxPathArg, mesiArg, annoArg] = process.argv;
 if (!xlsxPathArg || !mesiArg) {
@@ -56,51 +57,10 @@ const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico
 // splittata in piu' categorie, qui si sommano per tornare comparabili. `incerta: true` segnala una
 // mappatura dedotta per nome o uno split non documentato esplicitamente in CATEGORY_MIGRATION_MAP —
 // da verificare a mano, non è detto che il confronto per quella riga sia affidabile.
-const MAPPATURA = {
-  'RIPARAZIONI MACCHINARI E ATTREZZATURE': { app: ['[MEZZI] Riparazioni Macchinari Programmate', '[MEZZI] Riparazioni Macchinari Urgenti'], incerta: true },
-  'NUOVE ATTREZZATURE': { app: ['[INVESTIMENTI] Acquisto Attrezzature e Macchinari'], incerta: false },
-  'TASSE': { app: ['[FISCO] Tasse e Tributi Aziendali (IMU, TARI, ecc.)', '[CANTIERE] Oneri Comunali, Abaco e Occupazioni'], incerta: true },
-  'SANZIONI': { app: ['[STRAORDINARI] Sanzioni e Penali'], incerta: false },
-  'VERSAMENTO IVA': { app: ['[FISCO] Versamento IVA'], incerta: false },
-  'RATE E INTERESSI FINANZIAMENTI': { app: ['[FINANZA] Interessi Passivi Finanziamenti', '[FINANZA] Quota Capitale Rate Finanziamenti'], incerta: true },
-  'SPESE BANCARIE': { app: ['[FINANZA] Commissioni e Bolli Bancari'], incerta: false },
-  'ADDEBITO CARTE DI CREDITO': { app: [], incerta: true }, // NESSUNA mappatura trovata ne' in CATEGORY_MIGRATION_MAP ne' in MAPPA_USCITE di ImportStoricoModal.tsx
-  'RITENUTE SU BONIFICI': { app: ["[FISCO] Ritenute su Bonifici (versate)"], incerta: false },
-  'IMPREVISTI': { app: ['[STRAORDINARI] Imprevisti Straordinari'], incerta: false },
-  'REVISIONE MACCHINARI': { app: ['[MEZZI] Revisione Macchinari'], incerta: false },
-  "PUBBLICITA' E MARKETING": { app: ['[MARKETING] Pubblicità e Marketing'], incerta: false },
-  'AFFITTI SEDI': { app: ['[STRUTTURA] Affitti Sedi'], incerta: false },
-  'UTENZE SEDI': { app: ['[STRUTTURA] Utenze Sedi', '[CANTIERE] Utenze Cantiere'], incerta: true },
-  'CANCELLERIA': { app: ['[STRUTTURA] Cancelleria e Materiali Ufficio'], incerta: false },
-  'SOFTWARE': { app: ['[STRUTTURA] Software e Abbonamenti'], incerta: false },
-  'ASSICURAZIONE MEZZI E BOLLI': { app: ['[MEZZI] Assicurazione Mezzi e Bolli'], incerta: false },
-  'ASSICURAZIONI GENERALI': { app: ['[COMPLIANCE] Assicurazioni Generali'], incerta: false },
-  'CORSI DIPENDENTI': { app: ['[COMPLIANCE] Corsi Dipendenti'], incerta: false },
-  'VISITE MEDICHE DIPENDENTI': { app: ['[COMPLIANCE] Visite Mediche Dipendenti'], incerta: false },
-  'STIPENDI DIPENDENTI UFFICIO': { app: ['[PERSONALE] Stipendi Dipendenti Ufficio'], incerta: false },
-  'CONTRIBUTI DIPENDENTI UFFICIO': { app: ['[PERSONALE] Contributi Dipendenti Ufficio'], incerta: false },
-  'COLLABORATORI FISSI': { app: ['[PERSONALE] Collaboratori Fissi'], incerta: false },
-  'CONSULENTI OPEX20': { app: ['[CONSULENZE] Consulenti Fissi'], incerta: false },
-  'SOA E ISO': { app: ['[CONSULENZE] SOA e ISO'], incerta: false },
-  'COMMERCIALISTA': { app: ['[CONSULENZE] Commercialista'], incerta: false },
-  'VOLONTARIATO': { app: ['[STRAORDINARI] Volontariato e Donazioni'], incerta: false },
-  'COMPENSO AMMINISTRATORI': { app: ['[PERSONALE] Compenso Amministratori'], incerta: false },
-  'PRELIEVO UTILE SOCI + RITENUTA': { app: ['[SOCI] Prelievo Utile Soci', '[SOCI] Ritenuta su Prelievo Soci'], incerta: true },
-  'CARBURANTI': { app: ['[CANTIERE] Carburanti'], incerta: false },
-  'NOLEGGI': { app: ['[CANTIERE] Noleggi Attrezzature e Mezzi'], incerta: false },
-  'ASSICURAZIONE CANTIERI': { app: ['[CANTIERE] Assicurazione Cantieri'], incerta: false },
-  "RITENUTE D'ACCONTO SU PROFESSIONISTI": { app: ["[FISCO] Ritenute d'Acconto su Professionisti"], incerta: false },
-  'PRANZI': { app: ['[CANTIERE] Pranzi e Trasferte Cantiere'], incerta: false },
-  'RIFIUTI E MACERIE': { app: ['[CANTIERE] Rifiuti e Macerie'], incerta: false },
-  'STIPENDI DIPENDENTI OPERATIVI': { app: ['[PERSONALE] Stipendi Dipendenti Operativi'], incerta: false },
-  'CONTRIBUTI DIPENDENTI OPERATIVI': { app: ['[PERSONALE] Contributi Dipendenti Operativi'], incerta: false },
-  'SUBAPPALTI MANODOPERA': { app: ['[PERSONALE] Subappalti Manodopera'], incerta: false },
-  'FORNITORI MATERIALI': { app: ['[FORNITORI] Fornitori Materiali'], incerta: false },
-  'SUBAPPALTI SU CANTIERI': { app: ['[FORNITORI] Subappalti su Cantieri'], incerta: false },
-  'PROFESSIONISTI ESTERNI': { app: ['[CONSULENZE] Professionisti Esterni di Cantiere'], incerta: false },
-  'ACQUISIZIONE TERRENI o IMMOBILI': { app: ['[INVESTIMENTI] Acquisto Terreni per Sviluppo', '[INVESTIMENTI] Acquisto Immobili per Sviluppo'], incerta: true },
-  "NUOVA SOCIETA'": { app: ['[INVESTIMENTI] Investimento in Nuova Società'], incerta: false }, // mancava: trovato in review, Codex 2026-10-21
-};
+// MAPPATURA (uscite) e MAPPATURA_ENTRATE importate da mappaturaCategorieExcelApp.mjs — estratte in
+// un modulo condiviso senza side effect cosi' elencaMovimentiPerCategoria.mjs puo' usare la STESSA
+// mappatura per risolvere un filtro categoria scritto nel nome Excel (trovato in review: Codex, PR
+// #47, 2026-10-27, prima erano duplicate qui e in quello script, a rischio di disallinearsi).
 
 // Righe di riepilogo del foglio — NON sono categorie di costo, sommarle raddoppierebbe il totale
 // (stessa lista di ImportStoricoModal.tsx, ESCLUDI_USCITE — trovato in review: Codex, 2026-10-21).
@@ -337,10 +297,7 @@ function excelPerCategoriaEntrate(meseIdx) {
 // "Saldo Finale Commessa" o "Anticipi da Clienti su Commessa". Questi ultimi, se presenti, compaiono
 // comunque nell'elenco "APP senza corrispondenza Excel" qui sotto con il loro importo reale, per
 // decidere a mano se vanno sommati alla stessa riga invece di lasciarli come mappatura separata.
-const MAPPATURA_ENTRATE = {
-  'INCASSI CLIENTI (somma righe nel foglio, mappate su SAL dall\'importer storico)': { app: ['[CANTIERE] SAL — Stato Avanzamento Lavori'], incerta: true },
-  'FINANZIAMENTI (riga "ENTRATE DA ALTRI FINANZIAMENTI" nel riepilogo liquidita\')': { app: ['[FINANZA] Finanziamenti Ricevuti'], incerta: false },
-};
+// (MAPPATURA_ENTRATE importata in testa al file da mappaturaCategorieExcelApp.mjs.)
 
 // --- Confronto ---
 for (const meseIdx of MESI_RICHIESTI) {
