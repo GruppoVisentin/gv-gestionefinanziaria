@@ -20,8 +20,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import { CATEGORY_MIGRATION_MAP } from '../constants.ts';
+import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants.ts';
 import { isSubappaltoSuCantiere } from '../utils/puntaNetImporter.ts';
+import { MAPPATURA_USCITE, MAPPATURA_ENTRATE } from './mappaturaCategorieExcelApp.mjs';
 
 const [, , mesiArg, annoArg, categoriaFiltro] = process.argv;
 if (!mesiArg) {
@@ -84,6 +85,40 @@ function transazioneValida(t) {
   return true;
 }
 
+// Stesso filtro di appPerCategoria in confrontaFlussoCassaExcel.mjs (ExpenseTimeline.getMonthlyTotal
+// applica entrambe le stesse esclusioni): una categoria rimossa/non configurata o un ammortamento
+// non entrano nel "TOTALE USCITE" che questo script vuole spiegare — senza questo filtro l'elenco
+// poteva includere movimenti fuori dai totali già mostrati nel confronto, con un totale per
+// categoria diverso da quello li' (trovato in review: Codex, PR #47, 2026-10-27).
+const fixedCategories = gvData.fixedCategories || [...FIXED_COST_CATEGORIES];
+const variableCategories = gvData.variableCategories || [...VARIABLE_COST_CATEGORIES];
+const categorieValideUscite = new Set([...fixedCategories, ...variableCategories]);
+
+// Risolve un filtro categoria scritto nel nome ESCEL (es. "NUOVE ATTREZZATURE") sul/sui nome/i app
+// corrispondente/i, usando la stessa mappatura di confrontaFlussoCassaExcel.mjs — prima un filtro
+// Excel che non compariva anche come sottostringa del nome app (es. "NUOVE ATTREZZATURE" non è
+// sottostringa di "[INVESTIMENTI] Acquisto Attrezzature e Macchinari") non trovava mai nulla
+// (trovato in review: Codex, PR #47, 2026-10-27).
+function risolviCategorieAppDaFiltro(filtro) {
+  if (!filtro) return null;
+  const filtroUpper = filtro.toUpperCase();
+  const categorieApp = new Set();
+  for (const mappa of [MAPPATURA_USCITE, MAPPATURA_ENTRATE]) {
+    for (const [chiaveExcel, { app }] of Object.entries(mappa)) {
+      if (chiaveExcel.toUpperCase().includes(filtroUpper)) {
+        for (const c of app) categorieApp.add(c);
+      }
+    }
+  }
+  return categorieApp;
+}
+const categorieAppDaFiltroExcel = risolviCategorieAppDaFiltro(categoriaFiltro);
+function corrispondeAlFiltro(categoria) {
+  if (!categoriaFiltro) return true;
+  if (categorieAppDaFiltroExcel && categorieAppDaFiltroExcel.has(categoria)) return true;
+  return categoria.toUpperCase().includes(categoriaFiltro.toUpperCase());
+}
+
 function elencaMese(meseIdx) {
   console.log(`\n\n=== ${NOMI_MESE[meseIdx]} ${ANNO} — movimenti per categoria ===`);
 
@@ -91,11 +126,13 @@ function elencaMese(meseIdx) {
     const perCategoria = new Map();
     for (const t of gvData.transactions) {
       if (t.type !== tipo || t.isForecast) continue;
+      if (tipo === 'EXPENSE' && t.ceType === 'ammortamento') continue;
       if (!transazioneValida(t)) continue;
       const d = new Date(`${t.date}T00:00:00Z`);
       if (d.getUTCFullYear() !== ANNO || d.getUTCMonth() !== meseIdx) continue;
       const categoria = normalizza(t);
-      if (categoriaFiltro && !categoria.toUpperCase().includes(categoriaFiltro.toUpperCase())) continue;
+      if (tipo === 'EXPENSE' && !categorieValideUscite.has(categoria)) continue;
+      if (!corrispondeAlFiltro(categoria)) continue;
       if (!perCategoria.has(categoria)) perCategoria.set(categoria, []);
       perCategoria.get(categoria).push(t);
     }
