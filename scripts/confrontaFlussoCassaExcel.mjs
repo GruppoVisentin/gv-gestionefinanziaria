@@ -21,8 +21,9 @@
 import fs from 'fs';
 import path from 'path';
 import XLSX from 'xlsx';
-import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES, INCOME_CATEGORIES } from '../constants.ts';
+import { CATEGORY_MIGRATION_MAP, FIXED_COST_CATEGORIES, VARIABLE_COST_CATEGORIES } from '../constants.ts';
 import { isSubappaltoSuCantiere } from '../utils/puntaNetImporter.ts';
+import { MAPPATURA_USCITE as MAPPATURA, MAPPATURA_ENTRATE } from './mappaturaCategorieExcelApp.mjs';
 
 const [, , xlsxPathArg, mesiArg, annoArg] = process.argv;
 if (!xlsxPathArg || !mesiArg) {
@@ -56,51 +57,10 @@ const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico
 // splittata in piu' categorie, qui si sommano per tornare comparabili. `incerta: true` segnala una
 // mappatura dedotta per nome o uno split non documentato esplicitamente in CATEGORY_MIGRATION_MAP —
 // da verificare a mano, non è detto che il confronto per quella riga sia affidabile.
-const MAPPATURA = {
-  'RIPARAZIONI MACCHINARI E ATTREZZATURE': { app: ['[MEZZI] Riparazioni Macchinari Programmate', '[MEZZI] Riparazioni Macchinari Urgenti'], incerta: true },
-  'NUOVE ATTREZZATURE': { app: ['[INVESTIMENTI] Acquisto Attrezzature e Macchinari'], incerta: false },
-  'TASSE': { app: ['[FISCO] Tasse e Tributi Aziendali (IMU, TARI, ecc.)', '[CANTIERE] Oneri Comunali, Abaco e Occupazioni'], incerta: true },
-  'SANZIONI': { app: ['[STRAORDINARI] Sanzioni e Penali'], incerta: false },
-  'VERSAMENTO IVA': { app: ['[FISCO] Versamento IVA'], incerta: false },
-  'RATE E INTERESSI FINANZIAMENTI': { app: ['[FINANZA] Interessi Passivi Finanziamenti', '[FINANZA] Quota Capitale Rate Finanziamenti'], incerta: true },
-  'SPESE BANCARIE': { app: ['[FINANZA] Commissioni e Bolli Bancari'], incerta: false },
-  'ADDEBITO CARTE DI CREDITO': { app: [], incerta: true }, // NESSUNA mappatura trovata ne' in CATEGORY_MIGRATION_MAP ne' in MAPPA_USCITE di ImportStoricoModal.tsx
-  'RITENUTE SU BONIFICI': { app: ["[FISCO] Ritenute su Bonifici (versate)"], incerta: false },
-  'IMPREVISTI': { app: ['[STRAORDINARI] Imprevisti Straordinari'], incerta: false },
-  'REVISIONE MACCHINARI': { app: ['[MEZZI] Revisione Macchinari'], incerta: false },
-  "PUBBLICITA' E MARKETING": { app: ['[MARKETING] Pubblicità e Marketing'], incerta: false },
-  'AFFITTI SEDI': { app: ['[STRUTTURA] Affitti Sedi'], incerta: false },
-  'UTENZE SEDI': { app: ['[STRUTTURA] Utenze Sedi', '[CANTIERE] Utenze Cantiere'], incerta: true },
-  'CANCELLERIA': { app: ['[STRUTTURA] Cancelleria e Materiali Ufficio'], incerta: false },
-  'SOFTWARE': { app: ['[STRUTTURA] Software e Abbonamenti'], incerta: false },
-  'ASSICURAZIONE MEZZI E BOLLI': { app: ['[MEZZI] Assicurazione Mezzi e Bolli'], incerta: false },
-  'ASSICURAZIONI GENERALI': { app: ['[COMPLIANCE] Assicurazioni Generali'], incerta: false },
-  'CORSI DIPENDENTI': { app: ['[COMPLIANCE] Corsi Dipendenti'], incerta: false },
-  'VISITE MEDICHE DIPENDENTI': { app: ['[COMPLIANCE] Visite Mediche Dipendenti'], incerta: false },
-  'STIPENDI DIPENDENTI UFFICIO': { app: ['[PERSONALE] Stipendi Dipendenti Ufficio'], incerta: false },
-  'CONTRIBUTI DIPENDENTI UFFICIO': { app: ['[PERSONALE] Contributi Dipendenti Ufficio'], incerta: false },
-  'COLLABORATORI FISSI': { app: ['[PERSONALE] Collaboratori Fissi'], incerta: false },
-  'CONSULENTI OPEX20': { app: ['[CONSULENZE] Consulenti Fissi'], incerta: false },
-  'SOA E ISO': { app: ['[CONSULENZE] SOA e ISO'], incerta: false },
-  'COMMERCIALISTA': { app: ['[CONSULENZE] Commercialista'], incerta: false },
-  'VOLONTARIATO': { app: ['[STRAORDINARI] Volontariato e Donazioni'], incerta: false },
-  'COMPENSO AMMINISTRATORI': { app: ['[PERSONALE] Compenso Amministratori'], incerta: false },
-  'PRELIEVO UTILE SOCI + RITENUTA': { app: ['[SOCI] Prelievo Utile Soci', '[SOCI] Ritenuta su Prelievo Soci'], incerta: true },
-  'CARBURANTI': { app: ['[CANTIERE] Carburanti'], incerta: false },
-  'NOLEGGI': { app: ['[CANTIERE] Noleggi Attrezzature e Mezzi'], incerta: false },
-  'ASSICURAZIONE CANTIERI': { app: ['[CANTIERE] Assicurazione Cantieri'], incerta: false },
-  "RITENUTE D'ACCONTO SU PROFESSIONISTI": { app: ["[FISCO] Ritenute d'Acconto su Professionisti"], incerta: false },
-  'PRANZI': { app: ['[CANTIERE] Pranzi e Trasferte Cantiere'], incerta: false },
-  'RIFIUTI E MACERIE': { app: ['[CANTIERE] Rifiuti e Macerie'], incerta: false },
-  'STIPENDI DIPENDENTI OPERATIVI': { app: ['[PERSONALE] Stipendi Dipendenti Operativi'], incerta: false },
-  'CONTRIBUTI DIPENDENTI OPERATIVI': { app: ['[PERSONALE] Contributi Dipendenti Operativi'], incerta: false },
-  'SUBAPPALTI MANODOPERA': { app: ['[PERSONALE] Subappalti Manodopera'], incerta: false },
-  'FORNITORI MATERIALI': { app: ['[FORNITORI] Fornitori Materiali'], incerta: false },
-  'SUBAPPALTI SU CANTIERI': { app: ['[FORNITORI] Subappalti su Cantieri'], incerta: false },
-  'PROFESSIONISTI ESTERNI': { app: ['[CONSULENZE] Professionisti Esterni di Cantiere'], incerta: false },
-  'ACQUISIZIONE TERRENI o IMMOBILI': { app: ['[INVESTIMENTI] Acquisto Terreni per Sviluppo', '[INVESTIMENTI] Acquisto Immobili per Sviluppo'], incerta: true },
-  "NUOVA SOCIETA'": { app: ['[INVESTIMENTI] Investimento in Nuova Società'], incerta: false }, // mancava: trovato in review, Codex 2026-10-21
-};
+// MAPPATURA (uscite) e MAPPATURA_ENTRATE importate da mappaturaCategorieExcelApp.mjs — estratte in
+// un modulo condiviso senza side effect cosi' elencaMovimentiPerCategoria.mjs puo' usare la STESSA
+// mappatura per risolvere un filtro categoria scritto nel nome Excel (trovato in review: Codex, PR
+// #47, 2026-10-27, prima erano duplicate qui e in quello script, a rischio di disallinearsi).
 
 // Righe di riepilogo del foglio — NON sono categorie di costo, sommarle raddoppierebbe il totale
 // (stessa lista di ImportStoricoModal.tsx, ESCLUDI_USCITE — trovato in review: Codex, 2026-10-21).
@@ -173,8 +133,6 @@ function transazioneValida(t) {
 const fixedCategories = gvData.fixedCategories || [...FIXED_COST_CATEGORIES];
 const variableCategories = gvData.variableCategories || [...VARIABLE_COST_CATEGORIES];
 const categorieValide = new Set([...fixedCategories, ...variableCategories]);
-const incomeCategories = gvData.incomeCategories || [...INCOME_CATEGORIES];
-const categorieValideEntrate = new Set(incomeCategories);
 
 function appPerCategoria(meseIdx) {
   const mappa = new Map();
@@ -191,8 +149,14 @@ function appPerCategoria(meseIdx) {
 }
 
 // Lato ENTRATE (ricavi/incassi) — richiesto dall'utente il 2026-10-26, dopo il confronto sulle
-// uscite, per verificare anche le entrate. Stessa logica della funzione gemella sopra, ma per
-// t.type === 'INCOME' e sulla lista categorie INCOME_CATEGORIES invece di quella dei costi.
+// uscite, per verificare anche le entrate. A differenza di appPerCategoria sopra, NON filtra per
+// una lista di categorie valide: IncomeTimeline.tsx (components/IncomeTimeline.tsx, riga 173,
+// incomeTransactions = transactions.filter(t => t.type === 'INCOME')) mostra il totale di TUTTE le
+// entrate non previsionali, qualunque sia la categoria — filtrare qui avrebbe fatto leggere al
+// confronto un totale app diverso da quello che l'utente vede davvero in app, anche in presenza di
+// entrate con categoria mancante o non (ancora) elencata (trovato in review: Codex, 2026-10-26).
+// Le categorie non riconosciute restano comunque visibili: finiscono nell'elenco "senza
+// corrispondenza Excel" piu' sotto, invece di sparire in silenzio dal totale.
 function appPerCategoriaEntrate(meseIdx) {
   const mappa = new Map();
   for (const t of gvData.transactions) {
@@ -202,7 +166,7 @@ function appPerCategoriaEntrate(meseIdx) {
     if (d.getUTCFullYear() !== ANNO || d.getUTCMonth() !== meseIdx) continue;
     let categoria = t.category;
     if (categoria && CATEGORY_MIGRATION_MAP[categoria]) categoria = CATEGORY_MIGRATION_MAP[categoria];
-    if (!categorieValideEntrate.has(categoria)) continue;
+    if (!categoria) categoria = '(categoria mancante)';
     mappa.set(categoria, (mappa.get(categoria) || 0) + importoLordo(t));
   }
   return mappa;
@@ -261,29 +225,79 @@ function excelPerCategoria(meseIdx) {
 }
 
 // --- Lato EXCEL: sezione ENTRATE (ricavi/incassi), righe PRIMA di "TOTALE INCASSATO" ---
-// Richiesto dall'utente il 2026-10-26, dopo il confronto sulle uscite: stessa logica a specchio
-// (stesso layout a blocchi di 5 colonne per mese), ma sulla sezione ENTRATE del foglio. A
-// differenza di MAPPATURA (uscite — verificata su piu' mesi reali in sessioni precedenti), qui
-// NON si conoscono ancora i nomi letterali delle righe categoria dell'Excel per le entrate:
-// MAPPATURA_ENTRATE parte vuota apposta, cosi' il primo confronto reale mostra SOLO le due liste
-// "senza mappatura" (nomi reali Excel e nomi reali app, con i rispettivi importi), da cui costruire
-// la mappatura corretta in un secondo passaggio — invece di indovinarla alla cieca (stesso errore
-// da evitare dopo la lezione sui pattern BUILTIN "sempre vincenti" generalizzati senza verifica,
-// 2026-10-26). Il totale app vs excel sotto, pero', e' gia' affidabile da subito: non dipende da
-// MAPPATURA_ENTRATE, solo dalla somma di tutte le entrate di ciascun lato.
+// Richiesto dall'utente il 2026-10-26, dopo il confronto sulle uscite. Il primo tentativo
+// riusava a specchio la logica delle uscite (colonna 6+m*5, righe "categoria" tutte in maiuscolo)
+// ed e' risultato sbagliato su tutti e due i punti (trovato in review: Codex, 2026-10-26,
+// confrontando con la stessa sezione ENTRATE gia' gestita da components/ImportStoricoModal.tsx):
+//
+// 1) Colonna: il blocco di 5 colonne per mese ha la colonna CONSUNTIVO delle entrate a 4+m*5
+//    (colEntrataCons), non 6+m*5 (colUscitaCons) — quest'ultima e' solo per le uscite.
+//
+// 2) Formato righe: a differenza delle uscite (righe-categoria in maiuscolo, es. "NOLEGGI"), la
+//    sezione ENTRATE del foglio NON ha righe-categoria: ha una riga per ogni cliente/incasso (nome
+//    in maiuscolo/minuscolo qualunque), che l'importer storico mappa SEMPRE sulla stessa categoria
+//    app "[CANTIERE] SAL — Stato Avanzamento Lavori" (vedi parseExcelStorico, ImportStoricoModal.tsx
+//    riga ~209). Un primo tentativo escludeva da qui le righe con un nome tipo "accredito
+//    mutuo"/"finanziamento" per sommarle a parte, ma sui dati reali non ne esiste NESSUNA nella
+//    sezione ENTRATE: i finanziamenti non sono affatto righe cliente. Il foglio li registra altrove
+//    (vedi punto 3), e quella ricerca per pattern non trovava mai nulla — per questo gennaio 2026
+//    risultava 792.800€ di finanziamento nell'app senza riscontro nell'Excel: non era un buco di
+//    riconciliazione, era semplicemente nel punto sbagliato del foglio (trovato dall'utente aprendo
+//    il file reale, 2026-10-26).
+//
+// 3) I finanziamenti sono registrati in una riga di riepilogo SEPARATA, "ENTRATE DA ALTRI
+//    FINANZIAMENTI", dentro la sezione "LIQUIDITA' IN CONTO CORRENTE" molto piu' in basso nel
+//    foglio (fuori da qualunque intervallo ENTRATE/USCITE delimitato da "TOTALE INCASSATO") — con
+//    l'etichetta in COLONNA C (non A o B: un primo tentativo assumeva B sulla base dello screenshot,
+//    ma la diagnostica raw su dati reali, 2026-10-26, ha mostrato C616="ENTRATE DA ALTRI
+//    FINANZIAMENTI", non B616 — l'intera sezione di riepilogo usa la colonna C per le etichette, es.
+//    anche C615="ENTRATE" e C617="ENTRATE-USCITE"), ma con la STESSA colonna consuntivo per mese
+//    (4+m*5) della sezione ENTRATE normale (confermato: D616=E616=792800 a gennaio). Confermato sui
+//    dati reali: 792.800€ a gennaio, identico a [FINANZA] Finanziamenti Ricevuti nell'app.
 const fineEntrate = inizioUscite - 1; // la riga "TOTALE INCASSATO" stessa resta esclusa
+
+function trovaRigaFinanziamenti() {
+  for (let i = 0; i < righe.length; i++) {
+    const a = righe[i]?.[0];
+    const b = righe[i]?.[1];
+    const c = righe[i]?.[2];
+    const testo = [a, b, c].filter(v => typeof v === 'string').join(' ');
+    if (/ENTRATE\s+DA\s+ALTRI\s+FINANZIAMENTI/i.test(testo)) return i;
+  }
+  return -1;
+}
+const rigaFinanziamenti = trovaRigaFinanziamenti();
+
 function excelPerCategoriaEntrate(meseIdx) {
-  const colConsuntivo = 6 + meseIdx * 5; // stesso layout a colonne della sezione USCITE
-  const mappa = new Map();
+  const colConsuntivo = 4 + meseIdx * 5; // colEntrataCons in ImportStoricoModal.tsx
+  let sommaClienti = 0;
   for (let i = 0; i < fineEntrate; i++) {
     const nome = righe[i]?.[0];
-    if (!eCategoria(nome)) continue;
+    if (typeof nome !== 'string') continue;
+    const label = nome.trim();
+    if (!label || label === 'MESE') continue;
+    if (ESCLUDI_RIGHE.has(label.toUpperCase())) continue;
     const v = safeParseFloat(righe[i]?.[colConsuntivo]);
-    if (!Number.isNaN(v)) mappa.set(nome.trim(), v);
+    if (Number.isNaN(v) || v <= 0) continue;
+    sommaClienti += v;
+  }
+  const mappa = new Map();
+  if (sommaClienti > 0) mappa.set('INCASSI CLIENTI (somma righe nel foglio, mappate su SAL dall\'importer storico)', sommaClienti);
+  if (rigaFinanziamenti >= 0) {
+    const v = safeParseFloat(righe[rigaFinanziamenti]?.[colConsuntivo]);
+    if (!Number.isNaN(v) && v !== 0) {
+      mappa.set('FINANZIAMENTI (riga "ENTRATE DA ALTRI FINANZIAMENTI" nel riepilogo liquidita\')', v);
+    }
   }
   return mappa;
 }
-const MAPPATURA_ENTRATE = {};
+// "incerta: true": l'importer storico mappa OGNI riga cliente su SAL, ma non e' detto che la somma
+// del foglio corrisponda esattamente solo a questa categoria app nel 2026 (import automatico da
+// PuntaNet, non piu' dall'Excel) — potrebbe includere anche cio' che oggi l'app distingue come
+// "Saldo Finale Commessa" o "Anticipi da Clienti su Commessa". Questi ultimi, se presenti, compaiono
+// comunque nell'elenco "APP senza corrispondenza Excel" qui sotto con il loro importo reale, per
+// decidere a mano se vanno sommati alla stessa riga invece di lasciarli come mappatura separata.
+// (MAPPATURA_ENTRATE importata in testa al file da mappaturaCategorieExcelApp.mjs.)
 
 // --- Confronto ---
 for (const meseIdx of MESI_RICHIESTI) {
