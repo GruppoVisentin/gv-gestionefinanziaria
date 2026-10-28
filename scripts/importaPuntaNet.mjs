@@ -407,6 +407,13 @@ for (const mv of movimenti) {
 
   let categoria = null, ceType = null, cantiereApp = undefined, vatRate = null, confidenza = null, matchKey = null;
   let invoiceDate = undefined;
+  // true se e' un'entrata abbinata a un cantiere il cui metodoPagamento (SAL/Acconto) non e'
+  // ancora impostato in Gestione Commesse, ne' deducibile dal testo del documento: in quel caso
+  // il tipo di entrata resta davvero sconosciuto, quindi anche se il classificatore generico piu'
+  // sotto (fallback su classificaRiga) dovesse comunque trovare una categoria con confidenza
+  // 'alta' per altri motivi, non va scritta in automatico — si rischierebbe di imputare
+  // ricavo_core/solo_cashflow a caso invece del vero SAL/Acconto concordato.
+  let entrataSenzaMetodoPagamento = false;
 
   if (mv.IDDocumento) {
     const header = headerPerDoc.get(mv.IDDocumento);
@@ -419,6 +426,7 @@ for (const mv of movimenti) {
         const meta = projectMeta.get(cantiereApp);
         if (meta?.metodoPagamento) tipoEntrata = meta.metodoPagamento;
       }
+      if (!tipoEntrata && cantiereApp) entrataSenzaMetodoPagamento = true;
       const mapped = tipoEntrata ? MAPPING_ENTRATA[tipoEntrata] : null;
       if (mapped) { categoria = mapped.categoria; ceType = mapped.ceType; confidenza = 'alta'; matchKey = `entrata:${tipoEntrata}`; }
     } else {
@@ -496,7 +504,7 @@ for (const mv of movimenti) {
   // charge dichiarato (0%), gonfiando silenziosamente il credito IVA mostrato in app (bug
   // trovato in audit il 2026-09-14 sui dati storici 2023-2025, mai coperto per il flusso
   // automatico 2026+). Ora, se manca l'aliquota, la riga finisce in bozza da rivedere a mano.
-  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk && !possibileDoppioneDocumento;
+  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk && !possibileDoppioneDocumento && !entrataSenzaMetodoPagamento;
 
   const base = {
     id: crypto.randomUUID(),
@@ -526,7 +534,9 @@ for (const mv of movimenti) {
       categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate,
       vatRateNota: possibileDoppioneDocumento
         ? `Possibile doppione: il documento PuntaNet IDDocumento ${mv.IDDocumento} risulta gia' coperto per intero da una riga esistente (fattura scritta come scadenza aperta, poi pagata in piu' rate) — verificare prima di confermare.`
-        : notaRevisione(dataOk),
+        : entrataSenzaMetodoPagamento
+          ? `Entrata sulla commessa "${cantiereApp}" senza metodo di pagamento (SAL/Acconto) ancora impostato in Gestione Commesse — completare i dati della commessa prima di confermare.`
+          : notaRevisione(dataOk),
       cantiereApp, idDocumento: mv.IDDocumento, idRata: mv.IDRata, idMovimento: mv.IDMovimento, dataDocumento: invoiceDate,
     }));
   }
@@ -569,6 +579,8 @@ for (const s of scadenzeAperte) {
   const entity = s.Controparte || '(non specificato)';
   const tipoMovimento = tipoMovimentoDa(descrizione);
   let categoria = null, ceType = null, cantiereApp = undefined, confidenza = null, matchKey = null;
+  // Vedi nota identica piu' sopra (ramo movimenti bancari).
+  let entrataSenzaMetodoPagamento = false;
 
   if (isEntrata) {
     const desc = descPerDoc.get(s.IDDocumento) || '';
@@ -578,6 +590,7 @@ for (const s of scadenzeAperte) {
       const meta = projectMeta.get(cantiereApp);
       if (meta?.metodoPagamento) tipoEntrata = meta.metodoPagamento;
     }
+    if (!tipoEntrata && cantiereApp) entrataSenzaMetodoPagamento = true;
     const mapped = tipoEntrata ? MAPPING_ENTRATA[tipoEntrata] : null;
     if (mapped) { categoria = mapped.categoria; ceType = mapped.ceType; confidenza = 'alta'; matchKey = `entrata:${tipoEntrata}`; }
   } else {
@@ -607,8 +620,10 @@ for (const s of scadenzeAperte) {
   const dataISO = s.DataRata.slice(0, 10);
   const dataOk = dataPlausibile(dataISO);
   // Vedi nota identica piu' sopra (ramo movimenti bancari): anche qui un'entrata senza aliquota
-  // nota va in revisione manuale, non scritta come se fosse reverse charge dichiarato.
-  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk;
+  // nota va in revisione manuale, non scritta come se fosse reverse charge dichiarato — e allo
+  // stesso modo un'entrata su cantiere senza metodoPagamento ancora impostato non va scritta
+  // anche se il classificatore generico ha comunque trovato una categoria con confidenza 'alta'.
+  const alta = categoria && confidenza === 'alta' && vatRate !== null && dataOk && !entrataSenzaMetodoPagamento;
 
   // Collegamento a previsione ESISTENTE (solo lettura, mai modificata) — una fattura emessa e
   // non ancora incassata/pagata puo' gia' corrispondere a qualcosa che l'utente ha pianificato.
@@ -646,7 +661,10 @@ for (const s of scadenzeAperte) {
   } else {
     revisioneScadenze.push(costruisciBozza({
       dataISO, descrizione, entity, importo: s.ImportoRata, tipo, tipoMovimento,
-      categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate, vatRateNota: notaRevisione(dataOk),
+      categoria, ceType, confidenza, matchKey, vatRateSuggerito: vatRate,
+      vatRateNota: entrataSenzaMetodoPagamento
+        ? `Entrata sulla commessa "${cantiereApp}" senza metodo di pagamento (SAL/Acconto) ancora impostato in Gestione Commesse — completare i dati della commessa prima di confermare.`
+        : notaRevisione(dataOk),
       cantiereApp, idDocumento: s.IDDocumento, idRata: s.IDRata, dataDocumento: s.DataDocumento ? s.DataDocumento.slice(0, 10) : undefined,
       pagato: false, // scadenzeAperte e' per costruzione Pagato=0 — la riga rappresenta una fattura non ancora pagata
     }));

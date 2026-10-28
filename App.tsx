@@ -22,6 +22,7 @@ import {
   Fornitore,
   CEType
 } from './types';
+import { campiAmministrativiMancanti } from './utils/projectCompleteness';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
@@ -672,6 +673,15 @@ const App: React.FC = () => {
 
   // Projects State
   const [projects, setProjects] = useState<Project[]>([]);
+
+  // Commesse attive con dati amministrativi ancora da compilare (vedi
+  // CAMPI_AMMINISTRATIVI_COMMESSA) — alimenta il banner qui sotto, così una
+  // commessa importata da DirettoreCantiere (o creata qui senza finire il
+  // form) non resta dimenticata senza metodo di pagamento ecc.
+  const commesseDatiIncompleti = useMemo(
+    () => projects.filter(p => p.status === 'ACTIVE' && campiAmministrativiMancanti(p).length > 0),
+    [projects]
+  );
 
   // Anagrafica clienti condivisa con l'ecosistema GV
   const [clients, setClients] = useState<Client[]>([]);
@@ -3161,6 +3171,27 @@ const App: React.FC = () => {
             className="bg-white text-amber-700 px-3 py-1 rounded-full text-xs hover:bg-amber-50 transition-colors"
           >
             Completa import
+          </button>
+        </div>
+      )}
+
+      {/* Avviso commesse con dati amministrativi mancanti (es. metodo di pagamento) —
+          tipicamente una commessa importata da DirettoreCantiere, che non raccoglie questi
+          campi: senza questo banner la dimenticanza passava inosservata finché qualcuno non
+          apriva a mano quella commessa. Sparisce da sola quando tutti i campi sono compilati. */}
+      {commesseDatiIncompleti.length > 0 && (
+        <div className="bg-amber-500 text-white px-4 py-2 flex items-center justify-between text-sm font-bold z-[70]">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} />
+            <span>
+              {commesseDatiIncompleti.length} {commesseDatiIncompleti.length === 1 ? 'commessa con dati amministrativi mancanti' : 'commesse con dati amministrativi mancanti'} (es. metodo di pagamento)
+            </span>
+          </div>
+          <button
+            onClick={() => setView(AppView.PROJECTS)}
+            className="bg-white text-amber-700 px-3 py-1 rounded-full text-xs hover:bg-amber-50 transition-colors"
+          >
+            Completa dati
           </button>
         </div>
       )}
