@@ -88,14 +88,20 @@ corrispondenti.forEach(p => console.log(`  - "${p.name}"  puntaNetCantiereId=${p
 console.log('');
 
 // ─── Statistiche globali: quanti fornitori distinti per ogni IDCantiere PuntaNet, per capire se
-// l'ID collegato e' un valore anomalo/generico rispetto agli altri cantieri reali. ───────────
+// l'ID collegato e' un valore anomalo/generico rispetto agli altri cantieri reali. Stessi filtri
+// di importaFornitoriPuntaNet.mjs (perCantiere): Tipo IN (1,3) — fatture/note di credito
+// FORNITORE, mai cliente (Tipo = 0, che importaPuntaNet.mjs legge dalla stessa tabella per i
+// clienti) — ed esclude le righe con imponibile ~0. Prima contava anche i clienti e le righe a
+// zero, gonfiando il numero di "fornitori" su ogni cantiere e potendo quindi segnalare come
+// sospetto un collegamento in realta' corretto, o viceversa (trovato in review: Codex, PR #51,
+// 2026-11-11).
 let fornitoriPerCantiere;
 try {
   fornitoriPerCantiere = runSql(`SET NOCOUNT ON;
     SELECT dic.IDCantiere, COUNT(DISTINCT d.IDCliFor) AS NumeroFornitori
     FROM [Documenti Imponibili Cantiere] dic
     JOIN Documenti d ON d.IDDocumento = dic.IDDocumento
-    WHERE d.IDCliFor IS NOT NULL
+    WHERE d.Tipo IN (1, 3) AND d.IDCliFor IS NOT NULL AND ABS(dic.Imponibile) >= 0.01
     GROUP BY dic.IDCantiere
     ORDER BY NumeroFornitori DESC
     FOR JSON PATH`);
@@ -148,12 +154,22 @@ for (const p of corrispondenti) {
   }
 
   if (reportCollegamento) {
-    const { ambigui, scoreBasso } = reportCollegamento.dati;
+    const { applicati: applicatiReport, ambigui, scoreBasso } = reportCollegamento.dati;
+    // Controllato PRIMA di ambigui/scoreBasso: se il collegamento errato e' stato APPLICATO in
+    // automatico (punteggio >= soglia, non ambiguo), sta in questa sezione — non in quelle di
+    // revisione manuale. Guardare solo ambigui/scoreBasso faceva concludere "non e' stato questo
+    // script" esattamente nel caso (un abbinamento automatico sbagliato mai piu' toccato) che
+    // questa diagnostica dovrebbe individuare (trovato in review: Codex, PR #51, 2026-11-11).
+    const inApplicati = (applicatiReport || []).find(a => a.progetto === p.name);
     const inAmbigui = (ambigui || []).find(a => a.progetto === p.name);
     const inScoreBasso = (scoreBasso || []).find(s => s.progetto === p.name);
+    if (inApplicati) {
+      const stessoId = inApplicati.idCantiere === id;
+      console.log(`  ⚠ Presente tra gli APPLICATI (automatico) nell'ultimo report (${reportCollegamento.nome}): IDCantiere ${inApplicati.idCantiere} ("${inApplicati.descrizionePuntaNet}", score ${inApplicati.score})${stessoId ? ' — stesso IDCantiere attualmente collegato: molto probabilmente la causa.' : ' — IDCantiere diverso da quello attuale: il collegamento e\' cambiato dopo quell\'esecuzione, non e\' (piu\') la causa diretta.'}`);
+    }
     if (inAmbigui) console.log(`  ⚠ Presente tra gli AMBIGUI nell'ultimo report (${reportCollegamento.nome}): candidati ${JSON.stringify(inAmbigui.candidati)}`);
     if (inScoreBasso) console.log(`  ⚠ Presente tra gli SCORE TROPPO BASSO nell'ultimo report (${reportCollegamento.nome}): ${JSON.stringify(inScoreBasso.candidato)}`);
-    if (!inAmbigui && !inScoreBasso) console.log(`  (Non presente tra gli ambigui/punteggio-basso nell'ultimo report ${reportCollegamento.nome} — se il collegamento e' comunque sbagliato, non e' stato fatto da quello script o e' stato corretto/modificato dopo.)`);
+    if (!inApplicati && !inAmbigui && !inScoreBasso) console.log(`  (Non presente in nessuna sezione dell'ultimo report ${reportCollegamento.nome} — se il collegamento e' comunque sbagliato, non e' stato fatto da quello script, o e' stato modificato dopo quell'esecuzione.)`);
   } else {
     console.log('  (Nessun report collega-cantieri-report_*.json trovato in AUTO per un confronto.)');
   }
@@ -203,9 +219,13 @@ const tmpPath = `${GVCF_PATH}.tmp_${process.pid}`;
 fs.writeFileSync(tmpPath, JSON.stringify(gvDataFresh, null, 2));
 fs.renameSync(tmpPath, GVCF_PATH);
 
-console.log(`\n✔ Azzerato puntaNetCantiereId di "${progettoFresco.name}" (era ${idPrecedente}).`);
+console.log(`\n✔ Azzerato puntaNetCantiereId di "${progettoFresco.name}" (era ${idPrecedente}) nel file dati locale.`);
 console.log(`  Backup pre-scrittura: ${backupPath}`);
-console.log('\nProssimo passo: rilancia "npx tsx scripts/importaFornitoriPuntaNet.mjs --scrivi" per ricalcolare');
+console.log('\nProssimo passo 1: apri Gestione Finanziaria in app (o lasciala aperta per un paio di minuti) perche\'');
+console.log('pubblichi questo azzeramento anche sul registro condiviso (fornitori_registry) usato da Direttore');
+console.log('Cantiere — da PR #51 l\'app invia sempre questo campo, anche quando null, cosi\' un azzeramento');
+console.log('come questo sovrascrive il collegamento sbagliato pubblicato in precedenza invece di esserne ignorato.');
+console.log('Prossimo passo 2: rilancia "npx tsx scripts/importaFornitoriPuntaNet.mjs --scrivi" per ricalcolare');
 console.log('i nomi leggibili (statistichePuntaNet.perCantiere[].nome) di tutti i fornitori con questo nuovo stato.');
 console.log('Poi, per ricollegare correttamente questo progetto, puoi rilanciare scripts/collegaCantieriPuntaNet.mjs');
 console.log('(solo questo progetto verra\' riconsiderato, visto che ora non ha piu\' un collegamento) oppure collegarlo a mano.');

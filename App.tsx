@@ -1983,7 +1983,15 @@ const App: React.FC = () => {
         // fatturato secondo PuntaNet (vedi fornitori_registry.perCantiere) —
         // prima veniva pubblicato solo per le prime, lasciando la maggioranza
         // delle commesse reali (native qui) senza incrocio possibile.
-        ...(p.puntaNetCantiereId ? { puntaNetCantiereId: p.puntaNetCantiereId } : {}),
+        //
+        // Sempre incluso (mai omesso quando null): l'API distingue "campo assente dal
+        // body" (Direttore Cantiere, che non lo invia mai — non va toccato) da "campo
+        // presente con valore null" (solo da qui — un azzeramento intenzionale, es. dopo
+        // aver corretto un collegamento errato, che deve sovrascrivere il valore
+        // pubblicato in precedenza). Omettere il campo quando null impediva di rimuovere
+        // mai più dal registro condiviso un collegamento sbagliato una volta pubblicato
+        // (trovato in review: Codex, PR #51, 2026-11-11).
+        puntaNetCantiereId: p.puntaNetCantiereId ?? null,
       }).catch(e => console.error('Pubblicazione commessa sul registro fallita', e));
     });
     reportRegistrySync();
