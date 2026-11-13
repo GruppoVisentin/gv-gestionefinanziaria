@@ -671,9 +671,15 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
   // mano, non soddisfaceva piu' ne' l'una ne' l'altra condizione e SPARIVA dalla vista pur
   // restando nei dati (contava nel "Totale" ma non in nessun elenco visibile) — bug trovato e
   // corretto il 2026-09-11.
+  // Il controllo "tipoEntrata noto" valeva solo per tipoMovimento === 'FEA': un'entrata
+  // di altro tipo (es. Prima Nota) con cantiere abbinato ma senza metodoPagamento ancora
+  // impostato sulla commessa (vedi campiAmministrativiMancanti) poteva risultare "auto-
+  // classificata" (e quindi "pronta") anche senza sapere se è SAL o Acconto, con
+  // conseguenze sbagliate sul ceType — va in revisione come qualunque altra entrata senza
+  // tipo noto, indipendentemente dal tipoMovimento.
   const isAutoClassificata = (r: typeof righe[number]) =>
     !!r.categoria && r.confidenza === 'alta' && r.vatRateSuggerito !== null &&
-    (r.riga.tipoMovimento !== 'FEA' || r.tipoEntrata !== null);
+    (r.riga.tipo !== 'INCOME' || r.tipoEntrata !== null);
 
   const totale = righe.length;
   const duplicati = righe.filter(r => r.isDuplicato).length;
@@ -1225,7 +1231,12 @@ const ImportPuntaNetModal: React.FC<ImportPuntaNetModalProps> = ({
               >
                 Annulla Import
               </button>
-              <button onClick={() => setRighe(righe.map(r => ({ ...r, confermata: r.categoria !== null && (r.vatRateConfermato ?? r.vatRateSuggerito) !== null && !r.isDuplicato })))} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-900">Conferma tutte</button>
+              {/* Stessa condizione "pronta" (rigaPronta) usata per il badge verde riga-per-riga e per
+                  decidere cosa finisce davvero importato (importa()): la condizione precedente qui
+                  non controllava tipoEntrata, quindi poteva confermare in blocco un'entrata abbinata
+                  a un cantiere senza metodoPagamento ancora impostato (SAL/Acconto sconosciuto),
+                  importandola con una categoria indovinata invece di lasciarla in sospeso. */}
+              <button onClick={() => setRighe(righe.map(r => ({ ...r, confermata: r.isDuplicato ? r.confermata : rigaPronta(r) })))} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-900">Conferma tutte</button>
               <button
                 onClick={importa}
                 disabled={confermate === 0}

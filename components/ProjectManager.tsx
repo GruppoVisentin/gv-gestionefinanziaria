@@ -8,6 +8,7 @@ import { DATE_FORMATTER } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
 import { getLocalYMD } from '../utils/gasCoreEngine';
 import { fetchSharedCantieri, SharedCantiere } from '../services/cantieriSync';
+import { campiAmministrativiMancanti } from '../utils/projectCompleteness';
 
 // ─── TIPOLOGIE PREIMPOSTATE ──────────────────────────────────────
 
@@ -434,6 +435,20 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
                     </div>
                   </div>
                 )}
+
+                {(() => {
+                  const mancanti = campiAmministrativiMancanti(project);
+                  return mancanti.length > 0 ? (
+                    <div className="pt-2 mt-1 border-t border-slate-100">
+                      <div className="flex items-start gap-1.5">
+                        <AlertTriangle size={12} className="text-amber-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] text-amber-700">
+                          <span className="font-bold">Dati mancanti:</span> {mancanti.join(', ')}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
               </div>
             </div>
           ))}
