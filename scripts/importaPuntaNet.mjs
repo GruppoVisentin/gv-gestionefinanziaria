@@ -64,10 +64,14 @@ const DB_COMUNE = 'GC_Comune_RO';
 const DATA_INIZIO = '2026-01-01'; // procedure automatiche partono dal 2026, mai prima
 
 const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV\35_APP GV ECOSISTEM\04-GV GestioneFINANZIARIA\DATI SALVATI`;
+// Il file di lavoro vive su Google Drive dal 2026-11-13 (sincronizzato da Google Drive for
+// Desktop sul PC che esegue questi script): NAS_DATI resta solo per backup/report
+// (BACKUP_DIR/AUTO_DIR/snapshot di sicurezza), mai per il file letto/scritto qui.
+const DRIVE_DATI = String.raw`G:\Il mio Drive\GV GestioneFINANZIARIA`;
 // File dati REALE in uso dall'app (verificato 2026-09-11 — "gv-cashflow.gvcf" e' una copia
 // vecchia/ferma al 09/09, NON quella sincronizzata dall'app ogni giorno).
-const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico.gvcf');
-const REGOLE_PATH = path.join(NAS_DATI, 'gv-regole.json');
+const GVCF_PATH = path.join(DRIVE_DATI, 'gv-cashflow_v2-import-puntanet-automatico.gvcf');
+const REGOLE_PATH = path.join(DRIVE_DATI, 'gv-regole.json');
 const BACKUP_DIR = path.join(NAS_DATI, 'BACKUP');
 const REPORT_PATH = path.join(NAS_DATI, 'AUTO', `${SCRIVI ? 'scrittura' : 'dryrun'}_${new Date().toISOString().slice(0, 10)}.json`);
 

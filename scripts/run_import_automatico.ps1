@@ -30,6 +30,11 @@
 # PuntaNet, sempre in modalita SCRITTURA: da qui la pubblicazione periodica gia' esistente
 # verso il registro condiviso la propaga da sola a Direttore Cantiere (richiesto 2026-09-18:
 # l'Anagrafica Clienti restava vuota perche' nessuno la compilava mai a mano).
+# Esegue infine backupNotturnoDriveSuNas.mjs (dal 2026-11-13, da quando il file di lavoro vive
+# su Google Drive invece che sul NAS): copia il file di lavoro e le regole verso il NAS a scopo
+# di backup, indipendentemente da come sono stati modificati nel frattempo (anche a mano
+# nell'app, non solo dagli script sopra) - aggiunto qui, nello stesso giro gia' automatico delle
+# 9:00, invece che in una nuova Attivita' Pianificata separata da configurare a mano.
 # Salva sempre un log leggibile per verificare cosa e' successo.
 
 $ErrorActionPreference = 'Continue'
@@ -97,6 +102,15 @@ try {
 
 try {
     & npx tsx "scripts\importaClientiPuntaNet.mjs" --scrivi 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
+    "=== Completato con successo ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+} catch {
+    "=== ERRORE: $($_.Exception.Message) ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+}
+
+"=== Avvio backupNotturnoDriveSuNas.mjs - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
+
+try {
+    & node "scripts\backupNotturnoDriveSuNas.mjs" 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
     "=== Completato con successo ===" | Out-File -FilePath $LogFile -Append -Encoding utf8
 } catch {
     "=== ERRORE: $($_.Exception.Message) ===" | Out-File -FilePath $LogFile -Append -Encoding utf8

@@ -67,23 +67,45 @@ export default async function handler(req: any, res: any) {
       }
       const id = `${source}:${sourceId}`;
       // puntaNetCantiereId non è mai obbligatorio e non viene mai inviato da Direttore
-      // Cantiere: se assente in questa richiesta non va toccato (COALESCE sul valore
-      // già presente), altrimenti ogni pubblicazione di Direttore Cantiere lo
-      // azzererebbe di nuovo.
-      const rows = await sql`
-        INSERT INTO cantieri (id, source, source_id, nome, cliente, luogo, data_inizio, data_consegna, stato, punta_net_cantiere_id, updated_at)
-        VALUES (${id}, ${source}, ${sourceId}, ${nome}, ${cliente ?? null}, ${luogo ?? null}, ${dataInizio ?? null}, ${dataConsegna ?? null}, ${stato}, ${puntaNetCantiereId ?? null}, now())
-        ON CONFLICT (id) DO UPDATE SET
-          nome = EXCLUDED.nome,
-          cliente = EXCLUDED.cliente,
-          luogo = EXCLUDED.luogo,
-          data_inizio = EXCLUDED.data_inizio,
-          data_consegna = EXCLUDED.data_consegna,
-          stato = EXCLUDED.stato,
-          punta_net_cantiere_id = COALESCE(EXCLUDED.punta_net_cantiere_id, cantieri.punta_net_cantiere_id),
-          updated_at = now()
-        RETURNING *
-      `;
+      // Cantiere: se il CAMPO è assente dal body (non solo null) non va toccato (COALESCE
+      // sul valore già presente), altrimenti ogni pubblicazione di Direttore Cantiere lo
+      // azzererebbe di nuovo. Ma quando il campo è presente con valore null — come fa
+      // sempre Gestione Finanziaria da App.tsx, l'unica che lo gestisce — quel null è
+      // intenzionale (es. un collegamento sbagliato appena azzerato) e deve sovrascrivere
+      // il valore già presente, non esserne ignorato: prima un semplice COALESCE non
+      // distingueva "campo assente" da "campo presente ma null", quindi un collegamento
+      // errato pubblicato una volta non poteva più essere rimosso dal registro condiviso,
+      // nemmeno azzerando Project.puntaNetCantiereId e ripubblicando (trovato in review:
+      // Codex, PR #51, 2026-11-11).
+      const campoCantierePresente = Object.prototype.hasOwnProperty.call(req.body || {}, 'puntaNetCantiereId');
+      const rows = campoCantierePresente
+        ? await sql`
+            INSERT INTO cantieri (id, source, source_id, nome, cliente, luogo, data_inizio, data_consegna, stato, punta_net_cantiere_id, updated_at)
+            VALUES (${id}, ${source}, ${sourceId}, ${nome}, ${cliente ?? null}, ${luogo ?? null}, ${dataInizio ?? null}, ${dataConsegna ?? null}, ${stato}, ${puntaNetCantiereId ?? null}, now())
+            ON CONFLICT (id) DO UPDATE SET
+              nome = EXCLUDED.nome,
+              cliente = EXCLUDED.cliente,
+              luogo = EXCLUDED.luogo,
+              data_inizio = EXCLUDED.data_inizio,
+              data_consegna = EXCLUDED.data_consegna,
+              stato = EXCLUDED.stato,
+              punta_net_cantiere_id = EXCLUDED.punta_net_cantiere_id,
+              updated_at = now()
+            RETURNING *
+          `
+        : await sql`
+            INSERT INTO cantieri (id, source, source_id, nome, cliente, luogo, data_inizio, data_consegna, stato, punta_net_cantiere_id, updated_at)
+            VALUES (${id}, ${source}, ${sourceId}, ${nome}, ${cliente ?? null}, ${luogo ?? null}, ${dataInizio ?? null}, ${dataConsegna ?? null}, ${stato}, null, now())
+            ON CONFLICT (id) DO UPDATE SET
+              nome = EXCLUDED.nome,
+              cliente = EXCLUDED.cliente,
+              luogo = EXCLUDED.luogo,
+              data_inizio = EXCLUDED.data_inizio,
+              data_consegna = EXCLUDED.data_consegna,
+              stato = EXCLUDED.stato,
+              updated_at = now()
+            RETURNING *
+          `;
       return res.status(200).json({ cantiere: rowToCantiere(rows[0]) });
     }
 

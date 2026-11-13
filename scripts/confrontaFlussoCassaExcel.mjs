@@ -51,7 +51,11 @@ if (MESI_RICHIESTI.length === 0) {
 }
 
 const NAS_DATI = String.raw`\\NAS\Ufficio Tecnico\GRUPPO VISENTIN\00_GESTIONE GV\35_APP GV ECOSISTEM\04-GV GestioneFINANZIARIA\DATI SALVATI`;
-const GVCF_PATH = path.join(NAS_DATI, 'gv-cashflow_v2-import-puntanet-automatico.gvcf');
+// Il file di lavoro vive su Google Drive dal 2026-11-13 (sincronizzato da Google Drive for
+// Desktop sul PC che esegue questi script): NAS_DATI resta solo per backup/report
+// (BACKUP_DIR/AUTO_DIR/snapshot di sicurezza), mai per il file letto/scritto qui.
+const DRIVE_DATI = String.raw`G:\Il mio Drive\GV GestioneFINANZIARIA`;
+const GVCF_PATH = path.join(DRIVE_DATI, 'gv-cashflow_v2-import-puntanet-automatico.gvcf');
 
 // Excel (nome vecchio) → categorie app corrispondenti. Dove l'Excel aveva UNA voce e l'app l'ha
 // splittata in piu' categorie, qui si sommano per tornare comparabili. `incerta: true` segnala una
