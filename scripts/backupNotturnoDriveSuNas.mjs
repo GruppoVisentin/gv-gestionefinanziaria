@@ -1,5 +1,5 @@
-// Backup notturno schedulato: copia il file di lavoro (gv-cashflow_v2-import-puntanet-automatico.gvcf
-// e gv-regole.json), ora su Google Drive, verso il NAS — indipendentemente da COME sono stati
+// Backup giornaliero: copia il file di lavoro (gv-cashflow_v2-import-puntanet-automatico.gvcf e
+// gv-regole.json), ora su Google Drive, verso il NAS — indipendentemente da COME sono stati
 // modificati. I backup gia' presenti negli altri script (BACKUP_DIR) scattano solo prima di una
 // scrittura fatta da uno script Node: le modifiche fatte a mano nell'app via browser (il modo in
 // cui si lavora la maggior parte del tempo) non passano mai da uno script, quindi senza questo non
@@ -9,10 +9,13 @@
 // Solo COPIA (mai scrittura sul file sorgente): sicuro da eseguire quante volte si vuole, anche
 // mentre l'app e' aperta.
 //
+// Invocato automaticamente da run_import_automatico.ps1 (Attivita' Pianificata "GV_ImportaPuntaNet",
+// ogni giorno alle 9:00) — nessuna Attivita' Pianificata separata da configurare a mano: l'utente
+// non lancia mai script manualmente, tutto il giro (import PuntaNet + questo backup) deve attivarsi
+// da solo col prossimo giro schedulato, senza alcun intervento.
+//
 // Uso: node scripts/backupNotturnoDriveSuNas.mjs
-// Pensato per un'attivita' pianificata di Windows (Utilita' di pianificazione), non per npx tsx:
-// e' puro Node/fs, nessuna dipendenza del progetto, quindi puo' girare anche senza `npm install`
-// gia' fatto sulla macchina che esegue l'attivita' pianificata.
+// Puro Node/fs, nessuna dipendenza del progetto: puo' girare anche senza `npm install` gia' fatto.
 
 import fs from 'fs';
 import path from 'path';
