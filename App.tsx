@@ -2840,7 +2840,7 @@ const App: React.FC = () => {
           />
         );
       case AppView.PAGAMENTI_FORNITORI:
-        return <PagamentiFornitoriTab />;
+        return <PagamentiFornitoriTab transactions={transactions} projects={projects} onSaveTransaction={handleSaveTransaction} isAuthorized={isAuthorized} />;
       case AppView.SETTINGS:
         return (
             <div className="space-y-8 animate-in fade-in duration-500">

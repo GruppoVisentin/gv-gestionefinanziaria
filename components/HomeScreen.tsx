@@ -169,7 +169,7 @@ const modules: Module[] = [
   {
     id: AppView.PAGAMENTI_FORNITORI,
     label: 'Pagamenti',
-    sublabel: 'Avvisi pagamento fornitori in arrivo',
+    sublabel: 'Pagamenti fornitori e incassi vendite in arrivo',
     icon: BellRing,
     color: 'bg-red-100',
     iconColor: 'text-red-600',

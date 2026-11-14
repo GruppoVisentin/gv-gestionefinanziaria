@@ -1,11 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { HardHat, Building2, CalendarClock, Check, RotateCcw, BellRing, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { HardHat, Building2, CalendarClock, Check, RotateCcw, BellRing, ShieldCheck, ShieldAlert, Home, PlusCircle } from 'lucide-react';
+import { Project, Transaction, TransactionType } from '../types';
+import { fetchIncassiVendite, aggiornaIncassoVendita, rifIncasso, IncassoVendita } from '../services/incassiVenditeSync';
 import { fetchPaymentAlerts, setPaymentAlertRead, PaymentAlert } from '../services/paymentAlertsSync';
 
 const dateFmt = (iso: string) => new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
 const currencyFmt = (n: number) => n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 
-export function PagamentiFornitoriTab() {
+interface PagamentiFornitoriTabProps {
+  transactions?: Transaction[];
+  onSaveTransaction?: (data: Omit<Transaction, 'id'>) => void;
+  // Come per gli altri inserimenti: senza operatore autorizzato non si scrive nel cash flow.
+  isAuthorized?: boolean;
+  projects?: Project[];
+}
+
+export function PagamentiFornitoriTab({ transactions, projects, onSaveTransaction, isAuthorized = false }: PagamentiFornitoriTabProps = {}) {
   const [alerts, setAlerts] = useState<PaymentAlert[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -127,6 +137,177 @@ export function PagamentiFornitoriTab() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {onSaveTransaction && <IncassiVenditeSection transactions={transactions || []} projects={projects || []} onSaveTransaction={onSaveTransaction} isAuthorized={isAuthorized} />}
+    </div>
+  );
+}
+
+// Incassi delle vendite immobiliari, pubblicati da Gestione Immobiliare quando un operatore
+// conferma una rata del piano pagamenti di un cliente. "Aggiungi al cash flow" crea una
+// previsione di entrata (una sola per rata: il riferimento resta sulla transazione).
+function IncassiVenditeSection({ transactions, projects, onSaveTransaction, isAuthorized }: { transactions: Transaction[]; projects: Project[]; onSaveTransaction: (data: Omit<Transaction, 'id'>) => void; isAuthorized: boolean }) {
+  const [incassi, setIncassi] = useState<IncassoVendita[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  // Commessa scelta a mano per le rate il cui cantiere non si trova da solo.
+  const [sceltaCommessa, setSceltaCommessa] = useState<Record<string, string>>({});
+
+  // La rata entra nella riga delle entrate della commessa del suo cantiere: stesso id del
+  // registro cantieri condiviso (direttore_cantiere:<id> per quelli nati in Gestione Cantiere).
+  const chiaveCommessa = (p: Project) => p.externalSource ? `${p.externalSource}:${p.externalId}` : `gestione_finanziaria:${p.id}`;
+  const commessaDi = (i: IncassoVendita): Project | undefined =>
+    (i.cantiereId ? projects.find(p => chiaveCommessa(p) === i.cantiereId) : undefined)
+    || projects.find(p => p.id === sceltaCommessa[i.id]);
+  const trovataDaSola = (i: IncassoVendita) => !!i.cantiereId && projects.some(p => chiaveCommessa(p) === i.cantiereId);
+
+  const load = useCallback(async () => {
+    try {
+      setIncassi(await fetchIncassiVendite());
+      setError(null);
+    } catch (e: any) {
+      setError(e.message || 'Errore di caricamento');
+    }
+  }, []);
+  // Stesso ritmo degli avvisi fornitori: ogni minuto, solo con la pagina in vista.
+  useEffect(() => {
+    load();
+    const interval = setInterval(() => { if (!document.hidden) load(); }, 60000);
+    return () => clearInterval(interval);
+  }, [load]);
+
+  // La verità è il cash flow: una previsione cancellata qui libera di nuovo la rata.
+  const giaInCashflow = (i: IncassoVendita) => transactions.some(t => t.sourceRef === rifIncasso(i));
+
+  // Tiene allineata la spunta condivisa (la legge Gestione Immobiliare) con il cash flow reale.
+  useEffect(() => {
+    (incassi || []).forEach(i => {
+      const presente = giaInCashflow(i);
+      if (i.inCashflow !== presente) {
+        aggiornaIncassoVendita(i.id, { inCashflow: presente })
+          .then(() => setIncassi(prev => prev ? prev.map(x => x.id === i.id ? { ...x, inCashflow: presente } : x) : prev))
+          .catch(() => {});
+      }
+    });
+  }, [incassi, transactions]);
+
+  const aggiungi = async (i: IncassoVendita) => {
+    if (!isAuthorized || giaInCashflow(i)) return;
+    setSavingId(i.id);
+    try {
+      // Si ricontrolla la rata appena prima: potrebbe essere stata annullata nel frattempo.
+      const fresche = await fetchIncassiVendite();
+      setIncassi(fresche);
+      const attuale = fresche.find(x => x.id === i.id);
+      if (!attuale || attuale.stato === 'Annullata') {
+        setError('La rata è stata annullata in Gestione Immobiliare: non è stata aggiunta.');
+        return;
+      }
+      i = attuale;
+      const commessa = commessaDi(i);
+      if (!commessa) {
+        setError('Scegli la commessa (cantiere) a cui intestare la rata.');
+        return;
+      }
+      onSaveTransaction({
+        date: i.scadenza || new Date().toISOString().slice(0, 10),
+        amount: i.importo,
+        type: TransactionType.INCOME,
+        category: '[IMMOBILIARE] Vendita Immobili e Terreni',
+        description: [i.tipo || 'Rata vendita', i.clienteNome, i.unitaCodice && `unità ${i.unitaCodice}`, i.interventoNome].filter(Boolean).join(' — ') + ' (importo della rata: verificare IVA)',
+        project: commessa.name,
+        isForecast: true,
+        sourceRef: rifIncasso(i),
+      });
+      await aggiornaIncassoVendita(i.id, { inCashflow: true, letto: true });
+      setIncassi(prev => prev ? prev.map(x => x.id === i.id ? { ...x, inCashflow: true, letto: true } : x) : prev);
+    } catch (e: any) {
+      setError(e.message || 'Errore di salvataggio');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const toggleLetto = async (i: IncassoVendita) => {
+    setSavingId(i.id);
+    setIncassi(prev => prev ? prev.map(x => x.id === i.id ? { ...x, letto: !x.letto } : x) : prev);
+    try { await aggiornaIncassoVendita(i.id, { letto: !i.letto }); }
+    catch (e: any) { setError(e.message || 'Errore di salvataggio'); }
+    finally { setSavingId(null); }
+  };
+
+  // Una rata annullata resta da gestire finché la sua previsione è ancora nel cash flow.
+  const daGestire = (incassi || []).filter(i => !i.letto || (i.stato === 'Annullata' && giaInCashflow(i)));
+  const gestiti = (incassi || []).filter(i => !daGestire.includes(i));
+
+  return (
+    <div className="space-y-3 pt-6 border-t border-slate-200">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+          <Home className="text-indigo-500" size={22} /> Incassi Vendite in Arrivo
+        </h2>
+        <p className="text-xs text-slate-500 mt-1">
+          Rate dei clienti che hanno acquistato un immobile, confermate da un operatore in Gestione Immobiliare. Aggiungile al cash flow: entrano come previsione nella riga delle entrate del loro cantiere.
+        </p>
+      </div>
+      {error && <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-xl">{error}</div>}
+      {incassi !== null && incassi.length === 0 && (
+        <div className="p-6 text-center text-sm text-slate-400 bg-white border border-slate-200 rounded-2xl">Nessuna rata confermata da Gestione Immobiliare.</div>
+      )}
+      {daGestire.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {daGestire.map(i => (
+            <div key={i.id} className={`p-4 rounded-2xl space-y-2 border ${i.stato === 'Annullata' ? 'bg-red-50 border-red-200' : 'bg-indigo-50 border-indigo-200'}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="font-bold text-sm text-slate-800">{i.clienteNome}</div>
+                <div className="font-black text-sm text-slate-800">{currencyFmt(i.importo)}</div>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-600"><Building2 size={12} className="text-slate-400" /> {[i.interventoNome, i.unitaCodice && `unità ${i.unitaCodice}`].filter(Boolean).join(' · ') || '—'}</div>
+              <div className="text-xs text-slate-600">{i.tipo}{i.descrizione ? ` — ${i.descrizione}` : ''}</div>
+              {i.stato !== 'Annullata' && !giaInCashflow(i) && (trovataDaSola(i)
+                ? <div className="flex items-center gap-1.5 text-xs text-slate-600"><HardHat size={12} className="text-slate-400" /> Entrate della commessa <span className="font-bold">{commessaDi(i)!.name}</span></div>
+                : isAuthorized && (
+                  <select value={sceltaCommessa[i.id] || ''} onChange={e => setSceltaCommessa(prev => ({ ...prev, [i.id]: e.target.value }))}
+                    className="w-full px-2 py-1 rounded-lg border border-amber-300 bg-white text-xs text-slate-700">
+                    <option value="">Commessa non trovata: scegli il cantiere…</option>
+                    {projects.filter(p => p.status === 'ACTIVE').map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                ))}
+              {i.scadenza && <div className="flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock size={12} className="text-slate-400" /> Prevista il {dateFmt(i.scadenza)}</div>}
+              {i.stato === 'Annullata'
+                ? <p className="text-[11px] font-bold text-red-600">Rata annullata in Gestione Immobiliare: togli la previsione dal cash flow.</p>
+                : i.stato === 'Incassata' && <p className="text-[11px] font-bold text-emerald-700">Segnata come incassata{i.incassataIl ? ` il ${dateFmt(i.incassataIl)}` : ''}.</p>}
+              <div className="flex gap-2 pt-1">
+                {isAuthorized && i.stato !== 'Annullata' && !giaInCashflow(i) && (
+                  <button onClick={() => aggiungi(i)} disabled={savingId === i.id || !commessaDi(i)}
+                    className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold uppercase disabled:opacity-50">
+                    <PlusCircle size={12} /> Aggiungi al cash flow
+                  </button>
+                )}
+                <button onClick={() => toggleLetto(i)} disabled={savingId === i.id}
+                  className="flex items-center gap-1 px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold uppercase disabled:opacity-50">
+                  <Check size={12} /> Gestito
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {gestiti.length > 0 && (
+        <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden">
+          {gestiti.map(i => (
+            <div key={i.id} className="flex items-center gap-3 px-4 py-2.5 bg-white text-sm text-slate-400">
+              <span className="flex-1 truncate">
+                <span className="font-bold text-slate-600">{i.clienteNome}</span> — {i.tipo} · {currencyFmt(i.importo)}
+                {i.scadenza && ` · ${dateFmt(i.scadenza)}`}{giaInCashflow(i) ? ' · nel cash flow' : ''}{i.stato === 'Annullata' ? ' · annullata' : ''}
+              </span>
+              <button onClick={() => toggleLetto(i)} disabled={savingId === i.id} title="Segna di nuovo da gestire"
+                className="flex items-center gap-1 px-2 py-1 text-slate-400 hover:text-indigo-600 rounded-lg text-[10px] font-bold uppercase shrink-0 disabled:opacity-50">
+                <RotateCcw size={12} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
