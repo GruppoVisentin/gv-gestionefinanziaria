@@ -5,6 +5,7 @@ export interface IncassoVendita {
   sourceId: string;
   clienteNome: string;
   interventoNome: string | null;
+  cantiereId: string | null; // "direttore_cantiere:<id>" o "gestione_finanziaria:<id>", come nel registro cantieri
   unitaCodice: string | null;
   tipo: string | null;
   descrizione: string | null;

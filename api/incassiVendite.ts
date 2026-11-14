@@ -44,6 +44,7 @@ function rowToIncasso(row: any) {
     source: row.source,
     sourceId: row.source_id,
     clienteNome: row.cliente_nome,
+    cantiereId: row.cantiere_id ?? null,
     interventoNome: row.intervento_nome,
     unitaCodice: row.unita_codice,
     tipo: row.tipo,

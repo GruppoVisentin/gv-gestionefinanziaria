@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { HardHat, Building2, CalendarClock, Check, RotateCcw, BellRing, ShieldCheck, ShieldAlert, Home, PlusCircle } from 'lucide-react';
-import { Transaction, TransactionType } from '../types';
+import { Project, Transaction, TransactionType } from '../types';
 import { fetchIncassiVendite, aggiornaIncassoVendita, rifIncasso, IncassoVendita } from '../services/incassiVenditeSync';
 import { fetchPaymentAlerts, setPaymentAlertRead, PaymentAlert } from '../services/paymentAlertsSync';
 
@@ -12,9 +12,10 @@ interface PagamentiFornitoriTabProps {
   onSaveTransaction?: (data: Omit<Transaction, 'id'>) => void;
   // Come per gli altri inserimenti: senza operatore autorizzato non si scrive nel cash flow.
   isAuthorized?: boolean;
+  projects?: Project[];
 }
 
-export function PagamentiFornitoriTab({ transactions, onSaveTransaction, isAuthorized = false }: PagamentiFornitoriTabProps = {}) {
+export function PagamentiFornitoriTab({ transactions, projects, onSaveTransaction, isAuthorized = false }: PagamentiFornitoriTabProps = {}) {
   const [alerts, setAlerts] = useState<PaymentAlert[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -138,7 +139,7 @@ export function PagamentiFornitoriTab({ transactions, onSaveTransaction, isAutho
           </div>
         </div>
       )}
-      {onSaveTransaction && <IncassiVenditeSection transactions={transactions || []} onSaveTransaction={onSaveTransaction} isAuthorized={isAuthorized} />}
+      {onSaveTransaction && <IncassiVenditeSection transactions={transactions || []} projects={projects || []} onSaveTransaction={onSaveTransaction} isAuthorized={isAuthorized} />}
     </div>
   );
 }
@@ -146,10 +147,20 @@ export function PagamentiFornitoriTab({ transactions, onSaveTransaction, isAutho
 // Incassi delle vendite immobiliari, pubblicati da Gestione Immobiliare quando un operatore
 // conferma una rata del piano pagamenti di un cliente. "Aggiungi al cash flow" crea una
 // previsione di entrata (una sola per rata: il riferimento resta sulla transazione).
-function IncassiVenditeSection({ transactions, onSaveTransaction, isAuthorized }: { transactions: Transaction[]; onSaveTransaction: (data: Omit<Transaction, 'id'>) => void; isAuthorized: boolean }) {
+function IncassiVenditeSection({ transactions, projects, onSaveTransaction, isAuthorized }: { transactions: Transaction[]; projects: Project[]; onSaveTransaction: (data: Omit<Transaction, 'id'>) => void; isAuthorized: boolean }) {
   const [incassi, setIncassi] = useState<IncassoVendita[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  // Commessa scelta a mano per le rate il cui cantiere non si trova da solo.
+  const [sceltaCommessa, setSceltaCommessa] = useState<Record<string, string>>({});
+
+  // La rata entra nella riga delle entrate della commessa del suo cantiere: stesso id del
+  // registro cantieri condiviso (direttore_cantiere:<id> per quelli nati in Gestione Cantiere).
+  const chiaveCommessa = (p: Project) => p.externalSource ? `${p.externalSource}:${p.externalId}` : `gestione_finanziaria:${p.id}`;
+  const commessaDi = (i: IncassoVendita): Project | undefined =>
+    (i.cantiereId ? projects.find(p => chiaveCommessa(p) === i.cantiereId) : undefined)
+    || projects.find(p => p.id === sceltaCommessa[i.id]);
+  const trovataDaSola = (i: IncassoVendita) => !!i.cantiereId && projects.some(p => chiaveCommessa(p) === i.cantiereId);
 
   const load = useCallback(async () => {
     try {
@@ -194,12 +205,18 @@ function IncassiVenditeSection({ transactions, onSaveTransaction, isAuthorized }
         return;
       }
       i = attuale;
+      const commessa = commessaDi(i);
+      if (!commessa) {
+        setError('Scegli la commessa (cantiere) a cui intestare la rata.');
+        return;
+      }
       onSaveTransaction({
         date: i.scadenza || new Date().toISOString().slice(0, 10),
         amount: i.importo,
         type: TransactionType.INCOME,
         category: '[IMMOBILIARE] Vendita Immobili e Terreni',
         description: [i.tipo || 'Rata vendita', i.clienteNome, i.unitaCodice && `unità ${i.unitaCodice}`, i.interventoNome].filter(Boolean).join(' — ') + ' (importo della rata: verificare IVA)',
+        project: commessa.name,
         isForecast: true,
         sourceRef: rifIncasso(i),
       });
@@ -231,7 +248,7 @@ function IncassiVenditeSection({ transactions, onSaveTransaction, isAuthorized }
           <Home className="text-indigo-500" size={22} /> Incassi Vendite in Arrivo
         </h2>
         <p className="text-xs text-slate-500 mt-1">
-          Rate dei clienti che hanno acquistato un immobile, confermate da un operatore in Gestione Immobiliare. Aggiungile al cash flow come previsione di entrata.
+          Rate dei clienti che hanno acquistato un immobile, confermate da un operatore in Gestione Immobiliare. Aggiungile al cash flow: entrano come previsione nella riga delle entrate del loro cantiere.
         </p>
       </div>
       {error && <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-xl">{error}</div>}
@@ -248,13 +265,22 @@ function IncassiVenditeSection({ transactions, onSaveTransaction, isAuthorized }
               </div>
               <div className="flex items-center gap-1.5 text-xs text-slate-600"><Building2 size={12} className="text-slate-400" /> {[i.interventoNome, i.unitaCodice && `unità ${i.unitaCodice}`].filter(Boolean).join(' · ') || '—'}</div>
               <div className="text-xs text-slate-600">{i.tipo}{i.descrizione ? ` — ${i.descrizione}` : ''}</div>
+              {i.stato !== 'Annullata' && !giaInCashflow(i) && (trovataDaSola(i)
+                ? <div className="flex items-center gap-1.5 text-xs text-slate-600"><HardHat size={12} className="text-slate-400" /> Entrate della commessa <span className="font-bold">{commessaDi(i)!.name}</span></div>
+                : isAuthorized && (
+                  <select value={sceltaCommessa[i.id] || ''} onChange={e => setSceltaCommessa(prev => ({ ...prev, [i.id]: e.target.value }))}
+                    className="w-full px-2 py-1 rounded-lg border border-amber-300 bg-white text-xs text-slate-700">
+                    <option value="">Commessa non trovata: scegli il cantiere…</option>
+                    {projects.filter(p => p.status === 'ACTIVE').map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                ))}
               {i.scadenza && <div className="flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock size={12} className="text-slate-400" /> Prevista il {dateFmt(i.scadenza)}</div>}
               {i.stato === 'Annullata'
                 ? <p className="text-[11px] font-bold text-red-600">Rata annullata in Gestione Immobiliare: togli la previsione dal cash flow.</p>
                 : i.stato === 'Incassata' && <p className="text-[11px] font-bold text-emerald-700">Segnata come incassata{i.incassataIl ? ` il ${dateFmt(i.incassataIl)}` : ''}.</p>}
               <div className="flex gap-2 pt-1">
                 {isAuthorized && i.stato !== 'Annullata' && !giaInCashflow(i) && (
-                  <button onClick={() => aggiungi(i)} disabled={savingId === i.id}
+                  <button onClick={() => aggiungi(i)} disabled={savingId === i.id || !commessaDi(i)}
                     className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold uppercase disabled:opacity-50">
                     <PlusCircle size={12} /> Aggiungi al cash flow
                   </button>
