@@ -10,9 +10,11 @@ const currencyFmt = (n: number) => n.toLocaleString('it-IT', { style: 'currency'
 interface PagamentiFornitoriTabProps {
   transactions?: Transaction[];
   onSaveTransaction?: (data: Omit<Transaction, 'id'>) => void;
+  // Come per gli altri inserimenti: senza operatore autorizzato non si scrive nel cash flow.
+  isAuthorized?: boolean;
 }
 
-export function PagamentiFornitoriTab({ transactions, onSaveTransaction }: PagamentiFornitoriTabProps = {}) {
+export function PagamentiFornitoriTab({ transactions, onSaveTransaction, isAuthorized = false }: PagamentiFornitoriTabProps = {}) {
   const [alerts, setAlerts] = useState<PaymentAlert[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -136,7 +138,7 @@ export function PagamentiFornitoriTab({ transactions, onSaveTransaction }: Pagam
           </div>
         </div>
       )}
-      {onSaveTransaction && <IncassiVenditeSection transactions={transactions || []} onSaveTransaction={onSaveTransaction} />}
+      {onSaveTransaction && <IncassiVenditeSection transactions={transactions || []} onSaveTransaction={onSaveTransaction} isAuthorized={isAuthorized} />}
     </div>
   );
 }
@@ -144,7 +146,7 @@ export function PagamentiFornitoriTab({ transactions, onSaveTransaction }: Pagam
 // Incassi delle vendite immobiliari, pubblicati da Gestione Immobiliare quando un operatore
 // conferma una rata del piano pagamenti di un cliente. "Aggiungi al cash flow" crea una
 // previsione di entrata (una sola per rata: il riferimento resta sulla transazione).
-function IncassiVenditeSection({ transactions, onSaveTransaction }: { transactions: Transaction[]; onSaveTransaction: (data: Omit<Transaction, 'id'>) => void }) {
+function IncassiVenditeSection({ transactions, onSaveTransaction, isAuthorized }: { transactions: Transaction[]; onSaveTransaction: (data: Omit<Transaction, 'id'>) => void; isAuthorized: boolean }) {
   const [incassi, setIncassi] = useState<IncassoVendita[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -157,14 +159,41 @@ function IncassiVenditeSection({ transactions, onSaveTransaction }: { transactio
       setError(e.message || 'Errore di caricamento');
     }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  // Stesso ritmo degli avvisi fornitori: ogni minuto, solo con la pagina in vista.
+  useEffect(() => {
+    load();
+    const interval = setInterval(() => { if (!document.hidden) load(); }, 60000);
+    return () => clearInterval(interval);
+  }, [load]);
 
-  const giaInCashflow = (i: IncassoVendita) => i.inCashflow || transactions.some(t => t.sourceRef === rifIncasso(i));
+  // La verità è il cash flow: una previsione cancellata qui libera di nuovo la rata.
+  const giaInCashflow = (i: IncassoVendita) => transactions.some(t => t.sourceRef === rifIncasso(i));
+
+  // Tiene allineata la spunta condivisa (la legge Gestione Immobiliare) con il cash flow reale.
+  useEffect(() => {
+    (incassi || []).forEach(i => {
+      const presente = giaInCashflow(i);
+      if (i.inCashflow !== presente) {
+        aggiornaIncassoVendita(i.id, { inCashflow: presente })
+          .then(() => setIncassi(prev => prev ? prev.map(x => x.id === i.id ? { ...x, inCashflow: presente } : x) : prev))
+          .catch(() => {});
+      }
+    });
+  }, [incassi, transactions]);
 
   const aggiungi = async (i: IncassoVendita) => {
-    if (giaInCashflow(i)) return;
+    if (!isAuthorized || giaInCashflow(i)) return;
     setSavingId(i.id);
     try {
+      // Si ricontrolla la rata appena prima: potrebbe essere stata annullata nel frattempo.
+      const fresche = await fetchIncassiVendite();
+      setIncassi(fresche);
+      const attuale = fresche.find(x => x.id === i.id);
+      if (!attuale || attuale.stato === 'Annullata') {
+        setError('La rata è stata annullata in Gestione Immobiliare: non è stata aggiunta.');
+        return;
+      }
+      i = attuale;
       onSaveTransaction({
         date: i.scadenza || new Date().toISOString().slice(0, 10),
         amount: i.importo,
@@ -191,7 +220,8 @@ function IncassiVenditeSection({ transactions, onSaveTransaction }: { transactio
     finally { setSavingId(null); }
   };
 
-  const daGestire = (incassi || []).filter(i => !i.letto || (i.stato === 'Annullata' && i.inCashflow));
+  // Una rata annullata resta da gestire finché la sua previsione è ancora nel cash flow.
+  const daGestire = (incassi || []).filter(i => !i.letto || (i.stato === 'Annullata' && giaInCashflow(i)));
   const gestiti = (incassi || []).filter(i => !daGestire.includes(i));
 
   return (
@@ -223,7 +253,7 @@ function IncassiVenditeSection({ transactions, onSaveTransaction }: { transactio
                 ? <p className="text-[11px] font-bold text-red-600">Rata annullata in Gestione Immobiliare: togli la previsione dal cash flow.</p>
                 : i.stato === 'Incassata' && <p className="text-[11px] font-bold text-emerald-700">Segnata come incassata{i.incassataIl ? ` il ${dateFmt(i.incassataIl)}` : ''}.</p>}
               <div className="flex gap-2 pt-1">
-                {i.stato !== 'Annullata' && !giaInCashflow(i) && (
+                {isAuthorized && i.stato !== 'Annullata' && !giaInCashflow(i) && (
                   <button onClick={() => aggiungi(i)} disabled={savingId === i.id}
                     className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold uppercase disabled:opacity-50">
                     <PlusCircle size={12} /> Aggiungi al cash flow
